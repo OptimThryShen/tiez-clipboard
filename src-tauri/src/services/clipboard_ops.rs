@@ -665,9 +665,6 @@ async fn perform_paste_action(
     // Handle post-paste actions
     handle_post_paste_actions(app_handle, state, id, delete_after_use, move_to_top)?;
 
-    // Play sound if enabled
-    play_paste_sound_if_enabled(app_handle);
-
     Ok(())
 }
 
@@ -723,7 +720,13 @@ pub fn send_paste_keystroke(_content: Option<&str>, _content_type: Option<&str>)
         return;
     }
 
-    if !crate::infrastructure::macos_api::permissions::send_command_v() {
+    #[cfg(target_os = "macos")]
+    crate::infrastructure::macos_api::paste_key_monitor::suppress_paste_sound_briefly();
+    if crate::infrastructure::macos_api::permissions::send_command_v() {
+        if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
+            crate::services::ui_sound::schedule_paste_sound(app);
+        }
+    } else {
         println!("[WARN] Native Command+V dispatch failed");
     }
 }
@@ -798,15 +801,6 @@ fn handle_post_paste_actions(
     }
 
     Ok(())
-}
-
-fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
-    let settings = app_handle.state::<SettingsState>();
-    if settings.sound_enabled.load(Ordering::Relaxed)
-        && settings.paste_sound_enabled.load(Ordering::Relaxed)
-    {
-        let _ = app_handle.emit("play-sound", "paste");
-    }
 }
 
 #[tauri::command]

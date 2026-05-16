@@ -211,6 +211,7 @@ pub struct StartupSettings {
     pub hide_tray_icon: bool,
     pub hide_dock_icon: bool,
     pub edge_docking: bool,
+    pub last_edge_dock: String,
     pub window_pinned: bool,
     pub window_width: Option<u32>,
     pub window_height: Option<u32>,
@@ -315,9 +316,9 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(false),
         paste_sound_enabled: repo
             .get("app.sound_paste_enabled")
-            .unwrap_or(Some("false".to_string()))
+            .unwrap_or(Some("true".to_string()))
             .map(|v| v == "true")
-            .unwrap_or(false),
+            .unwrap_or(true),
         hide_tray_icon: repo
             .get("app.hide_tray_icon")
             .unwrap_or(Some("false".to_string()))
@@ -333,6 +334,10 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        last_edge_dock: repo
+            .get("app.last_edge_dock")
+            .unwrap_or(Some("none".to_string()))
+            .unwrap_or("none".to_string()),
         window_pinned: repo
             .get("app.window_pinned")
             .unwrap_or(Some("false".to_string()))
@@ -470,9 +475,84 @@ fn set_window_all_spaces(window: &tauri::WebviewWindow) {
     }
 }
 
+fn parse_dock_token(token: &str) -> i32 {
+    match token.trim().to_ascii_lowercase().as_str() {
+        "top" => 1,
+        "left" => 2,
+        "right" => 3,
+        _ => 0,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn persist_edge_dock(_app_handle: &AppHandle, _dock: i32) {}
+
+fn dock_token_for(dock: i32) -> &'static str {
+    match dock {
+        1 => "top",
+        2 => "left",
+        3 => "right",
+        _ => "none",
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn persist_edge_dock(app_handle: &AppHandle, dock: i32) {
+    if let Some(db_state) = app_handle.try_state::<DbState>() {
+        let _ = db_state
+            .settings_repo
+            .set("app.last_edge_dock", dock_token_for(dock));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn apply_dock_position_on_main(window: &tauri::WebviewWindow, dock: i32) {
+    let (Ok(pos), Ok(size), Ok(Some(monitor))) = (
+        window.outer_position().or_else(|_| window.inner_position()),
+        window.outer_size().or_else(|_| window.inner_size()),
+        window.current_monitor(),
+    ) else {
+        return;
+    };
+    let sp = monitor.position();
+    let ss = monitor.size();
+    let screen_left = sp.x;
+    let screen_top = sp.y;
+    let screen_right = sp.x + ss.width as i32;
+    let hide_size = 3i32;
+
+    match dock {
+        1 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                pos.x,
+                screen_top - size.height as i32 + hide_size,
+            ));
+        }
+        2 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                screen_left - size.width as i32 + hide_size,
+                pos.y,
+            ));
+        }
+        3 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                screen_right - hide_size,
+                pos.y,
+            ));
+        }
+        _ => {}
+    }
+}
+
 fn setup_main_window(app: &App, s: &StartupSettings) {
     let effective_pinned = s.window_pinned;
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
+
+    let restore_dock = if s.edge_docking {
+        parse_dock_token(&s.last_edge_dock)
+    } else {
+        0
+    };
 
     if let Some(window) = app.get_webview_window("main") {
         if let (Some(w), Some(h)) = (s.window_width, s.window_height) {
@@ -514,8 +594,35 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
             #[cfg(not(target_os = "windows"))]
             let _ = window.set_focusable(true);
             let _ = window.show();
-            #[cfg(not(target_os = "windows"))]
+
+            #[cfg(target_os = "macos")]
+            {
+                if restore_dock != 0 {
+                    // The window was docked when the app last quit. Skip set_focus
+                    // (which would pull the offscreen window back onscreen) and
+                    // re-apply the dock position. Retry briefly in case the
+                    // window-state plugin restores geometry asynchronously.
+                    CURRENT_DOCK.store(restore_dock, Ordering::Relaxed);
+                    IS_HIDDEN.store(true, Ordering::Relaxed);
+                    WINDOW_PINNED.store(true, Ordering::Relaxed);
+                    let _ = window.set_always_on_top(true);
+                    apply_dock_position_on_main(&window, restore_dock);
+
+                    let window_clone = window.clone();
+                    std::thread::spawn(move || {
+                        for _ in 0..6 {
+                            std::thread::sleep(std::time::Duration::from_millis(80));
+                            apply_dock_position_on_main(&window_clone, restore_dock);
+                        }
+                    });
+                } else {
+                    let _ = window.set_focus();
+                }
+            }
+
+            #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
             let _ = window.set_focus();
+
             maybe_open_devtools(&window);
         }
     } else {
@@ -525,10 +632,14 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
             let _ = window.set_focusable(true);
         }
     }
+
+    let _ = restore_dock;
 }
 
 fn start_services(app: &App, s: &StartupSettings, app_handle: AppHandle) {
     crate::infrastructure::macos_api::window_tracker::start_window_tracking(app_handle.clone());
+    #[cfg(target_os = "macos")]
+    crate::infrastructure::macos_api::paste_key_monitor::start_paste_key_monitor();
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
     crate::services::mqtt_sub::start_mqtt_client(app_handle.clone());
     crate::services::cloud_sync::start_cloud_sync_client(app_handle.clone());
@@ -629,51 +740,21 @@ fn reconcile_stale_edge_hide(
 #[cfg(target_os = "macos")]
 fn start_edge_docking_monitor(app_handle: AppHandle) {
     std::thread::spawn(move || {
-        // On the first iteration, detect if the window-state plugin restored
-        // the window to a screen edge and set IS_HIDDEN / CURRENT_DOCK so
-        // that hover-to-show works immediately without manual re-docking.
-        let mut startup_checked = false;
+        // The docked state and offscreen position are applied during
+        // setup_main_window (driven by the persisted `app.last_edge_dock` value).
+        // Wait briefly so the window-state plugin's async restore can settle
+        // before reconciliation runs, otherwise a partially-restored geometry
+        // could wipe the just-restored docked state.
+        let startup_grace_until = std::time::Instant::now()
+            + std::time::Duration::from_millis(if IS_HIDDEN.load(Ordering::Relaxed) {
+                900
+            } else {
+                0
+            });
         loop {
             std::thread::sleep(std::time::Duration::from_millis(150));
 
-            if !startup_checked {
-                startup_checked = true;
-                if let Some(settings) = app_handle.try_state::<SettingsState>() {
-                    if settings.edge_docking.load(Ordering::Relaxed) {
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            if let (Ok(pos), Ok(size), Ok(Some(monitor))) = (
-                                window.outer_position().or_else(|_| window.inner_position()),
-                                window.outer_size().or_else(|_| window.inner_size()),
-                                window.current_monitor(),
-                            ) {
-                                let sp = monitor.position();
-                                let ss = monitor.size();
-                                let screen_left = sp.x;
-                                let screen_top = sp.y;
-                                let screen_right = sp.x + ss.width as i32;
-                                let rect_right = pos.x + size.width as i32;
-
-                                // Check if the restored position is at a screen edge
-                                // (window largely off-screen, only a few pixels showing).
-                                let detected_dock = if pos.y < screen_top {
-                                    1 // Top
-                                } else if pos.x < screen_left {
-                                    2 // Left
-                                } else if rect_right > screen_right {
-                                    3 // Right
-                                } else {
-                                    0
-                                };
-
-                                if detected_dock != 0 {
-                                    CURRENT_DOCK.store(detected_dock, Ordering::Relaxed);
-                                    IS_HIDDEN.store(true, Ordering::Relaxed);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            let in_startup_grace = std::time::Instant::now() < startup_grace_until;
 
             let settings = match app_handle.try_state::<SettingsState>() {
                 Some(s) => s,
@@ -719,6 +800,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         let _ = window.show();
                         IS_HIDDEN.store(false, Ordering::Relaxed);
                         CURRENT_DOCK.store(0, Ordering::Relaxed);
+                        persist_edge_dock(&app_handle, 0);
                     }
                 }
                 continue;
@@ -757,16 +839,18 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
             let screen_right = screen_pos.x + screen_size.width as i32;
             let screen_bottom = screen_pos.y + screen_size.height as i32;
 
-            reconcile_stale_edge_hide(
-                rect_left,
-                rect_top,
-                rect_right,
-                rect_bottom,
-                screen_left,
-                screen_top,
-                screen_right,
-                screen_bottom,
-            );
+            if !in_startup_grace {
+                reconcile_stale_edge_hide(
+                    rect_left,
+                    rect_top,
+                    rect_right,
+                    rect_bottom,
+                    screen_left,
+                    screen_top,
+                    screen_right,
+                    screen_bottom,
+                );
+            }
 
             let is_window_visible = window.is_visible().unwrap_or(true);
             let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
@@ -845,6 +929,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 if IS_HIDDEN.load(Ordering::Relaxed) {
                     IS_HIDDEN.store(false, Ordering::Relaxed);
                     CURRENT_DOCK.store(0, Ordering::Relaxed);
+                    persist_edge_dock(&app_handle, 0);
                 }
                 continue;
             }
@@ -900,6 +985,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         }
                         IS_HIDDEN.store(false, Ordering::Relaxed);
                         CURRENT_DOCK.store(0, Ordering::Relaxed);
+                        persist_edge_dock(&app_handle, 0);
                     }
                 }
             } else if dock != DockPosition::None {
@@ -919,6 +1005,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                     let window_height = rect_bottom - rect_top;
                     let window_width = rect_right - rect_left;
+                    let mut new_dock = 0i32;
                     match dock {
                         DockPosition::Top => {
                             let _ = window.set_position(tauri::PhysicalPosition::new(
@@ -926,6 +1013,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                                 screen_top - window_height + hide_size,
                             ));
                             CURRENT_DOCK.store(1, Ordering::Relaxed);
+                            new_dock = 1;
                         }
                         DockPosition::Left => {
                             let _ = window.set_position(tauri::PhysicalPosition::new(
@@ -933,6 +1021,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                                 rect_top,
                             ));
                             CURRENT_DOCK.store(2, Ordering::Relaxed);
+                            new_dock = 2;
                         }
                         DockPosition::Right => {
                             let _ = window.set_position(tauri::PhysicalPosition::new(
@@ -940,14 +1029,19 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                                 rect_top,
                             ));
                             CURRENT_DOCK.store(3, Ordering::Relaxed);
+                            new_dock = 3;
                         }
                         DockPosition::None => {}
                     }
                     IS_HIDDEN.store(true, Ordering::Relaxed);
+                    if new_dock != 0 {
+                        persist_edge_dock(&app_handle, new_dock);
+                    }
                 }
             } else if IS_HIDDEN.load(Ordering::Relaxed) {
                 IS_HIDDEN.store(false, Ordering::Relaxed);
                 CURRENT_DOCK.store(0, Ordering::Relaxed);
+                persist_edge_dock(&app_handle, 0);
 
                 // Restore pinned state based on user setting when undocked.
                 let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);

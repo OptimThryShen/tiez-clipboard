@@ -34,7 +34,7 @@ const K_CG_EVENT_FLAG_MASK_COMMAND: CGEventFlags = 1 << 20;
 #[cfg(target_os = "macos")]
 const K_CG_EVENT_SOURCE_STATE_HID_SYSTEM_STATE: CGEventSourceStateID = 1;
 #[cfg(target_os = "macos")]
-const V_KEY_CODE: CGKeyCode = 9;
+pub(crate) const V_KEY_CODE: CGKeyCode = 9;
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]

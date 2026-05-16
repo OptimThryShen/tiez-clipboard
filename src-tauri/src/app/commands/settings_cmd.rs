@@ -135,8 +135,8 @@ pub fn save_setting(
         }
         "app.sound_paste_enabled" => {
             settings_state
-                .delete_after_paste
-                .store(value != "false", Ordering::Relaxed);
+                .paste_sound_enabled
+                .store(value == "true", Ordering::Relaxed);
         }
         "app.persistent" => {
             settings_state
@@ -468,6 +468,27 @@ pub fn set_sound_enabled(
 }
 
 #[tauri::command]
+pub fn set_paste_sound_enabled(
+    state: State<'_, crate::app_state::SettingsState>,
+    db_state: State<'_, DbState>,
+    enabled: bool,
+) -> AppResult<()> {
+    state
+        .paste_sound_enabled
+        .store(enabled, Ordering::Relaxed);
+    db_state
+        .settings_repo
+        .set("app.sound_paste_enabled", &enabled.to_string())
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn play_preview_sound(app_handle: tauri::AppHandle, kind: Option<String>) {
+    let kind = kind.unwrap_or_else(|| "copy".to_string());
+    crate::services::ui_sound::play_ui_sound(&app_handle, &kind);
+}
+
+#[tauri::command]
 pub fn get_mqtt_status() -> bool {
     crate::services::mqtt_sub::get_mqtt_status()
 }
@@ -632,5 +653,9 @@ pub fn set_edge_docking(
     db_state
         .settings_repo
         .set("app.edge_docking", &enabled.to_string())
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    if !enabled {
+        crate::app::setup::persist_edge_dock(&app_handle, 0);
+    }
+    Ok(())
 }

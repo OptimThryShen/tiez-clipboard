@@ -83,6 +83,7 @@ pub fn toggle_window(app_handle: &AppHandle) {
         NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
         let _was_docked = is_hidden_by_edge;
         CURRENT_DOCK.store(0, Ordering::Relaxed);
+        crate::app::setup::persist_edge_dock(app_handle, 0);
 
         // Basic toggle: show window
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
@@ -168,6 +169,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         IS_HIDDEN.store(false, Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
+        crate::app::setup::persist_edge_dock(&app_handle, 0);
         #[cfg(not(target_os = "windows"))]
         let _ = window.set_focusable(true);
         let _ = window.show();

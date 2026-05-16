@@ -66,6 +66,7 @@ impl ClipboardPipeline {
                 Box::new(DiscoveryStage),
                 Box::new(TransformationStage),
                 Box::new(ValidationStage),
+                Box::new(SoundStage),
                 Box::new(PersistenceStage),
                 Box::new(DistributionStage),
             ],
@@ -420,7 +421,15 @@ impl PipelineStage for ValidationStage {
     }
 }
 
-// Stage 4: Persistence
+// Stage 4: Immediate Feedback
+pub struct SoundStage;
+impl PipelineStage for SoundStage {
+    fn process(&self, ctx: &mut PipelineContext) {
+        crate::services::ui_sound::play_ui_sound(&ctx.app_handle, "copy");
+    }
+}
+
+// Stage 5: Persistence
 pub struct PersistenceStage;
 impl PipelineStage for PersistenceStage {
     fn process(&self, ctx: &mut PipelineContext) {
@@ -504,7 +513,7 @@ impl PipelineStage for PersistenceStage {
     }
 }
 
-// Stage 5: Distribution
+// Stage 6: Distribution
 pub struct DistributionStage;
 impl PipelineStage for DistributionStage {
     fn process(&self, ctx: &mut PipelineContext) {
@@ -541,11 +550,6 @@ impl PipelineStage for DistributionStage {
                 queue.last_pasted_content = None;
             }
             queue.items.push_back(entry.id);
-        }
-
-        // Sound
-        if settings.sound_enabled.load(Ordering::Relaxed) {
-            let _ = ctx.app_handle.emit("play-sound", "copy");
         }
 
         // Notify

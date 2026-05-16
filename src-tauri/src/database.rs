@@ -257,6 +257,10 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
         [],
     );
     let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.last_edge_dock', 'none')",
+        [],
+    );
+    let _ = conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.arrow_key_selection', 'false')",
         [],
     );

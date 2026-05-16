@@ -591,10 +591,53 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::
 
 #[tauri::command]
 pub fn check_macos_permissions() -> bool {
-    crate::infrastructure::macos_api::permissions::has_accessibility_permission()
+    #[cfg(target_os = "macos")]
+    {
+        return crate::infrastructure::macos_api::permissions::has_accessibility_permission();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
 }
 
 #[tauri::command]
 pub fn request_macos_permissions() -> bool {
-    crate::infrastructure::macos_api::permissions::request_accessibility_permission()
+    #[cfg(target_os = "macos")]
+    {
+        return crate::infrastructure::macos_api::permissions::request_accessibility_permission();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+#[tauri::command]
+pub fn open_macos_accessibility_settings() -> AppResult<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        const URLS: &[&str] = &[
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        ];
+        for url in URLS {
+            if Command::new("open")
+                .arg(url)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
+        }
+        return Err(AppError::Internal(
+            "无法打开系统「辅助功能」设置页".to_string(),
+        ));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(())
+    }
 }
