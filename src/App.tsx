@@ -221,16 +221,6 @@ const App = () => {
     richTextSnapshotPreview,
     setRichTextSnapshotPreview,
     setSilentStart,
-    followMouse: _followMouse,
-    setFollowMouse,
-    showAppBorder,
-    setShowAppBorder,
-    winClipboardDisabled: _winClipboardDisabled,
-    setWinClipboardDisabled,
-    registryWinVEnabled: _registryWinVEnabled,
-    setRegistryWinVEnabled,
-    pasteMethod: _pasteMethod,
-    setPasteMethod,
     theme,
     setTheme,
     colorMode,
@@ -588,10 +578,6 @@ const App = () => {
     setCleanupRules,
     setAppCleanupPolicies,
     setSilentStart,
-    setFollowMouse,
-    setShowAppBorder,
-    setRegistryWinVEnabled,
-    setPasteMethod,
     setShowSourceAppIcon,
 
     setDeleteAfterPaste,
@@ -699,8 +685,7 @@ const App = () => {
     setFileServerEnabled,
     setActualPort,
     setLocalIp,
-    setAvailableIps,
-    setWinClipboardDisabled
+    setAvailableIps
   });
 
   useWindowPinnedListener({
@@ -717,8 +702,7 @@ const App = () => {
     settingsLoaded,
     clipboardItemFontSize,
     clipboardTagFontSize,
-    surfaceOpacity,
-    showAppBorder
+    surfaceOpacity
   });
 
   // Pre-warm compact preview window only where warmup is safe.

@@ -67,96 +67,52 @@
   background: var(--bg-panel);
   border: 1px solid var(--line-soft);
   padding: 12px 24px;
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(14px);
   pointer-events: auto;
-  width: 100%;
-  max-width: 480px; /* Limit stretch but allow enough room */
+  min-width: 320px;
   justify-content: center;
   overflow: hidden;
-  transition: all 0.3s ease;
 }
 
 .wt-qr-container {
-  width: 72px;
-  height: 72px;
+  width: 60px;
+  height: 60px;
   background: #fff;
-  border-radius: 12px;
-  padding: 6px;
+  border-radius: 8px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--wt-qr-foreground) !important;
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
-.wt-qr-container canvas {
-  width: 100% !important;
-  height: 100% !important;
 }
 
 .wt-info-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .wt-info-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11px;
 }
 
 .wt-info-label {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 10px;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  width: 60px;
-  flex-shrink: 0;
 }
 
 .wt-info-value {
   font-weight: 600;
   color: var(--text-primary);
   font-family: var(--font-mono);
-}
-
-@media (max-width: 300px) {
-  .wt-info-panel {
-    padding: 8px 12px;
-    gap: 10px;
-  }
-  .wt-qr-container {
-    width: 50px;
-    height: 50px;
-    padding: 3px;
-  }
-  .wt-qr-container canvas {
-     width: 100% !important;
-     height: 100% !important;
-  }
-  .wt-info-label {
-    font-size: 8px;
-  }
-  .wt-info-value {
-    font-size: 10px;
-  }
-}
-
-@media (max-width: 240px) {
-  .wt-info-panel {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-  .wt-info-row {
-    justify-content: center;
-  }
 }
 
 /* Chat Area */
@@ -306,11 +262,9 @@
   background: var(--bg-input);
   border-radius: var(--input-radius, 12px);
   padding: 0 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid transparent;
   transition: all 0.2s ease;
-  overflow: hidden;
-  min-height: 32px;
-  max-height: 120px;
+  overflow: hidden; /* Prevent square child bleed */
 }
 
 .wt-input-wrap:focus-within {
@@ -319,33 +273,32 @@
 }
 
 .wt-input {
-  display: flex;
-  align-items: center;
+  display: block;
   flex: 1;
   background: transparent !important;
   border: none !important;
-  padding: 6px 0;
-  font-size: 13px;
+  padding: 4px 0;
+  font-size: 13.5px;
   color: var(--text-primary);
   outline: none;
   resize: none;
-  line-height: normal;
+  line-height: 1.4;
   box-shadow: none !important;
-  min-height: 20px;
+  min-height: 19px;
   margin: 0;
   overflow-y: hidden;
 }
 
 
 .wt-btn {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  padding: 0;
-  border-radius: 50%;
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 16px;
   background: var(--bg-button);
   border: 1px solid var(--line-soft);
   color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -359,9 +312,9 @@
 }
 
 .wt-btn.send {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   border-radius: 50%;
   background: var(--accent-color);
   color: #fff;
@@ -630,74 +583,4 @@ body.dark-mode.theme-sticky-note .wt-btn-icon {
 .theme-sticky-note .wt-footer {
   background: transparent;
   border-top: 1px dashed var(--border-dark);
-}
-
-/* Retro 3D Theme Overrides */
-.theme-retro .wt-info-panel {
-  background: #c0c0c0 !important;
-  border: 2px solid #000 !important;
-  border-radius: 0 !important;
-  box-shadow: 
-    inset 2px 2px 0px #fff,
-    inset -2px -2px 0px #808080,
-    4px 4px 0px #000 !important;
-  backdrop-filter: none !important;
-  max-width: 440px;
-}
-
-.theme-retro .wt-qr-container {
-  border-radius: 0 !important;
-  border: 2px solid #000 !important;
-  box-shadow: 
-    inset 2px 2px 0px #808080,
-    inset -2px -2px 0px #fff !important;
-  padding: 4px;
-}
-
-.theme-retro .wt-info-label {
-  color: #404040;
-  font-family: var(--font-mono);
-}
-
-.theme-retro .wt-info-value {
-  color: #000;
-  text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-.theme-retro .wt-chat-box {
-  background-image: 
-    linear-gradient(#808080 1px, transparent 1px),
-    linear-gradient(90deg, #808080 1px, transparent 1px);
-  background-size: 20px 20px;
-  background-color: #a0a0a0;
-  opacity: 0.15;
-}
-
-.theme-retro .wt-bubble {
-  border-radius: 0 !important;
-  border: 2px solid #000 !important;
-  box-shadow: 2px 2px 0 #000 !important;
-}
-
-.theme-retro .wt-input-wrap {
-  border-radius: 0 !important;
-  border: 2px solid #000 !important;
-  box-shadow: inset 2px 2px 0 #808080 !important;
-  background: #fff !important;
-}
-
-.theme-retro .wt-btn {
-  border-radius: 0 !important;
-  background: #c0c0c0 !important;
-  border: 2px solid #000 !important;
-  box-shadow: 
-    inset 1.5px 1.5px 0 #fff,
-    inset -1.5px -1.5px 0 #808080 !important;
-}
-
-.theme-retro .wt-btn:active {
-  box-shadow: 
-    inset 1.5px 1.5px 0 #808080,
-    inset -1.5px -1.5px 0 #fff !important;
-  transform: translate(1px, 1px);
 }

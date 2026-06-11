@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import MacAccessibilityPermission from "./MacAccessibilityPermission";
 
 const isMacPlatform =
     /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
@@ -167,6 +168,9 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
+                {isMacPlatform && (
+                    <MacAccessibilityPermission t={t} LabelWithHint={LabelWithHint} />
+                )}
 
                 <div className="setting-item">
                     <div className="item-label-group">

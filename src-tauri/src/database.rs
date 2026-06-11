@@ -61,24 +61,6 @@ fn calc_visual_hash(img: &image::DynamicImage) -> i64 {
     hasher.finish() as i64
 }
 
-pub fn calc_image_hash_from_bytes(bytes: &[u8]) -> Option<i64> {
-    if let Ok(img) = image::load_from_memory(bytes) {
-        return Some(calc_visual_hash(&img));
-    }
-
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    bytes.hash(&mut hasher);
-    Some(hasher.finish() as i64)
-}
-
-pub fn calc_image_hash_from_rgba(width: u32, height: u32, rgba: &[u8]) -> Option<i64> {
-    let buffer = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;
-    let img = image::DynamicImage::ImageRgba8(buffer);
-    Some(calc_visual_hash(&img))
-}
-
 pub fn calc_image_hash(base64_data: &str) -> Option<i64> {
     let trimmed = base64_data.trim();
     let bytes =
@@ -276,6 +258,10 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
     );
     let _ = conn.execute(
         "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.edge_docking', 'false')",
+        [],
+    );
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('app.last_edge_dock', 'none')",
         [],
     );
     let _ = conn.execute(
