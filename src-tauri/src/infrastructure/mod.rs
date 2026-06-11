@@ -1,5 +1,7 @@
 pub mod encryption;
 pub mod repository;
+#[cfg(not(target_os = "macos"))]
+pub mod bundled_sound;
 #[cfg(target_os = "windows")]
 pub mod windows_ext;
 

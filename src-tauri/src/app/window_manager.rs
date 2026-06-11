@@ -420,6 +420,10 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         #[cfg(target_os = "windows")]
         WindowExt::release_win_keys();
+        IS_HIDDEN.store(false, Ordering::Relaxed);
+        CURRENT_DOCK.store(0, Ordering::Relaxed);
+        let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+        let _ = window.set_always_on_top(pinned);
         let _ = window.set_focusable(false);
         let _ = window.hide();
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);

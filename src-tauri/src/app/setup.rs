@@ -190,6 +190,7 @@ pub struct StartupSettings {
     pub search_hotkey: String,
     pub quick_paste_modifier: String,
     pub sound_enabled: bool,
+    pub paste_sound_enabled: bool,
     pub hide_tray_icon: bool,
     pub edge_docking: bool,
     pub follow_mouse: bool,
@@ -199,6 +200,7 @@ pub struct StartupSettings {
     pub main_hotkey: String,
     pub arrow_key_selection: bool,
     pub auto_close_server: bool,
+    pub sound_volume: f64,
 }
 
 fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
@@ -289,6 +291,11 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        paste_sound_enabled: repo
+            .get("app.sound_paste_enabled")
+            .unwrap_or(Some("true".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(true),
         hide_tray_icon: repo
             .get("app.hide_tray_icon")
             .unwrap_or(Some("false".to_string()))
@@ -333,6 +340,11 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        sound_volume: repo
+            .get("app.sound_volume")
+            .unwrap_or(Some("1.0".to_string()))
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(1.0),
     }
 }
 
@@ -383,12 +395,14 @@ fn setup_state(
         search_hotkey: std::sync::Mutex::new(s.search_hotkey.clone()),
         quick_paste_modifier: std::sync::Mutex::new(s.quick_paste_modifier.clone()),
         sound_enabled: AtomicBool::new(s.sound_enabled),
+        paste_sound_enabled: AtomicBool::new(s.paste_sound_enabled),
         hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
         edge_docking: AtomicBool::new(s.edge_docking),
         follow_mouse: AtomicBool::new(s.follow_mouse),
         arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
         monitors: std::sync::Mutex::new(Vec::new()),
+        sound_volume: std::sync::Mutex::new(s.sound_volume),
     });
 
     app.manage(SessionHistory(std::sync::Mutex::new(
@@ -854,9 +868,9 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     }
 
                     if !IS_HIDDEN.load(Ordering::Relaxed) {
-                        // Auto-enable pin only when docking occurs (runtime only, no DB write)
+                        // Edge tuck needs top-most z-order, but must not flip WINDOW_PINNED:
+                        // click-outside-to-hide checks WINDOW_PINNED (user pin only).
                         if !WINDOW_PINNED.load(Ordering::Relaxed) {
-                            WINDOW_PINNED.store(true, Ordering::Relaxed);
                             let _ = window.set_always_on_top(true);
                             let _ = window.set_focusable(false);
                             #[cfg(windows)]
@@ -875,7 +889,6 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                                         );
                                 }
                             }
-                            let _ = app_handle.emit("window-pinned-changed", true);
                         }
 
                         let window_height = rect.bottom - rect.top;
@@ -910,39 +923,28 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     IS_HIDDEN.store(false, Ordering::Relaxed);
                     CURRENT_DOCK.store(0, Ordering::Relaxed);
 
-                    // Restore pinned state based on user setting when undocked
-                    let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
-                    if let Some(db_state) = app_handle.try_state::<DbState>() {
-                        if let Ok(val) = db_state.settings_repo.get("app.window_pinned") {
-                            user_pinned = val.as_deref() == Some("true");
+                    // Restore always-on-top / focus from user pin (WINDOW_PINNED was never toggled by tuck).
+                    let user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+                    let _ = window.set_always_on_top(user_pinned);
+                    let _ = window.set_focusable(!user_pinned);
+                    #[cfg(windows)]
+                    if let Ok(hwnd) = window.hwnd() {
+                        unsafe {
+                            let ex_style = windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+                                HWND(hwnd.0),
+                                GWL_EXSTYLE,
+                            );
+                            let next = if user_pinned {
+                                ex_style | WS_EX_NOACTIVATE.0 as isize
+                            } else {
+                                ex_style & !(WS_EX_NOACTIVATE.0 as isize)
+                            };
+                            let _ = windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
+                                HWND(hwnd.0),
+                                GWL_EXSTYLE,
+                                next,
+                            );
                         }
-                    }
-
-                    let prev = WINDOW_PINNED.swap(user_pinned, Ordering::Relaxed);
-                    if prev != user_pinned {
-                        let _ = window.set_always_on_top(user_pinned);
-                        let _ = window.set_focusable(!user_pinned);
-                        #[cfg(windows)]
-                        if let Ok(hwnd) = window.hwnd() {
-                            unsafe {
-                                let ex_style =
-                                    windows::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
-                                        HWND(hwnd.0),
-                                        GWL_EXSTYLE,
-                                    );
-                                let next = if user_pinned {
-                                    ex_style | WS_EX_NOACTIVATE.0 as isize
-                                } else {
-                                    ex_style & !(WS_EX_NOACTIVATE.0 as isize)
-                                };
-                                let _ = windows::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(
-                                    HWND(hwnd.0),
-                                    GWL_EXSTYLE,
-                                    next,
-                                );
-                            }
-                        }
-                        let _ = app_handle.emit("window-pinned-changed", user_pinned);
                     }
                 }
             }
@@ -1283,7 +1285,8 @@ fn handle_blur(window: &tauri::Window) {
     }
 
     let settings = window.app_handle().state::<SettingsState>();
-    if settings.edge_docking.load(Ordering::Relaxed) {
+    // Only skip blur-hide while tucked to screen edge; visible window should still hide on blur.
+    if settings.edge_docking.load(Ordering::Relaxed) && IS_HIDDEN.load(Ordering::Relaxed) {
         return;
     }
 
@@ -1322,6 +1325,10 @@ fn handle_blur(window: &tauri::Window) {
             };
         if !down && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
+                IS_HIDDEN.store(false, Ordering::Relaxed);
+                CURRENT_DOCK.store(0, Ordering::Relaxed);
+                let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+                let _ = w.set_always_on_top(pinned);
                 let _ = w.hide();
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 release_win_keys();

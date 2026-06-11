@@ -5,7 +5,7 @@ use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::tag_repo::TagRepository;
 use crate::services::clipboard::{
-    build_entry_preview, derive_rich_text_content, truncate_html_for_preview,
+    build_entry_preview, derive_rich_text_content, entry_matches_search, truncate_html_for_preview,
 };
 use tauri::{AppHandle, Emitter, State};
 
@@ -113,18 +113,9 @@ pub fn search_clipboard_history(
     let is_tag_only = tag_only.unwrap_or(false);
     let mut history = state.repo.search(&search_term, limit, is_tag_only)?;
 
-    let term = search_term.to_lowercase();
     let session_items = session.inner().0.lock().unwrap();
     for item in session_items.iter().rev() {
-        let matches = if is_tag_only {
-            item.tags.iter().any(|t| t.to_lowercase().contains(&term))
-        } else {
-            item.content.to_lowercase().contains(&term)
-                || item.source_app.to_lowercase().contains(&term)
-                || item.tags.iter().any(|t| t.to_lowercase().contains(&term))
-        };
-
-        if matches {
+        if entry_matches_search(item, &search_term, is_tag_only) {
             if !history.iter().any(|h| h.id == item.id && item.id != 0) {
                 history.push(item.clone());
             }

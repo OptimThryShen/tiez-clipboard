@@ -279,7 +279,6 @@ pub async fn paste_text_directly(app_handle: tauri::AppHandle, content: String) 
     handle_window_focus_for_paste(&app_handle).await?;
     send_paste_keystroke("game_mode", Some(&content), Some("text"));
     hide_window_after_paste(&app_handle).await;
-    play_paste_sound_if_enabled(&app_handle);
 
     Ok(())
 }
@@ -911,9 +910,6 @@ async fn perform_paste_action(
     // Handle post-paste actions
     handle_post_paste_actions(app_handle, state, id, delete_after_use, move_to_top)?;
 
-    // Play sound if enabled
-    play_paste_sound_if_enabled(app_handle);
-
     Ok(())
 }
 
@@ -1292,6 +1288,10 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
             .spawn()
             .ok();
     }
+
+    if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
+        crate::services::ui_sound::schedule_paste_sound(app);
+    }
 }
 
 fn handle_post_paste_actions(
@@ -1354,13 +1354,6 @@ fn handle_post_paste_actions(
     }
 
     Ok(())
-}
-
-fn play_paste_sound_if_enabled(app_handle: &tauri::AppHandle) {
-    let settings = app_handle.state::<SettingsState>();
-    if settings.sound_enabled.load(Ordering::Relaxed) {
-        let _ = app_handle.emit("play-sound", "paste");
-    }
 }
 
 #[tauri::command]

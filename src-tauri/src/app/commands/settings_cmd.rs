@@ -122,8 +122,15 @@ pub fn save_setting(
         }
         "app.sound_paste_enabled" => {
             settings_state
-                .delete_after_paste
-                .store(value != "false", Ordering::Relaxed);
+                .paste_sound_enabled
+                .store(value == "true", Ordering::Relaxed);
+        }
+        "app.sound_volume" => {
+            if let Ok(v) = value.parse::<f64>() {
+                if let Ok(mut guard) = settings_state.sound_volume.lock() {
+                    *guard = v;
+                }
+            }
         }
         "app.persistent" => {
             settings_state
@@ -425,6 +432,27 @@ pub fn set_sound_enabled(
         .settings_repo
         .set("app.sound_enabled", &enabled.to_string())
         .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn set_paste_sound_enabled(
+    state: State<'_, crate::app_state::SettingsState>,
+    db_state: State<'_, DbState>,
+    enabled: bool,
+) -> AppResult<()> {
+    state
+        .paste_sound_enabled
+        .store(enabled, Ordering::Relaxed);
+    db_state
+        .settings_repo
+        .set("app.sound_paste_enabled", &enabled.to_string())
+        .map_err(AppError::from)
+}
+
+#[tauri::command]
+pub fn play_preview_sound(app_handle: tauri::AppHandle, kind: Option<String>) {
+    let kind = kind.unwrap_or_else(|| "copy".to_string());
+    crate::services::ui_sound::play_ui_sound(&app_handle, &kind);
 }
 
 #[tauri::command]

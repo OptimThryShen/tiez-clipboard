@@ -180,7 +180,14 @@ const GeneralSettingsGroup = ({
                             onChange={(e) => {
                                 const enabled = e.target.checked;
                                 setSoundEnabled(enabled);
-                                invoke("set_sound_enabled", { enabled }).catch(console.error);
+                                invoke("set_sound_enabled", { enabled })
+                                    .then(() => {
+                                        if (enabled) {
+                                            return invoke("play_preview_sound", { kind: "copy" });
+                                        }
+                                        return undefined;
+                                    })
+                                    .catch(console.error);
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -199,7 +206,14 @@ const GeneralSettingsGroup = ({
                                 onChange={(e) => {
                                     const enabled = e.target.checked;
                                     setPasteSoundEnabled(enabled);
-                                    invoke("save_setting", { key: 'app.sound_paste_enabled', value: String(enabled) }).catch(console.error);
+                                    invoke("set_paste_sound_enabled", { enabled })
+                                        .then(() => {
+                                            if (enabled && soundEnabled) {
+                                                return invoke("play_preview_sound", { kind: "paste" });
+                                            }
+                                            return undefined;
+                                        })
+                                        .catch(console.error);
                                 }}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -221,6 +235,12 @@ const GeneralSettingsGroup = ({
                                 onChange={(e) => {
                                     const val = parseFloat(e.target.value);
                                     setSoundVolume(val);
+                                }}
+                                onMouseUp={() => {
+                                    invoke("play_preview_sound", { kind: "copy" }).catch(console.error);
+                                }}
+                                onTouchEnd={() => {
+                                    invoke("play_preview_sound", { kind: "copy" }).catch(console.error);
                                 }}
                                 style={{
                                     ['--range-progress' as any]: `${soundVolume * 100}%`

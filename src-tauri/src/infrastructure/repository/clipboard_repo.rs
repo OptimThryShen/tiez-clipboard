@@ -2,6 +2,7 @@ use crate::database::{
     calc_image_hash, calc_text_hash, has_sensitive_tag, is_text_type, save_image_to_file,
     ENCRYPT_PREFIX,
 };
+use crate::services::clipboard::entry_matches_search;
 use crate::domain::models::ClipboardEntry;
 use crate::infrastructure::encryption;
 use crate::infrastructure::repository::settings_repo::SqliteSettingsRepository;
@@ -960,9 +961,12 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path
                  FROM clipboard_history ch
                  LEFT JOIN entry_tags et ON ch.id = et.entry_id
-                 WHERE ch.content LIKE '%' || ?1 || '%'
+                 WHERE (
+                    (ch.content_type IN ('text','code','url','rich_text')
+                     AND (ch.content LIKE '%' || ?1 || '%' OR ch.preview LIKE '%' || ?1 || '%'))
                     OR ch.source_app LIKE '%' || ?1 || '%'
                     OR et.tag LIKE '%' || ?1 || '%'
+                 )
                  ORDER BY ch.timestamp DESC
                  LIMIT ?2"
             };
@@ -1040,7 +1044,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                            AND se.tag COLLATE NOCASE IN {}
                      )
                        AND (
-                         ch.content LIKE '%' || ?1 || '%'
+                         (ch.content_type IN ('text','code','url','rich_text')
+                          AND (ch.content LIKE '%' || ?1 || '%' OR ch.preview LIKE '%' || ?1 || '%'))
                          OR ch.source_app LIKE '%' || ?1 || '%'
                          OR et.tag LIKE '%' || ?1 || '%'
                        )
@@ -1157,15 +1162,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     }
 
                     for entry in batch.iter() {
-                        let matches = if tag_only {
-                            entry.tags.iter().any(|t| t.to_lowercase().contains(&term))
-                        } else {
-                            entry.content.to_lowercase().contains(&term)
-                                || entry.source_app.to_lowercase().contains(&term)
-                                || entry.tags.iter().any(|t| t.to_lowercase().contains(&term))
-                        };
-
-                        if matches && seen.insert(entry.id) {
+                        if entry_matches_search(entry, &term, tag_only) && seen.insert(entry.id) {
                             results.push(entry.clone());
                             if results.len() >= limit as usize {
                                 break;

@@ -1,26 +1,35 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { isTauriRuntime } from "../lib/tauriRuntime";
+import {
+  bindSoundAudioUnlock,
+  ensureSoundAudioRunning,
+  getSoundAudioContext,
+  unlockSoundAudioContext
+} from "../lib/soundAudio";
 
 interface UseSoundEffectsOptions {
   soundEnabled: boolean;
-  soundVolume: number;
   pasteSoundEnabled: boolean;
+  soundVolume: number;
 }
 
 export const useSoundEffects = ({
   soundEnabled,
-  soundVolume,
-  pasteSoundEnabled
+  pasteSoundEnabled,
+  soundVolume
 }: UseSoundEffectsOptions) => {
   useEffect(() => {
-    const AudioContext =
-      window.AudioContext ||
-      (window as Window & { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    if (!isTauriRuntime()) return;
+
+    bindSoundAudioUnlock();
+    void unlockSoundAudioContext();
+
+    const ctx = getSoundAudioContext();
+    if (!ctx) return;
 
     const playCrispBeep = (durationSec = 0.1, baseFreqHz = 1400, volume = 0.35) => {
-      if (ctx.state === "suspended") ctx.resume();
+      if (ctx.state === "suspended") void ctx.resume();
 
       const t0 = ctx.currentTime;
       const tEnd = t0 + Math.max(0.05, durationSec);
@@ -96,7 +105,7 @@ export const useSoundEffects = ({
 
       const type = event.payload;
       if (type === "paste" && !pasteSoundEnabled) return;
-      const masterVol = Math.min(1, Math.max(0, soundVolume / 100));
+      const masterVol = Math.min(1, Math.max(0, soundVolume));
 
       const play = () => {
         try {
@@ -115,19 +124,15 @@ export const useSoundEffects = ({
         }
       };
 
-      if (ctx.state === "suspended") {
-        ctx.resume().then(play).catch((err) => {
-          console.error("Failed to resume audio ctx", err);
+      void ensureSoundAudioRunning().then((running) => {
+        if (running) {
           play();
-        });
-      } else {
-        play();
-      }
+        }
+      });
     });
 
     return () => {
       unlisten.then((f) => f());
-      ctx.close();
     };
-  }, [soundEnabled, soundVolume, pasteSoundEnabled]);
+  }, [soundEnabled, pasteSoundEnabled, soundVolume]);
 };

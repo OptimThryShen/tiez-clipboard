@@ -1,4 +1,4 @@
-use crate::database::save_image_to_file;
+use crate::database::{is_text_type, save_image_to_file};
 use crate::domain::models::ClipboardEntry;
 use base64::{engine::general_purpose, Engine as _};
 use regex::Regex;
@@ -955,6 +955,56 @@ pub fn build_entry_preview(
     }
 }
 
+/// Plain text used for search — matches what the list shows (`preview`), not file paths or raw HTML.
+pub fn entry_searchable_text(entry: &ClipboardEntry) -> String {
+    if !is_text_type(&entry.content_type) {
+        return String::new();
+    }
+
+    if !entry.preview.trim().is_empty() {
+        return entry.preview.clone();
+    }
+
+    if entry.content_type == "rich_text" {
+        let normalized = derive_rich_text_content(&entry.content, entry.html_content.as_deref());
+        if !normalized.trim().is_empty() {
+            return normalized;
+        }
+    }
+
+    entry.content.clone()
+}
+
+pub fn entry_matches_search(entry: &ClipboardEntry, term: &str, tag_only: bool) -> bool {
+    let term = term.trim().to_lowercase();
+    if term.is_empty() {
+        return false;
+    }
+
+    if tag_only {
+        return entry
+            .tags
+            .iter()
+            .any(|t| t.to_lowercase().contains(&term));
+    }
+
+    if entry
+        .tags
+        .iter()
+        .any(|t| t.to_lowercase().contains(&term))
+    {
+        return true;
+    }
+
+    if entry.source_app.to_lowercase().contains(&term) {
+        return true;
+    }
+
+    entry_searchable_text(entry)
+        .to_lowercase()
+        .contains(&term)
+}
+
 pub fn attach_rich_image_fallback(html: &str, payload: &str) -> String {
     let mut out = String::with_capacity(
         html.len()
@@ -1220,7 +1270,7 @@ mod tests {
     use super::{
         app_cleanup_policy_matches, apply_cleanup_rules, attach_rich_image_fallback,
         attach_rich_named_formats, build_entry_preview, collapse_preview_whitespace,
-        derive_rich_text_content, extract_animated_image_data_url_from_html,
+        derive_rich_text_content, entry_matches_search, extract_animated_image_data_url_from_html,
         extract_animated_image_data_url_from_text, extract_first_image_data_url_from_html,
         infer_rich_html_from_plain_text, normalize_clipboard_plain_text,
         parse_app_cleanup_policies, parse_cf_html, parse_cleanup_rules,
@@ -1228,9 +1278,29 @@ mod tests {
         truncate_html_for_preview, AppCleanupPolicy, HTML_TRUNCATION_SUFFIX,
     };
     use base64::Engine;
+    use crate::domain::models::ClipboardEntry;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn sample_entry(content_type: &str, content: &str, preview: &str) -> ClipboardEntry {
+        ClipboardEntry {
+            id: 1,
+            content_type: content_type.to_string(),
+            content: content.to_string(),
+            html_content: None,
+            source_app: "Notes".to_string(),
+            source_app_path: None,
+            timestamp: 0,
+            preview: preview.to_string(),
+            is_pinned: false,
+            tags: vec![],
+            use_count: 0,
+            is_external: false,
+            pinned_order: 0,
+            file_preview_exists: true,
+        }
+    }
 
     fn create_test_png_file(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -1261,6 +1331,35 @@ mod tests {
         } else {
             format!("file:///{}", raw)
         }
+    }
+
+    #[test]
+    fn entry_matches_search_uses_preview_not_image_path() {
+        let entry = sample_entry(
+            "image",
+            "/Users/me/Library/clipboard/screenshot-test.png",
+            "[Image Content]",
+        );
+
+        assert!(!entry_matches_search(&entry, "screenshot", false));
+        assert!(!entry_matches_search(&entry, "test", false));
+    }
+
+    #[test]
+    fn entry_matches_search_finds_text_in_preview() {
+        let entry = sample_entry("text", "full body hidden", "hello world");
+
+        assert!(entry_matches_search(&entry, "hello", false));
+        assert!(!entry_matches_search(&entry, "hidden", false));
+    }
+
+    #[test]
+    fn entry_matches_search_still_matches_tags_and_source_app() {
+        let mut entry = sample_entry("image", "/tmp/a.png", "[Image Content]");
+        entry.tags = vec!["work".to_string()];
+
+        assert!(entry_matches_search(&entry, "work", false));
+        assert!(entry_matches_search(&entry, "notes", false));
     }
 
     #[test]

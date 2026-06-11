@@ -102,6 +102,8 @@ fn main() {
             app::commands::request_cloud_sync,
             app::commands::cloud_sync_now,
             app::commands::set_sound_enabled,
+            app::commands::set_paste_sound_enabled,
+            app::commands::play_preview_sound,
             app::commands::set_file_transfer_auto_open,
             app::commands::set_arrow_key_selection,
             app::commands::set_tray_visible,

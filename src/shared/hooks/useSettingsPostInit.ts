@@ -384,8 +384,14 @@ export const useSettingsPostInit = ({
     if (settings["app.search_hotkey"] !== undefined) setSearchHotkey(settings["app.search_hotkey"]);
     setQuickPasteModifier(normalizeQuickPasteModifier(settings["app.quick_paste_modifier"]));
     if (settings["app.sequential_mode"] === "true") setSequentialModeState(true);
-    if (settings["app.sound_enabled"] === "true") setSoundEnabled(true);
-    setPasteSoundEnabled(settings["app.sound_paste_enabled"] !== "false");
+    const soundOn = settings["app.sound_enabled"] === "true";
+    setSoundEnabled(soundOn);
+    invoke("set_sound_enabled", { enabled: soundOn }).catch(console.error);
+
+    const pasteSoundOn = settings["app.sound_paste_enabled"] !== "false";
+    setPasteSoundEnabled(pasteSoundOn);
+    invoke("set_paste_sound_enabled", { enabled: pasteSoundOn }).catch(console.error);
+
     if (settings["app.sound_volume"]) {
       setSoundVolume(parseFloat(settings["app.sound_volume"]) || 1.0);
     }
