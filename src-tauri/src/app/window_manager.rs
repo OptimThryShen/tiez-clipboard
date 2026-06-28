@@ -1,8 +1,9 @@
 use crate::global_state::*;
+use crate::app_state::SettingsState;
 #[cfg(feature = "devtools")]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, Theme, WebviewWindow};
 
 #[cfg(feature = "devtools")]
 static DEVTOOLS_OPENED_ONCE: AtomicBool = AtomicBool::new(false);
@@ -45,21 +46,82 @@ pub fn maybe_open_devtools(window: &WebviewWindow) {
 #[cfg(not(feature = "devtools"))]
 pub fn maybe_open_devtools(_window: &WebviewWindow) {}
 
+pub fn clear_window_vibrancy(window: &WebviewWindow) {
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    let _ = window_vibrancy::clear_vibrancy(window);
+}
+
+pub fn clear_window_vibrancy_for_label(app: &AppHandle, label: &str) {
+    if let Some(window) = app.get_webview_window(label) {
+        clear_window_vibrancy(&window);
+    }
+}
+
+pub fn apply_window_vibrancy(app: &AppHandle, window: &WebviewWindow) {
+    let settings = app.state::<SettingsState>();
+    let theme = settings.theme.lock().unwrap().clone();
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    clear_window_vibrancy(window);
+
+    #[cfg(target_os = "macos")]
+    {
+        use window_vibrancy::{
+            apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
+        };
+
+        let material = match theme.as_str() {
+            "mica" => Some(NSVisualEffectMaterial::Sidebar),
+            "acrylic" => Some(NSVisualEffectMaterial::HudWindow),
+            _ => None,
+        };
+
+        if let Some(material) = material {
+            let _ = apply_vibrancy(
+                window,
+                material,
+                Some(NSVisualEffectState::FollowsWindowActiveState),
+                Some(12.0),
+            );
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let is_dark =
+            matches!(window.theme().unwrap_or(Theme::Dark), Theme::Dark);
+        if theme == "mica" {
+            let _ = window_vibrancy::apply_mica(window, Some(is_dark));
+        } else if theme == "acrylic" {
+            let _ = window_vibrancy::apply_acrylic(
+                window,
+                Some(if is_dark {
+                    (30, 30, 30, 40)
+                } else {
+                    (240, 240, 240, 40)
+                }),
+            );
+        }
+    }
+}
+
 pub fn toggle_window(app_handle: &AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
         let is_visible = window.is_visible().unwrap_or(false);
-        let is_hidden_by_edge = IS_HIDDEN.load(Ordering::Relaxed);
+        let is_tucked = crate::app::setup::is_window_edge_tucked(&window);
 
-        if is_visible && !is_hidden_by_edge {
+        if is_visible && !is_tucked {
             let _ = app_handle.emit("force-hide-compact-preview", ());
             let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
             let _ = window.set_always_on_top(pinned);
             #[cfg(not(target_os = "windows"))]
             let _ = window.set_focusable(false);
+            clear_window_vibrancy(&window);
             let _ = window.hide();
             let _ = restore_previous_app_focus(app_handle.clone());
 
             IS_HIDDEN.store(false, Ordering::Relaxed);
+            CURRENT_DOCK.store(0, Ordering::Relaxed);
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
             return;
@@ -79,11 +141,13 @@ pub fn toggle_window(app_handle: &AppHandle) {
             }
         }
 
-        IS_HIDDEN.store(false, Ordering::Relaxed);
-        NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
-        let _was_docked = is_hidden_by_edge;
-        CURRENT_DOCK.store(0, Ordering::Relaxed);
-        crate::app::setup::persist_edge_dock(app_handle, 0);
+        let expanded = crate::app::setup::expand_from_edge_dock(app_handle, &window);
+        if !expanded {
+            IS_HIDDEN.store(false, Ordering::Relaxed);
+            CURRENT_DOCK.store(0, Ordering::Relaxed);
+            crate::app::setup::persist_edge_dock(app_handle, 0);
+            NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+        }
 
         // Basic toggle: show window
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
@@ -103,13 +167,20 @@ pub fn toggle_window(app_handle: &AppHandle) {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-
-        let _ = window.show();
-        #[cfg(target_os = "macos")]
-        if !pinned {
-            let _ = window.set_focus();
+        if !expanded {
+            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
         }
+
+        apply_window_vibrancy(app_handle, &window);
+        let _ = window.show();
+        // macOS: deliberately do NOT call `set_focus()` here. Tauri's
+        // `set_focus()` calls `activateIgnoringOtherApps:YES`, which would make
+        // TieZ the frontmost application and resign the previous app's text
+        // input (e.g. a Finder rename in progress). `show()` only does
+        // `makeKeyAndOrderFront:`, which makes the window key (so blur-based
+        // auto-hide still works) without activating the app — the previous app
+        // stays frontmost. Arrow-key navigation is then routed via the global
+        // CGEventTap (see paste_key_monitor) since the webview is not frontmost.
         maybe_open_devtools(&window);
     }
 }
@@ -119,6 +190,14 @@ pub fn set_navigation_enabled(enabled: bool) -> Result<(), String> {
     NAVIGATION_ENABLED.store(enabled, Ordering::SeqCst);
     if !enabled {
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_macos_header_pass_height(height: f64) -> Result<(), String> {
+    if height.is_finite() && height > 0.0 {
+        MACOS_HEADER_PASS_HEIGHT.store(height.ceil() as u32, Ordering::Relaxed);
     }
     Ok(())
 }
@@ -157,6 +236,7 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         let _ = window.set_always_on_top(pinned);
         #[cfg(not(target_os = "windows"))]
         let _ = window.set_focusable(false);
+        clear_window_vibrancy(&window);
         let _ = window.hide();
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -174,6 +254,7 @@ pub fn toggle_window_cmd(app_handle: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = crate::app::setup::expand_from_edge_dock(&app_handle, &window);
         IS_HIDDEN.store(false, Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         crate::app::setup::persist_edge_dock(&app_handle, 0);

@@ -1716,7 +1716,7 @@ const ClipboardItem = ({
                 )
             }
             <div className={`content-preview-shell${overlayTagsInPreview ? ' has-overlay-tags' : ''}`}>
-                <div className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${item.content_type === 'file' ? 'file-preview' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>
+                <div data-content-type={item.content_type} className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${item.content_type === 'file' ? 'file-preview' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>
                 {item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
                         {item.is_external && item.file_preview_exists === false ? (
@@ -1892,8 +1892,8 @@ const ClipboardItem = ({
                         )
                         : item.preview
                 )}
-                {overlayTagsInPreview && renderTagsContainer(true)}
                 </div>
+                {overlayTagsInPreview && renderTagsContainer(true)}
             </div>
 
             {/* AI Options - Compact Mode: Dropdown Panel, Normal Mode: Inline */}

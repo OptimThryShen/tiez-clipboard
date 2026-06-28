@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { RefObject } from "react";
 import { matchesHotkey } from "./useHotkeyMatching";
-import { useWindowVisibility } from "./useWindowVisibility";
 import type { ClipboardEntry } from "../types";
 
 interface UseKeyboardNavigationOptions {
@@ -50,7 +49,6 @@ export const useKeyboardNavigation = ({
   const filteredHistoryRef = useRef(filteredHistory);
   const selectedIndexRef = useRef(selectedIndex);
   const isKeyboardModeRef = useRef(isKeyboardMode);
-  const isWindowVisibleRef = useWindowVisibility();
   const showSettingsRef = useRef(showSettings);
   const showTagManagerRef = useRef(showTagManager);
   const chatModeRef = useRef(chatMode);
@@ -58,6 +56,7 @@ export const useKeyboardNavigation = ({
   const arrowKeySelectionRef = useRef(arrowKeySelection);
   const copyToClipboardRef = useRef(copyToClipboard);
   const richPasteHotkeyRef = useRef(richPasteHotkey);
+  const lastNavigationKeyRef = useRef<{ key: string; time: number }>({ key: "", time: 0 });
 
   useEffect(() => { filteredHistoryRef.current = filteredHistory; }, [filteredHistory]);
   useEffect(() => { selectedIndexRef.current = selectedIndex; }, [selectedIndex]);
@@ -74,10 +73,39 @@ export const useKeyboardNavigation = ({
   }, [isKeyboardMode]);
 
   useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const resetKeyboardNavigation = () => {
+      setIsKeyboardMode(false);
+      setSelectedIndex(0);
+    };
+
+    const unlistenHide = appWindow.listen("tauri://hide", resetKeyboardNavigation);
+
+    return () => {
+      unlistenHide.then(f => f());
+    };
+  }, [setIsKeyboardMode, setSelectedIndex]);
+
+  useEffect(() => {
     let isPastingLocal = false;
 
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (!isWindowVisibleRef.current) return;
+      let isVisible = true;
+      try {
+        isVisible = await getCurrentWindow().isVisible();
+      } catch {
+        isVisible = false;
+      }
+      if (!isVisible) {
+        isKeyboardModeRef.current = false;
+        selectedIndexRef.current = 0;
+        setIsKeyboardMode(false);
+        setSelectedIndex(0);
+        return;
+      }
+
+      if (e.defaultPrevented) return;
+
       if (isPastingLocal) {
         e.preventDefault();
         e.stopPropagation();
@@ -106,8 +134,14 @@ export const useKeyboardNavigation = ({
         } else {
           const isClipboardAtTop = !isKeyboardModeRef.current || selectedIndexRef.current <= 0;
           if (isClipboardAtTop) {
+            isKeyboardModeRef.current = false;
+            selectedIndexRef.current = 0;
+            setIsKeyboardMode(false);
+            setSelectedIndex(0);
             invoke("hide_window_cmd").catch(console.error);
           } else {
+            isKeyboardModeRef.current = true;
+            selectedIndexRef.current = 0;
             setIsKeyboardMode(true);
             setSelectedIndex(0);
           }
@@ -128,18 +162,23 @@ export const useKeyboardNavigation = ({
         e.preventDefault();
         e.stopPropagation();
 
-        setIsKeyboardMode((prev) => {
-          if (!prev) {
-            setSelectedIndex(0);
-            return true;
-          }
-          if (e.key === "ArrowDown") {
-            setSelectedIndex((s) => Math.min(s + 1, filteredHistoryRef.current.length - 1));
-          } else {
-            setSelectedIndex((s) => Math.max(s - 1, 0));
-          }
-          return true;
-        });
+        const now = performance.now();
+        const lastNavigationKey = lastNavigationKeyRef.current;
+        if (lastNavigationKey.key === e.key && now - lastNavigationKey.time < 90) {
+          return;
+        }
+        lastNavigationKeyRef.current = { key: e.key, time: now };
+
+        const maxIndex = Math.max(0, filteredHistoryRef.current.length - 1);
+        const current = isKeyboardModeRef.current ? selectedIndexRef.current : -1;
+        const nextIndex = e.key === "ArrowDown"
+          ? Math.min(current + 1, maxIndex)
+          : Math.max(current <= 0 ? 0 : current - 1, 0);
+
+        isKeyboardModeRef.current = true;
+        selectedIndexRef.current = nextIndex;
+        setIsKeyboardMode(true);
+        setSelectedIndex(nextIndex);
         return;
       }
 
@@ -157,6 +196,8 @@ export const useKeyboardNavigation = ({
           isPastingLocal = true;
           const item = currentHistory[currentIndex];
 
+          isKeyboardModeRef.current = false;
+          selectedIndexRef.current = 0;
           setIsKeyboardMode(false);
           setSelectedIndex(0);
 
@@ -213,19 +254,32 @@ export const useKeyboardNavigation = ({
       }
 
       if (action === "up") {
-        if (!isNavMode) {
-          setIsKeyboardMode(true);
-          setSelectedIndex(0);
-        } else {
-          setSelectedIndex((prev) => Math.max(prev - 1, 0));
+        const now = performance.now();
+        const lastNavigationKey = lastNavigationKeyRef.current;
+        if (lastNavigationKey.key === action && now - lastNavigationKey.time < 90) {
+          return;
         }
+        lastNavigationKeyRef.current = { key: action, time: now };
+
+        const nextIndex = isNavMode ? Math.max(currentIndex - 1, 0) : 0;
+        isKeyboardModeRef.current = true;
+        selectedIndexRef.current = nextIndex;
+        setIsKeyboardMode(true);
+        setSelectedIndex(nextIndex);
       } else if (action === "down") {
-        if (!isNavMode) {
-          setIsKeyboardMode(true);
-          setSelectedIndex(0);
-        } else {
-          setSelectedIndex((prev) => Math.min(prev + 1, history.length - 1));
+        const now = performance.now();
+        const lastNavigationKey = lastNavigationKeyRef.current;
+        if (lastNavigationKey.key === action && now - lastNavigationKey.time < 90) {
+          return;
         }
+        lastNavigationKeyRef.current = { key: action, time: now };
+
+        const maxIndex = Math.max(0, history.length - 1);
+        const nextIndex = isNavMode ? Math.min(currentIndex + 1, maxIndex) : 0;
+        isKeyboardModeRef.current = true;
+        selectedIndexRef.current = nextIndex;
+        setIsKeyboardMode(true);
+        setSelectedIndex(nextIndex);
       } else if (action === "enter") {
         if (!isNavMode) return;
         if (currentIndex >= 0 && currentIndex < history.length) {
@@ -234,6 +288,8 @@ export const useKeyboardNavigation = ({
         }
       } else if (action === "escape") {
         setSearch("");
+        isKeyboardModeRef.current = false;
+        selectedIndexRef.current = 0;
         setIsKeyboardMode(false);
       }
     });

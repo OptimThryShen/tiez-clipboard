@@ -12,7 +12,7 @@ use tauri::{AppHandle, Manager};
 #[cfg(target_os = "macos")]
 const MAX_MACOS_TEXT_BYTES: usize = 128 * 1024;
 #[cfg(target_os = "macos")]
-const MIN_CLIPBOARD_EVENT_INTERVAL_MS: u64 = 80; // Reduced from 120ms
+const MIN_CLIPBOARD_EVENT_INTERVAL_MS: u64 = 40;
 
 fn build_rich_image_fallback_data_url(
     width: usize,
@@ -71,8 +71,10 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
         // 2. We don't use sequence check on macOS as we rely on polling/listener triggering.
 
-        // Give source app (especially Excel) time to release lock/finish writing
-        // Reduced from 100ms to 20ms for better responsiveness.
+        // Give source app (especially Excel) a brief moment to finish writing.
+        #[cfg(target_os = "macos")]
+        std::thread::sleep(std::time::Duration::from_millis(8));
+        #[cfg(not(target_os = "macos"))]
         std::thread::sleep(std::time::Duration::from_millis(20));
 
         // Initialize clipboard for this thread

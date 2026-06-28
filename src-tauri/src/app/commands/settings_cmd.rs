@@ -17,6 +17,7 @@ pub fn set_sequential_mode(
     let _ = db_state
         .settings_repo
         .set("app.sequential_mode", &enabled.to_string());
+    let _ = sync_registered_hotkeys(&app_handle);
 }
 
 #[tauri::command]
@@ -464,7 +465,11 @@ pub fn set_sound_enabled(
     db_state
         .settings_repo
         .set("app.sound_enabled", &enabled.to_string())
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+    if enabled {
+        crate::services::ui_sound::preload_ui_sounds();
+    }
+    Ok(())
 }
 
 #[tauri::command]

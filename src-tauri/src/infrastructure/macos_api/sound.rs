@@ -80,3 +80,23 @@ fn play_from_cache(
         })
     })
 }
+
+/// Warm NSSound caches at startup so the first copy feedback is not delayed by AppKit loading.
+pub fn preload_clipboard_sounds() {
+    autoreleasepool(|_| {
+        COPY_SOUND.with(|slot| {
+            let mut cached_sound = slot.borrow_mut();
+            if cached_sound.is_none() {
+                let ns_name = NSString::from_str("Tink");
+                *cached_sound = NSSound::soundNamed(&ns_name);
+            }
+        });
+        PASTE_SOUND.with(|slot| {
+            let mut cached_sound = slot.borrow_mut();
+            if cached_sound.is_none() {
+                let ns_name = NSString::from_str("Frog");
+                *cached_sound = NSSound::soundNamed(&ns_name);
+            }
+        });
+    });
+}

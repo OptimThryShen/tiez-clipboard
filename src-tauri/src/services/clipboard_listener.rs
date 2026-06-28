@@ -3,7 +3,7 @@ use clipboard_rs::{ClipboardHandler, ClipboardWatcher, ClipboardWatcherContext};
 use std::sync::Arc;
 
 #[cfg(target_os = "macos")]
-const MIN_MACOS_LISTENER_INTERVAL_MS: u64 = 120;
+const MIN_MACOS_LISTENER_INTERVAL_MS: u64 = 50;
 
 #[cfg(target_os = "macos")]
 struct MacClipboardHandler {

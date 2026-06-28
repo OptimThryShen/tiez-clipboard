@@ -32,6 +32,10 @@ pub fn play_ui_sound(app_handle: &AppHandle, kind: &str) {
         .map(|v| *v)
         .unwrap_or(1.0);
 
+    play_ui_sound_at_volume(kind, volume);
+}
+
+pub fn play_ui_sound_at_volume(kind: &str, volume: f64) {
     #[cfg(target_os = "macos")]
     {
         crate::infrastructure::macos_api::sound::play_clipboard_sound(kind, volume);
@@ -40,6 +44,14 @@ pub fn play_ui_sound(app_handle: &AppHandle, kind: &str) {
     #[cfg(not(target_os = "macos"))]
     {
         crate::infrastructure::bundled_sound::play_clipboard_sound(kind, volume);
+    }
+}
+
+/// Preload native sound assets when sound effects are enabled.
+pub fn preload_ui_sounds() {
+    #[cfg(target_os = "macos")]
+    {
+        crate::infrastructure::macos_api::sound::preload_clipboard_sounds();
     }
 }
 

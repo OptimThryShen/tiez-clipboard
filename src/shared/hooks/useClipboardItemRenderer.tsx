@@ -13,6 +13,7 @@ interface UseClipboardItemRendererOptions {
   revealedIds: Set<number>;
   isKeyboardMode: boolean;
   selectedIndex: number;
+  selectedItemId: number | null;
   isWindowPinned: boolean;
   editingTagsId: number | null;
   tagInput: string;
@@ -63,6 +64,7 @@ export const useClipboardItemRenderer = ({
   revealedIds,
   isKeyboardMode,
   selectedIndex,
+  selectedItemId,
   isWindowPinned,
   editingTagsId,
   tagInput,
@@ -108,7 +110,7 @@ export const useClipboardItemRenderer = ({
           id={`clipboard-item-${item.id}`}
           key={item.id}
           item={item}
-          isSelected={isKeyboardMode && index === selectedIndex}
+          isSelected={isKeyboardMode && (selectedItemId !== null ? item.id === selectedItemId : index === selectedIndex)}
           windowPinned={isWindowPinned}
           isSensitiveHidden={!!isSensitiveHidden}
           isRevealed={revealedIds.has(item.id)}
@@ -201,6 +203,7 @@ export const useClipboardItemRenderer = ({
       revealedIds,
       isKeyboardMode,
       selectedIndex,
+      selectedItemId,
       isWindowPinned,
       editingTagsId,
       tagInput,

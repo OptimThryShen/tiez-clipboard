@@ -94,6 +94,63 @@ const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
 
 const QUICK_PASTE_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] as const;
 
+type MacosNonactivatingClick = {
+  clientX: number;
+  clientY: number;
+  screenX: number;
+  screenY: number;
+};
+
+const handleMacosNonactivatingClick = (
+  payload: MacosNonactivatingClick,
+  history: ClipboardEntry[],
+  copyToClipboard: (
+    id: number,
+    content: string,
+    contentType: string,
+    pasteWithFormat?: boolean,
+    isPinned?: boolean,
+    tags?: string[]
+  ) => Promise<void>
+) => {
+  const { clientX, clientY } = payload;
+  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
+
+  const target = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+  if (!target) return;
+
+  const itemEl = target.closest("[data-test-clipboard-item]") as HTMLElement | null;
+  if (!itemEl) return;
+
+  const interactive = target.closest(
+    'button, input, textarea, [role="button"], .drag-handle'
+  ) as HTMLElement | null;
+  if (interactive && itemEl.contains(interactive)) {
+    invoke("activate_window_focus").catch(console.error);
+    setTimeout(() => interactive.click(), 0);
+    return;
+  }
+
+  if (target.closest("a") && itemEl.contains(target.closest("a")!)) {
+    return;
+  }
+
+  const idMatch = itemEl.id.match(/^clipboard-item-(\d+)$/);
+  if (!idMatch) return;
+
+  const item = history.find((entry) => entry.id === Number(idMatch[1]));
+  if (!item) return;
+
+  void copyToClipboard(
+    item.id,
+    item.content,
+    item.content_type,
+    false,
+    item.is_pinned,
+    item.tags || []
+  );
+};
+
 const buildQuickPasteHintsById = (
   items: ClipboardEntry[],
   quickPasteModifier: QuickPasteModifier
@@ -221,6 +278,8 @@ const App = () => {
     richTextSnapshotPreview,
     setRichTextSnapshotPreview,
     setSilentStart,
+    showAppBorder,
+    setWinClipboardDisabled,
     theme,
     setTheme,
     colorMode,
@@ -632,28 +691,20 @@ const App = () => {
     setSettingsLoaded
   });
 
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
-
-    const unlisten = listen("focus-search-input", () => {
-      setShowSettings(false);
-      setShowTagManager(false);
-      setChatMode(false);
-      setShowEmojiPanel(false);
-      setShowSearchBox(true);
-      setSearchIsFocused(true);
-      invoke("activate_window_focus")
-        .catch(console.error)
-        .finally(() => {
-          requestAnimationFrame(() => {
-            searchInputRef.current?.focus();
-          });
+  const focusSearchBox = useCallback(() => {
+    setShowSettings(false);
+    setShowTagManager(false);
+    setChatMode(false);
+    setShowEmojiPanel(false);
+    setShowSearchBox(true);
+    setSearchIsFocused(true);
+    invoke("activate_window_focus")
+      .catch(console.error)
+      .finally(() => {
+        requestAnimationFrame(() => {
+          searchInputRef.current?.focus();
         });
-    });
-
-    return () => {
-      unlisten.then((off) => off());
-    };
+      });
   }, [
     setShowSettings,
     setShowTagManager,
@@ -663,6 +714,35 @@ const App = () => {
     setSearchIsFocused,
     searchInputRef
   ]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    let disposed = false;
+    const unlistenPromise = listen("focus-search", () => {
+      if (disposed) return;
+      focusSearchBox();
+    });
+
+    return () => {
+      disposed = true;
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => { });
+    };
+  }, [focusSearchBox]);
+
+  useEffect(() => {
+    const handleSearchKeydown = (event: KeyboardEvent) => {
+      if (isRecording || isRecordingSequential || isRecordingRich || isRecordingSearch) return;
+      if (!searchHotkey || searchHotkey === t('not_set')) return;
+      if (matchesHotkey(event, searchHotkey)) {
+        event.preventDefault();
+        focusSearchBox();
+      }
+    };
+
+    window.addEventListener('keydown', handleSearchKeydown, true);
+    return () => window.removeEventListener('keydown', handleSearchKeydown, true);
+  }, [searchHotkey, isRecording, isRecordingSequential, isRecordingRich, isRecordingSearch, t, focusSearchBox]);
 
   useEffect(() => {
     if (!emojiPanelEnabled && showEmojiPanel) {
@@ -685,7 +765,8 @@ const App = () => {
     setFileServerEnabled,
     setActualPort,
     setLocalIp,
-    setAvailableIps
+    setAvailableIps,
+    setWinClipboardDisabled
   });
 
   useWindowPinnedListener({
@@ -702,7 +783,8 @@ const App = () => {
     settingsLoaded,
     clipboardItemFontSize,
     clipboardTagFontSize,
-    surfaceOpacity
+    surfaceOpacity,
+    showAppBorder
   });
 
   // Pre-warm compact preview window only where warmup is safe.
@@ -885,6 +967,64 @@ const App = () => {
       virtualListRef
     });
 
+  const copyToClipboardRef = useRef(copyToClipboard);
+  const historyRef = useRef(history);
+  copyToClipboardRef.current = copyToClipboard;
+  historyRef.current = history;
+
+  useEffect(() => {
+    if (!isTauriRuntime() || !isMacPlatform()) return;
+
+    let disposed = false;
+    const unlistenPromise = listen<MacosNonactivatingClick>("macos-nonactivating-click", (event) => {
+      if (disposed) return;
+      handleMacosNonactivatingClick(
+        event.payload,
+        historyRef.current,
+        copyToClipboardRef.current
+      );
+    });
+
+    return () => {
+      disposed = true;
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => { });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime() || !isMacPlatform()) return;
+
+    const syncHeaderHeight = () => {
+      const header = document.querySelector("header");
+      const height = header?.getBoundingClientRect().height;
+      if (!height || !Number.isFinite(height)) return;
+      invoke("set_macos_header_pass_height", { height }).catch(console.error);
+    };
+
+    syncHeaderHeight();
+    const header = document.querySelector("header");
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined" && header
+        ? new ResizeObserver(syncHeaderHeight)
+        : null;
+    resizeObserver?.observe(header as Element);
+    window.addEventListener("resize", syncHeaderHeight);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", syncHeaderHeight);
+    };
+  }, [
+    showSearchBox,
+    showSettings,
+    showTagManager,
+    effectiveShowTagManager,
+    effectiveShowEmojiPanel,
+    showTagFilter,
+    searchIsFocused,
+    typeFilter
+  ]);
+
   const { saveMqtt, saveCloudSync, clearHistory, handleResetSettings } = useAppActions({
     t,
     mqttEnabled,
@@ -929,12 +1069,18 @@ const App = () => {
     setHistory
   });
 
-  useListSelectionReset({ filteredHistory, setSelectedIndex });
+  const navigableHistory = useMemo(
+    () => [...pinnedItems, ...unpinnedItems],
+    [pinnedItems, unpinnedItems]
+  );
+  const selectedItemId = navigableHistory[selectedIndex]?.id ?? null;
+
+  useListSelectionReset({ filteredHistory: navigableHistory, setSelectedIndex });
 
   useSearchFetchTrigger({ debouncedSearch, isComposing, typeFilter, fetchHistory });
 
   useScrollToSelection({
-    filteredHistory,
+    filteredHistory: navigableHistory,
     selectedIndex,
     isKeyboardMode,
     pinnedCount: pinnedItems.length,
@@ -942,7 +1088,7 @@ const App = () => {
   });
 
   useKeyboardNavigation({
-    filteredHistory,
+    filteredHistory: navigableHistory,
     selectedIndex,
     setSelectedIndex,
     isKeyboardMode,
@@ -964,6 +1110,7 @@ const App = () => {
     revealedIds,
     isKeyboardMode,
     selectedIndex,
+    selectedItemId,
     isWindowPinned,
     editingTagsId,
     tagInput,
@@ -1062,10 +1209,9 @@ const App = () => {
       />
 
       <main
-        className={`main-content${chatMode ? " file-transfer-mode" : ""}${effectiveShowTagManager ? " tag-manager-mode" : ""}`}
-        style={{ 
-          overflowY: (showSettings || effectiveShowTagManager) ? 'auto' : 'hidden',
-          padding: effectiveShowTagManager ? '0' : undefined
+        className={`main-content${chatMode ? " file-transfer-mode" : ""}${effectiveShowTagManager ? " tag-manager-mode" : ""}${showSettings ? " settings-mode" : ""}`}
+        style={{
+          padding: effectiveShowTagManager ? "0" : undefined
         }}
         onWheel={handleMainWheel}
       >

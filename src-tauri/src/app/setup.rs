@@ -568,6 +568,165 @@ fn apply_dock_position_on_main(window: &tauri::WebviewWindow, dock: i32) {
     }
 }
 
+/// Whether the main window is tucked to a screen edge (by flags or geometry).
+pub fn is_window_edge_tucked(window: &tauri::WebviewWindow) -> bool {
+    if IS_HIDDEN.load(Ordering::Relaxed) || CURRENT_DOCK.load(Ordering::Relaxed) != 0 {
+        return true;
+    }
+
+    let (Ok(pos), Ok(size), Ok(Some(monitor))) = (
+        window.outer_position().or_else(|_| window.inner_position()),
+        window.outer_size().or_else(|_| window.inner_size()),
+        window.current_monitor(),
+    ) else {
+        return false;
+    };
+
+    let screen = monitor.position();
+    let screen_size = monitor.size();
+    let rect_left = pos.x;
+    let rect_top = pos.y;
+    let rect_right = pos.x + size.width as i32;
+    let rect_bottom = pos.y + size.height as i32;
+    let screen_left = screen.x;
+    let screen_top = screen.y;
+    let screen_right = screen.x + screen_size.width as i32;
+    let screen_bottom = screen.y + screen_size.height as i32;
+
+    #[cfg(target_os = "macos")]
+    {
+        visibility_ratio_on_monitor(
+            rect_left,
+            rect_top,
+            rect_right,
+            rect_bottom,
+            screen_left,
+            screen_top,
+            screen_right,
+            screen_bottom,
+        ) < 0.18
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let threshold = 5;
+        rect_top <= screen_top + threshold
+            || rect_left <= screen_left + threshold
+            || rect_right >= screen_right - threshold
+    }
+}
+
+fn infer_edge_dock_from_geometry(
+    rect_left: i32,
+    rect_top: i32,
+    rect_right: i32,
+    screen_left: i32,
+    screen_top: i32,
+    screen_right: i32,
+) -> i32 {
+    let threshold = 5;
+    if rect_top <= screen_top + threshold {
+        1
+    } else if rect_left <= screen_left + threshold {
+        2
+    } else if rect_right >= screen_right - threshold {
+        3
+    } else {
+        0
+    }
+}
+
+fn restore_pin_state_after_edge_expand(app_handle: &AppHandle, window: &tauri::WebviewWindow) {
+    let mut user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
+    if let Some(db_state) = app_handle.try_state::<DbState>() {
+        if let Ok(val) = db_state.settings_repo.get("app.window_pinned") {
+            user_pinned = val.as_deref() == Some("true");
+        }
+    }
+
+    let prev = WINDOW_PINNED.swap(user_pinned, Ordering::Relaxed);
+    if prev != user_pinned {
+        let _ = window.set_always_on_top(user_pinned);
+        #[cfg(target_os = "windows")]
+        let _ = window.set_focusable(!user_pinned);
+        #[cfg(target_os = "macos")]
+        let _ = window.set_focusable(true);
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        let _ = window.set_focusable(false);
+        let _ = app_handle.emit("window-pinned-changed", user_pinned);
+    } else {
+        let _ = window.set_always_on_top(user_pinned);
+    }
+}
+
+/// Pull the window fully on-screen after edge tuck. Returns true if a tuck was expanded.
+pub fn expand_from_edge_dock(app_handle: &AppHandle, window: &tauri::WebviewWindow) -> bool {
+    let mut dock = CURRENT_DOCK.load(Ordering::Relaxed);
+
+    let (Ok(pos), Ok(size), Ok(Some(monitor))) = (
+        window.outer_position().or_else(|_| window.inner_position()),
+        window.outer_size().or_else(|_| window.inner_size()),
+        window.current_monitor(),
+    ) else {
+        return false;
+    };
+
+    let screen = monitor.position();
+    let screen_size = monitor.size();
+    let screen_left = screen.x;
+    let screen_top = screen.y;
+    let screen_right = screen.x + screen_size.width as i32;
+    let rect_left = pos.x;
+    let rect_top = pos.y;
+    let rect_right = pos.x + size.width as i32;
+    let window_width = size.width as i32;
+
+    if dock == 0 {
+        dock = infer_edge_dock_from_geometry(
+            rect_left,
+            rect_top,
+            rect_right,
+            screen_left,
+            screen_top,
+            screen_right,
+        );
+    }
+
+    if dock == 0 {
+        return false;
+    }
+
+    match dock {
+        1 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(rect_left, screen_top));
+        }
+        2 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(screen_left, rect_top));
+        }
+        3 => {
+            let _ = window.set_position(tauri::PhysicalPosition::new(
+                screen_right - window_width,
+                rect_top,
+            ));
+        }
+        _ => return false,
+    }
+
+    let _ = window.show();
+    IS_HIDDEN.store(false, Ordering::Relaxed);
+    CURRENT_DOCK.store(0, Ordering::Relaxed);
+    persist_edge_dock(app_handle, 0);
+    restore_pin_state_after_edge_expand(app_handle, window);
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+    NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+
+    true
+}
+
 fn setup_main_window(app: &App, s: &StartupSettings) {
     let effective_pinned = s.window_pinned;
     WINDOW_PINNED.store(effective_pinned, Ordering::Relaxed);
@@ -628,7 +787,6 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
                     // window-state plugin restores geometry asynchronously.
                     CURRENT_DOCK.store(restore_dock, Ordering::Relaxed);
                     IS_HIDDEN.store(true, Ordering::Relaxed);
-                    WINDOW_PINNED.store(true, Ordering::Relaxed);
                     let _ = window.set_always_on_top(true);
                     apply_dock_position_on_main(&window, restore_dock);
 
@@ -668,6 +826,9 @@ fn start_services(app: &App, s: &StartupSettings, app_handle: AppHandle) {
     #[cfg(target_os = "macos")]
     crate::infrastructure::macos_api::paste_key_monitor::start_paste_key_monitor();
     crate::services::clipboard::start_clipboard_monitor(app_handle.clone());
+    if s.sound_enabled {
+        crate::services::ui_sound::preload_ui_sounds();
+    }
     crate::services::mqtt_sub::start_mqtt_client(app_handle.clone());
     crate::services::cloud_sync::start_cloud_sync_client(app_handle.clone());
     start_edge_docking_monitor(app_handle.clone());
@@ -901,7 +1062,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 continue;
             }
 
-            if now.saturating_sub(last_show) < 500 {
+            // Grace period after showing — but never block mouse-reveal while tucked.
+            if !is_hidden_by_edge && now.saturating_sub(last_show) < 500 {
                 continue;
             }
 
@@ -973,47 +1135,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
             if is_hidden_by_edge {
                 if is_mouse_in {
-                    let dock_actual = match CURRENT_DOCK.load(Ordering::Relaxed) {
-                        1 => DockPosition::Top,
-                        2 => DockPosition::Left,
-                        3 => DockPosition::Right,
-                        _ => DockPosition::None,
-                    };
-
-                    if dock_actual != DockPosition::None {
-                        let _ = window.show();
-                        match dock_actual {
-                            DockPosition::Top => {
-                                let _ = window.set_position(tauri::Position::Physical(
-                                    tauri::PhysicalPosition {
-                                        x: rect_left,
-                                        y: screen_top,
-                                    },
-                                ));
-                            }
-                            DockPosition::Left => {
-                                let _ = window.set_position(tauri::Position::Physical(
-                                    tauri::PhysicalPosition {
-                                        x: screen_left,
-                                        y: rect_top,
-                                    },
-                                ));
-                            }
-                            DockPosition::Right => {
-                                let window_width = rect_right - rect_left;
-                                let _ = window.set_position(tauri::Position::Physical(
-                                    tauri::PhysicalPosition {
-                                        x: screen_right - window_width,
-                                        y: rect_top,
-                                    },
-                                ));
-                            }
-                            DockPosition::None => {}
-                        }
-                        IS_HIDDEN.store(false, Ordering::Relaxed);
-                        CURRENT_DOCK.store(0, Ordering::Relaxed);
-                        persist_edge_dock(&app_handle, 0);
-                    }
+                    let _ = expand_from_edge_dock(&app_handle, &window);
                 }
             } else if dock != DockPosition::None {
                 // Keep the window fully visible while cursor is still inside it.
@@ -1022,12 +1144,9 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 }
 
                 if !IS_HIDDEN.load(Ordering::Relaxed) {
-                    // Auto-enable pin when docking occurs (runtime only, no DB write).
+                    // Keep top-most z-order for the edge sliver without flipping WINDOW_PINNED.
                     if !WINDOW_PINNED.load(Ordering::Relaxed) {
-                        WINDOW_PINNED.store(true, Ordering::Relaxed);
                         let _ = window.set_always_on_top(true);
-                        let _ = window.set_focusable(true);
-                        let _ = app_handle.emit("window-pinned-changed", true);
                     }
 
                     let window_height = rect_bottom - rect_top;
@@ -1140,8 +1259,8 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     continue;
                 }
 
-                // Grace period after showing to prevent immediate re-dock
-                if now.saturating_sub(last_show) < 500 {
+                // Grace period after showing — but never block mouse-reveal while tucked.
+                if !is_hidden_by_edge && now.saturating_sub(last_show) < 500 {
                     continue;
                 }
 
@@ -1237,48 +1356,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
 
                 if is_hidden_by_edge {
                     if is_mouse_in {
-                        let current_dock = CURRENT_DOCK.load(Ordering::Relaxed);
-                        let dock_actual = match current_dock {
-                            1 => DockPosition::Top,
-                            2 => DockPosition::Left,
-                            3 => DockPosition::Right,
-                            _ => DockPosition::None,
-                        };
-
-                        if dock_actual != DockPosition::None {
-                            let _ = window.show();
-                            match dock_actual {
-                                DockPosition::Top => {
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: rect.left,
-                                            y: screen_top,
-                                        },
-                                    ));
-                                }
-                                DockPosition::Left => {
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: screen_left,
-                                            y: rect.top,
-                                        },
-                                    ));
-                                }
-                                DockPosition::Right => {
-                                    let w = rect.right - rect.left;
-                                    let _ = window.set_position(tauri::Position::Physical(
-                                        tauri::PhysicalPosition {
-                                            x: screen_right - w,
-                                            y: rect.top,
-                                        },
-                                    ));
-                                }
-                                _ => {}
-                            }
-
-                            IS_HIDDEN.store(false, Ordering::Relaxed);
-                            CURRENT_DOCK.store(0, Ordering::Relaxed);
-                        }
+                        let _ = expand_from_edge_dock(&app_handle, &window);
                     }
                 } else if dock != DockPosition::None {
                     // Don't dock while dragging (Left Mouse Button down)
@@ -1571,15 +1649,6 @@ pub fn handle_global_shortcut(
             }
         }
 
-        if let Ok(search_s) = {
-            let val = settings.search_hotkey.lock().unwrap().clone();
-            val.replace("Win", "Super").parse::<Shortcut>()
-        } {
-            if shortcut == &search_s {
-                toggle_window(app);
-                let _ = app.emit("focus-search-input", ());
-            }
-        }
     } else if state == ShortcutState::Released {
         if let Ok(seq_s) = {
             let val = settings.sequential_paste_hotkey.lock().unwrap().clone();
@@ -1603,6 +1672,16 @@ pub fn handle_global_shortcut(
         } {
             if shortcut == &rich_s {
                 crate::services::clipboard_ops::paste_latest_rich(app.clone());
+                return;
+            }
+        }
+
+        if let Ok(search_s) = {
+            let val = settings.search_hotkey.lock().unwrap().clone();
+            val.replace("Win", "Super").parse::<Shortcut>()
+        } {
+            if shortcut == &search_s {
+                let _ = app.emit("focus-search", ());
                 return;
             }
         }
@@ -1657,6 +1736,10 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
             }
             api.prevent_close();
             let _ = window.app_handle().emit("force-hide-compact-preview", ());
+            crate::app::window_manager::clear_window_vibrancy_for_label(
+                window.app_handle(),
+                window.label(),
+            );
             let _ = window.hide();
             IS_HIDDEN.store(false, Ordering::Relaxed);
             CURRENT_DOCK.store(0, Ordering::Relaxed);
@@ -1728,11 +1811,6 @@ fn handle_blur(window: &tauri::Window) {
         return;
     }
 
-    let settings = window.app_handle().state::<SettingsState>();
-    if settings.edge_docking.load(Ordering::Relaxed) {
-        return;
-    }
-
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1751,9 +1829,15 @@ fn handle_blur(window: &tauri::Window) {
         std::thread::sleep(std::time::Duration::from_millis(150));
         let down = IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst);
 
-        if !down && matches!(w.is_focused(), Ok(false)) {
+        let tucked_by_edge = IS_HIDDEN.load(Ordering::Relaxed)
+            || CURRENT_DOCK.load(Ordering::Relaxed) != 0;
+        if !down && !tucked_by_edge && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
                 let _ = w.app_handle().emit("force-hide-compact-preview", ());
+                crate::app::window_manager::clear_window_vibrancy_for_label(
+                    w.app_handle(),
+                    w.label(),
+                );
                 let _ = w.hide();
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 crate::app::window_manager::release_modifier_keys();
@@ -1765,11 +1849,6 @@ fn handle_blur(window: &tauri::Window) {
 #[cfg(target_os = "windows")]
 fn handle_blur(window: &tauri::Window) {
     if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
-        return;
-    }
-
-    let settings = window.app_handle().state::<SettingsState>();
-    if settings.edge_docking.load(Ordering::Relaxed) {
         return;
     }
 
@@ -1791,9 +1870,15 @@ fn handle_blur(window: &tauri::Window) {
         let down = IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst);
 
         // Hide window on blur unless mouse is down or pinned.
-        if !down && matches!(w.is_focused(), Ok(false)) {
+        let tucked_by_edge = IS_HIDDEN.load(Ordering::Relaxed)
+            || CURRENT_DOCK.load(Ordering::Relaxed) != 0;
+        if !down && !tucked_by_edge && matches!(w.is_focused(), Ok(false)) {
             if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
                 let _ = w.app_handle().emit("force-hide-compact-preview", ());
+                crate::app::window_manager::clear_window_vibrancy_for_label(
+                    w.app_handle(),
+                    w.label(),
+                );
                 let _ = w.hide();
                 NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
                 release_modifier_keys();

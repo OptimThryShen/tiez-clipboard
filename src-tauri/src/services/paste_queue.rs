@@ -1,4 +1,5 @@
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory};
+use crate::app::commands::hotkey_cmd::sync_registered_hotkeys;
 use crate::database::DbState;
 use crate::error::AppResult;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
@@ -25,6 +26,7 @@ pub fn set_paste_queue(
 ) -> AppResult<()> {
     if item_ids.is_empty() {
         state.inner().0.lock().unwrap().items.clear();
+        let _ = sync_registered_hotkeys(&app_handle);
         return Ok(());
     }
 
@@ -39,6 +41,7 @@ pub fn set_paste_queue(
 
     // Automatically prepare the first item
     prepare_next_paste_item(&app_handle);
+    let _ = sync_registered_hotkeys(&app_handle);
 
     Ok(())
 }
@@ -210,5 +213,13 @@ async fn paste_next_step_inner(app_handle: tauri::AppHandle) {
         }
     } else {
         let _ = app_handle.emit("queue-finished", ());
+    }
+
+    let queue_empty = {
+        let queue = state.inner().0.lock().unwrap();
+        queue.items.is_empty()
+    };
+    if queue_empty {
+        let _ = sync_registered_hotkeys(&app_handle);
     }
 }

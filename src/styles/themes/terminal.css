@@ -1,0 +1,340 @@
+/*
+ * Terminal Theme — macOS Terminal.app "Pro" + zsh
+ * Dense scrollback layout, Menlo, bracket tags, square chrome, prompt search.
+ */
+
+:root.theme-terminal,
+body.theme-terminal {
+  background-color: #1e1e1e !important;
+
+  --font-main: Menlo, "SF Mono", ui-monospace, Monaco, Consolas, monospace;
+  --font-mono: var(--font-main);
+  --font-size-md: 13px;
+  --clipboard-item-font-size: 13px;
+  --clipboard-tag-font-size: 10px;
+
+  --radius-window: 8px;
+  --radius-panel: 6px;
+  --radius-card: 0;
+  --radius-control: 4px;
+  --radius-pill: 4px;
+
+  --spacing-md: 12px;
+  --spacing-sm: 6px;
+
+  --shell-backdrop-filter: none;
+  --shell-radius: 8px;
+
+  --content-font-family: var(--font-main);
+  --content-line-height: 1.45;
+  --empty-state-font-family: var(--font-main);
+  --empty-state-text-transform: none;
+
+  --title-font-family: var(--font-main);
+  --title-font-weight: 500;
+  --title-font-size: 12px;
+  --title-letter-spacing: 0;
+  --title-transform: none;
+  --title-color: var(--term-fg-dim);
+  --title-background: transparent;
+
+  --meta-text-transform: none;
+  --meta-letter-spacing: 0;
+
+  /* Layout: tight scrollback, no card gutters */
+  --layout-header-padding-y: 4px;
+  --layout-header-inner-x: 12px;
+  --layout-header-inner-gap: 6px;
+  --layout-header-actions-gap: 3px;
+  --layout-header-btn-shadow: none;
+  --layout-header-btn-shadow-hover: none;
+  --layout-header-btn-shadow-active: none;
+  --layout-search-margin-top: 0;
+  --layout-search-padding-x: 12px;
+  --layout-search-input-padding: 6px 10px 6px 28px;
+  --layout-search-input-font-size: 13px;
+  --layout-search-icon-left: 10px;
+  --layout-main-padding-y: 0;
+  --layout-main-padding-bottom: 0;
+  --layout-main-gap: 0;
+  --layout-list-padding-x: 0;
+  --layout-item-margin-x: 0;
+  --layout-item-margin-bottom: 0;
+  --layout-item-padding: 7px 14px 6px 14px;
+  --layout-item-padding-compact: 5px 12px 4px 12px;
+  --layout-item-background: transparent;
+  --layout-item-hover-background: rgba(255, 255, 255, 0.04);
+  --layout-item-divider: 1px solid rgba(255, 255, 255, 0.04);
+  --layout-drag-handle-radius: 4px;
+  --layout-btn-icon-padding: 5px;
+  --layout-meta-font-size: 10px;
+  --layout-meta-font-weight: 500;
+  --layout-meta-border-bottom: none;
+  --layout-meta-padding-bottom: 2px;
+  --layout-tag-list-gap: 5px;
+  --layout-tag-chip-padding: 2px 9px;
+  --layout-overlay-tag-padding: 1px 10px;
+  --layout-overlay-tag-min-height: 20px;
+  --layout-overlay-tag-font-size: 10px;
+  --layout-overlay-tag-line-height: 1;
+  --layout-overlay-tag-reserve: 24px;
+  --tag-chip-font-weight: 600;
+  --tag-chip-font-family: var(--font-main);
+  --tag-chip-text-transform: lowercase;
+  --tag-chip-letter-spacing: 0.03em;
+
+  /* Pro (dark) */
+  --term-bg: #1e1e1e;
+  --term-bg-elevated: #252525;
+  --term-bg-input: #2a2a2a;
+  --term-fg: #ececec;
+  --term-fg-dim: #a1a1a1;
+  --term-fg-muted: #6e6e6e;
+  --term-green: #32d74b;
+  --term-blue: #0a84ff;
+  --term-border: #3a3a3c;
+  --term-border-subtle: #2c2c2e;
+  --term-selection: rgba(10, 132, 255, 0.28);
+
+  --bg-body: var(--term-bg);
+  --bg-window: var(--term-bg);
+  --bg-content: var(--term-bg);
+  --bg-toolbar: var(--term-bg);
+  --bg-panel: var(--term-bg-elevated);
+  --bg-input: var(--term-bg-input);
+  --bg-element: transparent;
+  --bg-button: var(--term-bg-elevated);
+
+  --text-primary: var(--term-fg);
+  --text-secondary: var(--term-fg-dim);
+  --text-muted: var(--term-fg-muted);
+
+  --accent-color: var(--term-green);
+  --accent-color-rgb: 50, 215, 75;
+  --accent-hover: #28c840;
+  --accent-soft: rgba(50, 215, 75, 0.14);
+
+  --line-soft: var(--term-border-subtle);
+  --line-strong: var(--term-border);
+
+  --shadow-xs: none;
+  --shadow-sm: none;
+  --shadow-md: 0 10px 32px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
+  --shadow-inset: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+
+  --shell-background: var(--term-bg);
+  --shell-border: 1px solid #333336;
+  --shell-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+
+  --toolbar-border: 1px solid var(--term-border-subtle);
+  --toolbar-shadow: none;
+
+  --input-border: 1px solid var(--term-border);
+  --input-radius: 4px;
+  --input-shadow: none;
+  --input-focus-border-color: var(--term-green);
+  --input-focus-shadow: 0 0 0 2px rgba(50, 215, 75, 0.18);
+  --input-font-weight: 400;
+
+  --button-border: 1px solid var(--term-border);
+  --button-radius: 4px;
+  --button-shadow: none;
+  --button-hover-shadow: none;
+  --button-hover-transform: none;
+  --button-active-shadow: none;
+  --button-active-transform: none;
+  --button-active-filled-background: rgba(50, 215, 75, 0.14);
+  --button-active-filled-color: var(--term-green);
+  --button-active-filled-border-color: rgba(50, 215, 75, 0.45);
+  --button-active-filled-shadow: none;
+  --button-text-transform: none;
+  --button-font-weight: 500;
+  --button-letter-spacing: 0;
+
+  --card-border: none;
+  --card-radius: 0;
+  --card-shadow: none;
+  --card-hover-shadow: none;
+  --card-hover-transform: none;
+  --card-hover-border-color: transparent;
+  --card-active-shadow: none;
+  --card-active-transform: none;
+  --card-selected-background: var(--term-selection);
+  --card-selected-border-color: transparent;
+  --card-selected-shadow: none;
+  --card-selected-outline: none;
+
+  --panel-border: 1px solid var(--term-border);
+  --panel-radius: 6px;
+  --panel-shadow: none;
+  --panel-header-background: var(--term-bg-elevated);
+  --panel-divider-color: var(--term-border-subtle);
+
+  --data-panel-border: 1px solid var(--term-border);
+  --data-panel-radius: 4px;
+  --data-panel-shadow: none;
+  --data-panel-hover-background: var(--term-bg-input);
+
+  --segmented-border: 1px solid var(--term-border);
+  --segmented-radius: 4px;
+  --segmented-shadow: none;
+  --segment-radius: 3px;
+  --segment-font-weight: 500;
+  --segment-text-transform: none;
+  --segment-active-background: var(--term-bg-input);
+  --segment-active-color: var(--term-green);
+  --segment-active-shadow: inset 0 0 0 1px var(--term-border);
+
+  --keycap-border: 1px solid var(--term-border);
+  --keycap-radius: 4px;
+  --keycap-shadow: none;
+
+  --tags-border: 1px solid var(--term-border);
+  --tags-radius: 4px;
+  --tags-shadow: none;
+  --tag-chip-border: 1px solid rgba(255, 255, 255, 0.1);
+  --tag-chip-radius: 4px;
+  --tag-chip-shadow: none;
+  --tag-chip-hover-shadow: none;
+  --tag-chip-hover-transform: none;
+  --tag-chip-active-shadow: none;
+  --tag-chip-active-transform: none;
+
+  --menu-border: 1px solid var(--term-border);
+  --menu-radius: 4px;
+  --menu-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --menu-item-hover-background: var(--term-green);
+  --menu-item-hover-color: #0d1a0f;
+
+  --modal-border: 1px solid var(--term-border);
+  --modal-radius: 6px;
+  --modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --dialog-button-border: 1px solid var(--term-border);
+  --dialog-button-radius: 4px;
+  --dialog-button-shadow: none;
+  --dialog-button-hover-shadow: none;
+  --dialog-button-hover-transform: none;
+  --dialog-button-active-shadow: none;
+  --dialog-button-active-transform: none;
+
+  --scrollbar-size: 8px;
+  --scrollbar-size-thin: 4px;
+  --scrollbar-radius: 4px;
+  --scrollbar-track-background: var(--term-bg);
+  --scrollbar-thumb-color: #5a5a5c;
+  --scrollbar-thumb-hover-color: var(--term-green);
+
+  --queue-border: 1px solid var(--term-border);
+  --queue-radius: 4px;
+  --queue-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --queue-count-rotate: 0deg;
+  --queue-button-text-transform: none;
+
+  --reset-button-border: 1px solid rgba(255, 95, 86, 0.35);
+  --reset-button-radius: 4px;
+  --reset-button-shadow: none;
+}
+
+body.theme-terminal #root {
+  background: var(--shell-background) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: var(--shell-radius);
+  overflow: hidden;
+  background-clip: border-box;
+}
+
+html.theme-terminal,
+body.theme-terminal {
+  background-color: var(--term-bg) !important;
+}
+
+body.theme-terminal .app-container {
+  border-radius: 0;
+  -webkit-clip-path: none;
+  clip-path: none;
+  overflow: hidden;
+}
+
+body.theme-terminal #root::before,
+body.theme-terminal::after {
+  display: none !important;
+}
+
+/* Basic (light) */
+:root.light-mode.theme-terminal,
+body.light-mode.theme-terminal {
+  background-color: #ffffff !important;
+
+  --term-bg: #ffffff;
+  --term-bg-elevated: #f5f5f7;
+  --term-bg-input: #ffffff;
+  --term-fg: #1d1d1f;
+  --term-fg-dim: #6e6e73;
+  --term-fg-muted: #86868b;
+  --term-green: #248a3d;
+  --term-border: #d1d1d6;
+  --term-border-subtle: #e5e5ea;
+  --term-selection: rgba(0, 122, 255, 0.18);
+
+  --layout-item-hover-background: rgba(0, 0, 0, 0.04);
+  --layout-item-divider: 1px solid rgba(0, 0, 0, 0.05);
+
+  --shell-border: 1px solid #d1d1d6;
+  --shell-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
+
+body.theme-terminal,
+body.theme-terminal .search-input,
+body.theme-terminal .history-item,
+body.theme-terminal .item-content,
+body.theme-terminal .item-meta,
+body.theme-terminal .preview-text,
+body.theme-terminal .settings-group,
+body.theme-terminal .theme-choice-title {
+  font-family: var(--font-main);
+  font-variant-ligatures: none;
+}
+
+.theme-terminal .search-input {
+  caret-color: var(--term-green);
+  font-family: var(--font-main);
+}
+
+.theme-terminal .search-input::placeholder {
+  color: var(--term-fg-muted);
+  opacity: 1;
+}
+
+.theme-terminal .history-item.selected {
+  transform: none !important;
+}
+
+.theme-terminal .history-item.selected .item-meta::before {
+  content: "% ";
+  color: var(--term-green);
+  font-weight: 600;
+}
+
+.theme-terminal .btn-icon {
+  color: var(--term-fg-dim);
+}
+
+.theme-terminal .btn-icon:hover {
+  color: var(--term-fg);
+}
+
+.theme-terminal .segment-btn.active {
+  color: var(--term-green);
+}
+
+.theme-terminal .settings-choice-grid {
+  gap: 6px;
+}
+
+.theme-terminal .theme-choice-btn {
+  border-radius: 4px;
+  font-family: var(--font-main);
+  font-size: 12px;
+}

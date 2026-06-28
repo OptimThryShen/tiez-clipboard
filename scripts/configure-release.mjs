@@ -1,5 +1,15 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+
+const applyVersion = spawnSync(
+  process.execPath,
+  [resolve("scripts/apply-app-version.mjs")],
+  { stdio: "inherit", env: process.env },
+);
+if (applyVersion.status !== 0) {
+  process.exit(applyVersion.status ?? 1);
+}
 
 const isCi = process.env.GITHUB_ACTIONS === "true" || process.env.CI === "true";
 

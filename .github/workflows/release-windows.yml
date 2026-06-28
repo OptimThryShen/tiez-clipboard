@@ -40,6 +40,11 @@ jobs:
       - name: install frontend dependencies
         run: npm install
 
+      - name: prepare release config
+        env:
+          TIEZ_PLATFORM: windows
+        run: node scripts/configure-release.mjs
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

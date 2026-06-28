@@ -4,7 +4,7 @@
   border: var(--button-border);
   border-radius: var(--button-radius);
   color: var(--text-primary);
-  padding: 6px;
+  padding: var(--layout-btn-icon-padding);
   cursor: pointer;
   box-shadow: var(--button-shadow);
   display: flex;

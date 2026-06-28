@@ -38,16 +38,19 @@
 .tags-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: var(--layout-tag-list-gap);
 }
 
 .tag-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 2px 8px;
+    padding: var(--layout-tag-chip-padding);
     font-size: var(--clipboard-tag-font-size);
-    font-weight: 700;
+    font-weight: var(--tag-chip-font-weight);
+    font-family: var(--tag-chip-font-family);
+    text-transform: var(--tag-chip-text-transform);
+    letter-spacing: var(--tag-chip-letter-spacing);
     line-height: 1.2;
     color: #fff;
     cursor: pointer;
@@ -178,6 +181,314 @@
 /* --- Retro-specific accents --- */
 .theme-retro .tag-chip {
     font-weight: 800;
+}
+
+/* --- Terminal: zsh prompt search + flat tag picker --- */
+.theme-terminal .search-container .search-icon {
+  display: none;
+}
+
+.theme-terminal .search-prompt {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  left: var(--layout-search-icon-left);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--term-green, var(--accent-color));
+  font-family: var(--font-main);
+  font-weight: 600;
+  font-size: var(--layout-search-input-font-size);
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.theme-terminal .search-input.dropdown-open {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-bottom-color: var(--term-border, var(--line-strong)) !important;
+}
+
+.theme-terminal .tags-dropdown {
+  margin-top: 0 !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  border-top: none !important;
+  border-radius: 0 0 4px 4px !important;
+  background: var(--term-bg-input, var(--bg-input)) !important;
+  box-shadow: none !important;
+  max-height: min(220px, 42vh);
+}
+
+.theme-terminal .tags-dropdown .tags-label {
+  display: block;
+  padding: 5px 10px 3px;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-main);
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 1;
+  color: var(--term-fg-muted, var(--text-muted));
+  border-bottom: 1px solid var(--term-border-subtle, var(--line-soft));
+}
+
+.theme-terminal .tags-dropdown .tags-label::before {
+  content: "# ";
+  color: var(--term-green, var(--accent-color));
+  font-weight: 600;
+}
+
+.theme-terminal .tags-dropdown .tags-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 2px 0 4px;
+}
+
+.theme-terminal .tags-dropdown .tag-chip {
+  width: 100%;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  filter: none !important;
+  padding: 5px 10px !important;
+  justify-content: flex-start;
+  font-family: var(--font-main);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+}
+
+.theme-terminal .tags-dropdown .tag-chip::before {
+  content: "tag:";
+  color: var(--term-green, var(--accent-color));
+  font-weight: 600;
+  margin-right: 6px;
+  opacity: 1;
+}
+
+.theme-terminal .tags-dropdown .tag-chip::after {
+  content: none;
+}
+
+.theme-terminal .tags-dropdown .tag-chip:hover {
+  filter: brightness(1.1) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.theme-terminal .tag-chip {
+  font-weight: 600;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.theme-terminal .tag-chip:hover,
+.theme-terminal .tag-chip:active {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.theme-terminal .item-tags-container.overlay .tag-chip {
+  box-shadow: none !important;
+}
+
+.theme-terminal .tag-chip::before {
+  content: "#";
+  color: var(--term-green, var(--accent-color));
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.theme-terminal .tag-chip::after {
+  content: none;
+}
+
+body.light-mode.theme-terminal .tag-chip::before {
+  color: var(--term-green, #248a3d);
+}
+
+/* --- Receipt: thermal ticket tags & search --- */
+.theme-receipt .search-prompt {
+  display: none;
+}
+
+.theme-receipt .search-container .search-icon {
+  display: none;
+}
+
+.theme-receipt .search-input-row::before {
+  content: "*";
+  position: absolute;
+  left: var(--layout-search-icon-left);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--rc-ink, var(--text-primary));
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: var(--layout-search-input-font-size);
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.theme-receipt .search-input.dropdown-open {
+  border-bottom: none !important;
+}
+
+.theme-receipt .tags-dropdown {
+  margin-top: 0 !important;
+  padding: 4px 0 !important;
+  gap: 0 !important;
+  border-top: 1px dashed var(--rc-line, var(--line-soft)) !important;
+  border-radius: 0 !important;
+  background: var(--rc-paper, var(--bg-input)) !important;
+  box-shadow: none !important;
+}
+
+.theme-receipt .tags-dropdown .tags-label {
+  padding: 4px 8px 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 1;
+  color: var(--rc-ink-fade, var(--text-secondary));
+  border-bottom: 1px dashed var(--rc-line, var(--line-soft));
+}
+
+.theme-receipt .tags-dropdown .tags-list {
+  flex-direction: column;
+  gap: 0;
+}
+
+.theme-receipt .tags-dropdown .tag-chip {
+  width: 100%;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 4px 8px !important;
+  justify-content: flex-start;
+  border-bottom: 1px dashed rgba(0, 0, 0, 0.08) !important;
+}
+
+.theme-receipt .tags-dropdown .tag-chip::before {
+  content: "* ";
+  color: var(--rc-ink, var(--text-primary));
+  font-weight: 700;
+  margin-right: 0;
+}
+
+.theme-receipt .tag-chip {
+  border-style: dashed !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.theme-receipt .tag-chip::before {
+  content: "* ";
+  color: inherit;
+  opacity: 0.65;
+  font-weight: 700;
+}
+
+.theme-receipt .tag-chip:hover,
+.theme-receipt .tag-chip:active {
+  filter: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-receipt .tags-dropdown .tag-chip {
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* --- Ink: seal stamp tags --- */
+.theme-ink .tag-chip {
+  border-style: solid !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.theme-ink .tag-chip::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--ink-seal, var(--accent-color));
+  margin-right: 5px;
+  flex-shrink: 0;
+  transform: rotate(12deg);
+}
+
+.theme-ink .tag-chip:hover,
+.theme-ink .tag-chip:active {
+  filter: none !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.theme-ink .search-input.dropdown-open {
+  border-radius: 0 !important;
+}
+
+.theme-ink .tags-dropdown {
+  margin-top: 4px !important;
+  padding: 8px 10px 10px !important;
+  border-radius: 2px !important;
+  background: rgba(255, 255, 255, 0.55) !important;
+  border: 1px solid var(--ink-line, var(--line-soft)) !important;
+  box-shadow: none !important;
+}
+
+body.dark-mode.theme-ink .tags-dropdown {
+  background: var(--ink-paper) !important;
+  border-color: var(--ink-line) !important;
+}
+
+.theme-ink .tags-dropdown .tags-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: none;
+  opacity: 1;
+  color: var(--ink-muted, var(--text-muted));
+  border-bottom: 1px solid var(--ink-line, var(--line-soft));
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+.theme-ink .tags-dropdown .tags-list {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.theme-ink .tags-dropdown .tag-chip {
+  width: 100%;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 5px 4px !important;
+  justify-content: flex-start;
+}
+
+.theme-ink .tags-dropdown .tag-chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--ink-seal, var(--accent-color));
+  border-radius: 1px;
+  transform: rotate(8deg);
+}
+
+.theme-ink .tags-dropdown .tag-chip:hover {
+  background: var(--ink-mist, rgba(0, 0, 0, 0.04)) !important;
+  filter: none !important;
 }
 
 /* --- Modern Styles (Mica / Acrylic) --- */

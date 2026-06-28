@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import {
@@ -46,6 +46,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
     const [newItemContent, setNewItemContent] = useState('');
     const [sidebarWidth, setSidebarWidth] = useState(160);
     const [sidebarHeight, setSidebarHeight] = useState(180);
+    const sidebarSizeRef = useRef({ width: 160, height: 180 });
     const [isResizing, setIsResizing] = useState(false);
     const [isStacked, setIsStacked] = useState(false);
     const [isManageMode, setIsManageMode] = useState(false);
@@ -54,6 +55,40 @@ export default function TagManager({ t, theme }: TagManagerProps) {
 
     const selectedTagRef = useRef<string | null>(null);
     useEffect(() => { selectedTagRef.current = selectedTag; }, [selectedTag]);
+
+    useEffect(() => {
+        sidebarSizeRef.current = {
+            width: isCollapsed ? 48 : sidebarWidth,
+            height: sidebarHeight,
+        };
+    }, [sidebarWidth, sidebarHeight, isCollapsed]);
+
+    const persistSidebarSize = useCallback(() => {
+        const { width, height } = sidebarSizeRef.current;
+        invoke('save_setting', {
+            key: 'app.tag_manager_size',
+            value: JSON.stringify({ width, height }),
+        }).catch(console.error);
+    }, []);
+
+    useEffect(() => {
+        invoke<Record<string, string>>('get_settings')
+            .then((settings) => {
+                const raw = settings['app.tag_manager_size'];
+                if (!raw) return;
+                const parsed = JSON.parse(raw) as { width?: number; height?: number };
+                if (typeof parsed.width === 'number' && parsed.width >= 48) {
+                    setSidebarWidth(parsed.width);
+                    if (parsed.width < 110) {
+                        setIsCollapsed(true);
+                    }
+                }
+                if (typeof parsed.height === 'number' && parsed.height >= 120) {
+                    setSidebarHeight(parsed.height);
+                }
+            })
+            .catch(console.error);
+    }, []);
 
     useEffect(() => {
         try {
@@ -124,6 +159,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
             setIsResizing(false);
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
+            persistSidebarSize();
         };
 
         document.body.style.cursor = isStacked ? "row-resize" : "col-resize";
@@ -137,7 +173,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
         };
-    }, [isResizing, isStacked, isCollapsed]);
+    }, [isResizing, isStacked, isCollapsed, persistSidebarSize]);
 
     const fetchTags = async () => {
         try {
@@ -279,7 +315,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 ["--tag-sidebar-width" as any]: isCollapsed ? '48px' : `${sidebarWidth}px`,
                 ["--tm-sidebar-height" as any]: `${sidebarHeight}px`
             } as any}
-            onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
         >
             {/* Sidebar with CRUD support */}
             {/* Sidebar with Unified Search & Create */}

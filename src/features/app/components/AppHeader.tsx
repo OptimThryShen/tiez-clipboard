@@ -217,9 +217,13 @@ const AppHeader = ({
               style={{ flexShrink: 0 }}
             >
               <div className="search-container">
-                <div style={{ position: 'relative' }}>
-                  <Search size={14} className="search-icon" />
-                  <input
+                <div className="search-input-wrap">
+                  <div className="search-input-row">
+                    <span className="search-prompt" aria-hidden="true">
+                      %
+                    </span>
+                    <Search size={14} className="search-icon" />
+                    <input
                     ref={searchInputRef}
                     type="text"
                     className={`search-input ${showTagFilter && allTags.length > 0 ? 'dropdown-open' : ''}`}
@@ -251,6 +255,7 @@ const AppHeader = ({
                     }}
                     style={{ color: colorMode === 'dark' ? '#ffffff' : undefined }}
                   />
+                  </div>
                   {showTagFilter && searchIsFocused && allTags.length > 0 && (
                     <div className="tags-dropdown">
                       <div className="tags-label">{t('tags') || "Tags"}</div>

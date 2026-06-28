@@ -30,6 +30,9 @@ body.theme-mica {
   --shell-border: 1px solid rgba(255, 255, 255, 0.42);
   --shell-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
   --shell-radius: 10px;
+  /* Mica = matte/frosted: near-opaque with only a light blur, vs Acrylic's
+     deep see-through glass. The faint grain texture does the rest. */
+  --shell-backdrop-filter: blur(10px) saturate(118%);
 
   --toolbar-border: 1px solid rgba(128, 128, 128, 0.15);
 
@@ -99,8 +102,28 @@ body.theme-mica::before {
   border-radius: calc(var(--shell-radius) + 1px);
 }
 
+/*
+ * With a custom image, paint it INSIDE #root (above the shell fill, below
+ * content) so it stays visible even when surface opacity makes the shell fully
+ * opaque. The behind-glass copy on body::before is disabled to avoid doubling.
+ */
 body.has-custom-bg.theme-mica::before {
+  background-image: none;
+  opacity: 0;
+}
+
+body.has-custom-bg.theme-mica #root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--custom-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   opacity: var(--custom-bg-opacity, 0.45);
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
 }
 
 body.theme-mica:not(.has-custom-bg)::before {
@@ -157,6 +180,7 @@ body.theme-mica #root > * {
     --shell-background: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
     --shell-border: 1px solid rgba(255, 255, 255, 0.08);
     --shell-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+    --shell-backdrop-filter: blur(12px) saturate(122%);
     --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
     --panel-border: 1px solid rgba(255, 255, 255, 0.08);
     --menu-border: 1px solid rgba(255, 255, 255, 0.08);
@@ -197,6 +221,7 @@ body.dark-mode.theme-mica {
   --shell-background: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.08);
   --shell-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  --shell-backdrop-filter: blur(12px) saturate(122%);
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
   --panel-border: 1px solid rgba(255, 255, 255, 0.08);
   --menu-border: 1px solid rgba(255, 255, 255, 0.08);

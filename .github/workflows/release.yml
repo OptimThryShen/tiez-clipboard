@@ -22,6 +22,7 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       VITE_AI_DEFAULT_API_KEY: ${{ secrets.VITE_AI_DEFAULT_API_KEY }}
+      TIEZ_PLATFORM: macos
       TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
       VITE_TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
       TIEZ_UPDATE_ENDPOINT: ${{ vars.TIEZ_UPDATE_ENDPOINT }}

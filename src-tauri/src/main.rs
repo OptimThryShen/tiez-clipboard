@@ -54,6 +54,7 @@ fn main() -> AppResult<()> {
             app::window_manager::activate_window_focus,
             app::window_manager::focus_clipboard_window,
             app::window_manager::set_navigation_enabled,
+            app::window_manager::set_macos_header_pass_height,
             app::window_manager::set_navigation_mode,
             app::hooks::set_recording_mode,
             services::content_handler::open_content,

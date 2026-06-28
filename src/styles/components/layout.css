@@ -1,11 +1,11 @@
 header {
-  padding: 6px 0;
+  padding: var(--layout-header-padding-y) 0;
   background: var(--bg-toolbar);
   border-bottom: var(--toolbar-border);
   box-shadow: var(--toolbar-shadow);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--layout-header-inner-gap);
   flex-shrink: 0;
   user-select: none;
   cursor: default;
@@ -15,8 +15,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 var(--spacing-md);
-  gap: var(--spacing-sm);
+  padding: 0 var(--layout-header-inner-x);
+  gap: var(--layout-header-inner-gap);
   min-height: 20px;
 }
 
@@ -144,22 +144,22 @@ header {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--layout-header-actions-gap);
 }
 
 .header-actions .btn-icon,
 .header-leading > .btn-icon {
-  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06);
+  box-shadow: var(--layout-header-btn-shadow);
 }
 
 .header-actions .btn-icon:hover,
 .header-leading > .btn-icon:hover {
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--layout-header-btn-shadow-hover);
 }
 
 .header-actions .btn-icon:active,
 .header-leading > .btn-icon:active {
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+  box-shadow: var(--layout-header-btn-shadow-active);
 }
 
 .header-chat-btn {
@@ -173,9 +173,21 @@ header {
 .search-container {
   position: relative;
   width: 100%;
-  margin-top: 2px;
+  margin-top: var(--layout-search-margin-top);
   overflow: visible !important;
-  padding: 0 var(--spacing-md);
+  padding: 0 var(--layout-search-padding-x);
+}
+
+.search-input-wrap {
+  position: relative;
+}
+
+.search-input-row {
+  position: relative;
+}
+
+.search-prompt {
+  display: none;
 }
 
 .search-input {
@@ -183,11 +195,11 @@ header {
   background: var(--bg-input);
   border: var(--input-border);
   border-radius: var(--input-radius);
-  padding: 10px 12px 10px 36px;
+  padding: var(--layout-search-input-padding);
   color: var(--text-primary);
   font-family: inherit;
   font-weight: var(--input-font-weight);
-  font-size: 14px;
+  font-size: var(--layout-search-input-font-size);
   outline: none;
   box-shadow: var(--input-shadow);
   transition:
@@ -210,7 +222,7 @@ select.search-input option {
 
 .search-icon {
   position: absolute;
-  left: 12px;
+  left: var(--layout-search-icon-left);
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-secondary);
@@ -218,13 +230,24 @@ select.search-input option {
 
 .main-content {
   flex: 1;
-  overflow-y: hidden;
-  padding: 6px 0 12px 0;
+  overflow: hidden;
+  padding: var(--layout-main-padding-y) 0 var(--layout-main-padding-bottom) 0;
   display: flex;
   flex-direction: column;
   background: var(--bg-content);
-  gap: 6px;
+  gap: var(--layout-main-gap);
   width: 100%;
+  min-height: 0;
+}
+
+.main-content.settings-mode,
+.main-content.tag-manager-mode {
+  min-height: 0;
+}
+
+.main-content.settings-mode .settings-view {
+  flex: 1;
+  min-height: 0;
 }
 
 .main-content.file-transfer-mode {
@@ -259,15 +282,16 @@ select.search-input option {
 .virtual-list-wrapper .virtuoso-scroller {
   width: calc(100% + var(--scrollbar-overlay-width, 10px));
   margin-right: calc(var(--scrollbar-overlay-width, 10px) * -1);
-  padding: 0 8px;
+  padding: 0 var(--layout-list-padding-x);
   box-sizing: border-box;
   overflow-x: hidden;
 }
 
 .history-item {
   position: relative;
-  padding: 10px 12px 8px 12px;
-  background: var(--bg-element);
+  padding: var(--layout-item-padding);
+  background: var(--layout-item-background);
+  border-bottom: var(--layout-item-divider);
   border: var(--card-border);
   border-radius: var(--card-radius);
   color: var(--text-primary);
@@ -278,7 +302,7 @@ select.search-input option {
     border-color 0.18s ease,
     box-shadow 0.18s ease,
     transform 0.18s ease;
-  margin: 0 8px 2px 8px;
+  margin: 0 var(--layout-item-margin-x) var(--layout-item-margin-bottom) var(--layout-item-margin-x);
   height: 100%;
   overflow: visible;
   display: flex;
@@ -288,13 +312,13 @@ select.search-input option {
 
 .history-item.compact {
   height: 100%;
-  padding: 6px 10px 4px 10px;
+  padding: var(--layout-item-padding-compact);
 }
 
 .history-item:hover {
   transform: var(--card-hover-transform);
   box-shadow: var(--card-hover-shadow);
-  background: var(--bg-input);
+  background: var(--layout-item-hover-background);
   border-color: var(--card-hover-border-color);
 }
 
@@ -318,7 +342,7 @@ select.search-input option {
   display: flex !important;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
+  border-radius: var(--layout-drag-handle-radius);
   transition: all 0.2s;
   color: var(--text-secondary);
 }

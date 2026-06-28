@@ -2,7 +2,7 @@
 :root.theme-acrylic,
 body.theme-acrylic {
   background-color: transparent !important;
-  --bg-window: rgba(252, 252, 252, calc(0.56 * var(--surface-opacity-scale, 1)));
+  --bg-window: rgba(252, 252, 252, calc(0.5 * var(--surface-opacity-scale, 1)));
   --bg-content: transparent;
   --bg-toolbar: transparent;
   --bg-panel: rgba(255, 255, 255, 0.34);
@@ -26,11 +26,13 @@ body.theme-acrylic {
   --shadow-lg: 0 24px 54px rgba(15, 23, 42, 0.16);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
 
-  --shell-background: rgba(252, 252, 252, calc(0.56 * var(--surface-opacity-scale, 1)));
+  --shell-background: rgba(252, 252, 252, calc(0.5 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.32);
   --shell-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
   --shell-radius: 10px;
-  --shell-backdrop-filter: blur(28px) saturate(180%);
+  /* Acrylic = deep translucent glass: stronger blur + saturation and more
+     see-through than Mica's matte frost. */
+  --shell-backdrop-filter: blur(40px) saturate(200%);
 
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.24);
 
@@ -101,8 +103,28 @@ body.theme-acrylic::before {
   border-radius: calc(var(--shell-radius) + 1px);
 }
 
+/*
+ * With a custom image, paint it INSIDE #root (above the shell fill, below
+ * content) so it stays visible even when surface opacity makes the shell fully
+ * opaque. The behind-glass copy on body::before is disabled to avoid doubling.
+ */
 body.has-custom-bg.theme-acrylic::before {
+  background-image: none;
+  opacity: 0;
+}
+
+body.has-custom-bg.theme-acrylic #root::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--custom-bg-image, none);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   opacity: var(--custom-bg-opacity, 0.45);
+  pointer-events: none;
+  z-index: 0;
+  border-radius: inherit;
 }
 
 body.theme-acrylic:not(.has-custom-bg)::before {
@@ -157,9 +179,9 @@ body.theme-acrylic #root > * {
     --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.32);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
-    --shell-background: rgba(20, 20, 20, calc(0.52 * var(--surface-opacity-scale, 1)));
+    --shell-background: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
     --shell-border: 1px solid rgba(255, 255, 255, 0.12);
-    --shell-backdrop-filter: blur(30px) saturate(145%);
+    --shell-backdrop-filter: blur(42px) saturate(170%);
     --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
     --panel-border: 1px solid rgba(255, 255, 255, 0.1);
     --menu-border: 1px solid rgba(255, 255, 255, 0.1);
@@ -181,7 +203,7 @@ body.theme-acrylic #root > * {
 
 :root.dark-mode.theme-acrylic,
 body.dark-mode.theme-acrylic {
-  --bg-window: rgba(20, 20, 20, calc(0.52 * var(--surface-opacity-scale, 1)));
+  --bg-window: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
   --bg-panel: rgba(28, 28, 28, 0.38);
   --bg-input: rgba(255, 255, 255, 0.12);
   --bg-element: rgba(45, 45, 45, 0.42);
@@ -199,9 +221,9 @@ body.dark-mode.theme-acrylic {
   --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.32);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
-  --shell-background: rgba(20, 20, 20, calc(0.52 * var(--surface-opacity-scale, 1)));
+  --shell-background: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.12);
-  --shell-backdrop-filter: blur(30px) saturate(145%);
+  --shell-backdrop-filter: blur(42px) saturate(170%);
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
   --panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --menu-border: 1px solid rgba(255, 255, 255, 0.1);

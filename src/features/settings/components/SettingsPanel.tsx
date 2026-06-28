@@ -4,7 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { ChevronRight, HelpCircle } from "lucide-react";
-import { motion } from "framer-motion";
 import type { Locale } from "../../../shared/types";
 import type { DefaultAppsMap, InstalledAppOption, SettingsSubpage, CloudSyncContentPrefs } from "../../app/types";
 import type { AiProfile, AiProfileStatusMap, AppCleanupPolicy, EditableAiProfile } from "../types";
@@ -22,7 +21,6 @@ import DataSettingsGroup from "./groups/DataSettingsGroup";
 import FileTransferSettingsGroup from "./groups/FileTransferSettingsGroup";
 import AiSettingsGroup from "./groups/AiSettingsGroup";
 import SettingsFooter from "./SettingsFooter";
-import ThemeStorePanel from "../../theme-store/components/ThemeStorePanel";
 import { CLOUD_SYNC_ENABLED } from "../../../shared/config/edition";
 
 interface SettingsPanelProps {
@@ -456,21 +454,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     }, [setSettingsSubpage]);
 
     return (
-        <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            style={{ display: 'flex', flexDirection: 'column', gap: '4px', minHeight: '100%', flex: 1 }}
-        >
-            {settingsSubpage === "theme-store" ? (
-                <ThemeStorePanel
-                    t={t}
-                    theme={theme}
-                    setTheme={setTheme}
-                    saveAppSetting={saveAppSetting}
-                    language={language}
-                    onBack={() => setSettingsSubpage("home")}
-                />
-            ) : settingsSubpage === "advanced" ? (
+        <div className="settings-panel-root">
+            {settingsSubpage === "advanced" ? (
                 <>
                     <AdvancedSettingsGroup
                         t={t}
@@ -634,7 +619,6 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 surfaceOpacity={surfaceOpacity}
                 setSurfaceOpacity={setSurfaceOpacity}
                 saveAppSetting={saveAppSetting}
-                setSettingsSubpage={setSettingsSubpage}
             />
 
             {/* Sync Settings */}
@@ -815,7 +799,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             {/* Removed UpdateModal in generic */}
                 </>
             )}
-        </motion.div>
+        </div>
     );
 };
 

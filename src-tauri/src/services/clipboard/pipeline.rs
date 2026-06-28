@@ -84,8 +84,9 @@ impl ClipboardPipeline {
             stages: vec![
                 Box::new(DiscoveryStage),
                 Box::new(TransformationStage),
-                Box::new(ValidationStage),
+                Box::new(SequentialEchoStage),
                 Box::new(SoundStage),
+                Box::new(DeduplicationStage),
                 Box::new(PersistenceStage),
                 Box::new(DistributionStage),
             ],
@@ -198,8 +199,8 @@ impl PipelineStage for TransformationStage {
         let entry = ctx.entry.as_mut().unwrap();
         let settings = ctx.app_handle.state::<SettingsState>();
 
-        // Normalization (already partially done but let's be thorough)
-        entry.content = entry.content.trim().replace("\r\n", "\n");
+        // Normalize line endings only; preserve leading/trailing whitespace (#97).
+        entry.content = entry.content.replace("\r\n", "\n");
 
         let app_cleanup_policies_raw = settings.app_cleanup_policies.lock().unwrap().clone();
         if !app_cleanup_policies_raw.trim().is_empty() {
@@ -284,25 +285,40 @@ impl PipelineStage for TransformationStage {
     }
 }
 
-// Stage 3: Validation (Deduplication & Sequential Echo)
-pub struct ValidationStage;
-impl PipelineStage for ValidationStage {
+// Stage 3: Sequential paste echo (fast — must run before copy sound)
+pub struct SequentialEchoStage;
+impl PipelineStage for SequentialEchoStage {
     fn process(&self, ctx: &mut PipelineContext) {
         let settings = ctx.app_handle.state::<SettingsState>();
-
-        // Sequential Echo Check
-        if settings.sequential_mode.load(Ordering::Relaxed) {
-            let entry = ctx.entry.as_ref().unwrap();
-            let queue_state = ctx.app_handle.state::<PasteQueue>();
-            let queue = queue_state.0.lock().unwrap();
-            if queue.last_action_was_paste
-                && queue.last_pasted_content.as_deref() == Some(&entry.content)
-            {
-                println!("Ignoring echo paste from queue");
-                ctx.should_stop = true;
-                return;
-            }
+        if !settings.sequential_mode.load(Ordering::Relaxed) {
+            return;
         }
+
+        let entry = ctx.entry.as_ref().unwrap();
+        let queue_state = ctx.app_handle.state::<PasteQueue>();
+        let queue = queue_state.0.lock().unwrap();
+        if queue.last_action_was_paste
+            && queue.last_pasted_content.as_deref() == Some(&entry.content)
+        {
+            println!("Ignoring echo paste from queue");
+            ctx.should_stop = true;
+        }
+    }
+}
+
+// Stage 4: Immediate feedback (before DB dedup / persistence for snappy audio)
+pub struct SoundStage;
+impl PipelineStage for SoundStage {
+    fn process(&self, ctx: &mut PipelineContext) {
+        crate::services::ui_sound::play_ui_sound(&ctx.app_handle, "copy");
+    }
+}
+
+// Stage 5: Deduplication (DB-heavy — intentionally after copy sound)
+pub struct DeduplicationStage;
+impl PipelineStage for DeduplicationStage {
+    fn process(&self, ctx: &mut PipelineContext) {
+        let settings = ctx.app_handle.state::<SettingsState>();
 
         // Deduplication
         if settings.deduplicate.load(Ordering::Relaxed) {
@@ -387,6 +403,21 @@ impl PipelineStage for ValidationStage {
                     // This ensures the item is "moved to top" without risking data loss
                     let entry_mut = ctx.entry.as_mut().unwrap();
                     entry_mut.id = id;
+                    if let Ok(Some(existing)) =
+                        db_state.repo.get_entry_by_id_with_conn(&conn, id)
+                    {
+                        if entry_mut.tags.is_empty() {
+                            entry_mut.tags = existing.tags;
+                        } else {
+                            let mut merged = existing.tags.clone();
+                            for tag in &entry_mut.tags {
+                                if !merged.iter().any(|t| t == tag) {
+                                    merged.push(tag.clone());
+                                }
+                            }
+                            entry_mut.tags = merged;
+                        }
+                    }
                 }
             }
 
@@ -434,15 +465,7 @@ impl PipelineStage for ValidationStage {
     }
 }
 
-// Stage 4: Immediate Feedback
-pub struct SoundStage;
-impl PipelineStage for SoundStage {
-    fn process(&self, ctx: &mut PipelineContext) {
-        crate::services::ui_sound::play_ui_sound(&ctx.app_handle, "copy");
-    }
-}
-
-// Stage 5: Persistence
+// Stage 6: Persistence
 pub struct PersistenceStage;
 impl PipelineStage for PersistenceStage {
     fn process(&self, ctx: &mut PipelineContext) {
@@ -526,7 +549,7 @@ impl PipelineStage for PersistenceStage {
     }
 }
 
-// Stage 6: Distribution
+// Stage 7: Distribution
 pub struct DistributionStage;
 impl PipelineStage for DistributionStage {
     fn process(&self, ctx: &mut PipelineContext) {

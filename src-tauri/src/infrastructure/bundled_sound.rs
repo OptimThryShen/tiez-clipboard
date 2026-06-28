@@ -23,22 +23,29 @@ pub fn play_clipboard_sound(kind: &str, volume: f64) {
 #[cfg(target_os = "windows")]
 fn play_wav_on_windows(wav: &'static [u8], volume: f32) {
     use std::io::Cursor;
-    use windows::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT};
     use windows::core::PCWSTR;
+    use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
+
+    if volume >= 0.999 {
+        // Full-volume path: play asynchronously on the caller thread (no thread spawn).
+        unsafe {
+            let _ = PlaySoundW(
+                PCWSTR(wav.as_ptr() as *const u16),
+                None,
+                SND_MEMORY | SND_NODEFAULT | SND_ASYNC,
+            );
+        }
+        return;
+    }
 
     std::thread::spawn(move || {
-        let buffer = if volume >= 0.999 {
-            wav.to_vec()
-        } else {
-            scale_wav_volume(wav, volume).unwrap_or_else(|_| wav.to_vec())
-        };
+        let buffer = scale_wav_volume(wav, volume).unwrap_or_else(|_| wav.to_vec());
 
-        // Play synchronously on this thread so `buffer` stays valid; sounds are short.
         unsafe {
             let _ = PlaySoundW(
                 PCWSTR(buffer.as_ptr() as *const u16),
                 None,
-                SND_MEMORY | SND_NODEFAULT,
+                SND_MEMORY | SND_NODEFAULT | SND_ASYNC,
             );
         }
     });

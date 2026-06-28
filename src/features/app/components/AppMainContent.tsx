@@ -235,13 +235,11 @@ const AppMainContent = ({
 
     return (
       <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.16 }}
         className="settings-view"
         style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
           maxWidth: settingsPanelProps.settingsSubpage === "advanced" ? "min(1120px, 100%)" : undefined
         }}
       >

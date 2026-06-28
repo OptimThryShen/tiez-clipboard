@@ -7,10 +7,7 @@ export interface ThemeDefinition {
   supportsSurfaceOpacity?: boolean;
 }
 
-export const STORE_THEME_PREFIX = "store-";
-
-export const isStoreTheme = (themeId: string): boolean =>
-  themeId.startsWith(STORE_THEME_PREFIX);
+export const DEFAULT_THEME = "mica";
 
 export const THEMES: ThemeDefinition[] = [
   {
@@ -66,10 +63,32 @@ export const THEMES: ThemeDefinition[] = [
     },
     supportsCustomBackground: true,
     supportsSurfaceOpacity: true
+  },
+  {
+    id: "terminal",
+    labels: {
+      zh: "终端",
+      en: "Terminal",
+      tw: "終端"
+    }
+  },
+  {
+    id: "receipt",
+    labels: {
+      zh: "收据小票",
+      en: "Receipt",
+      tw: "收據小票"
+    }
+  },
+  {
+    id: "ink",
+    labels: {
+      zh: "水墨",
+      en: "Ink Wash",
+      tw: "水墨"
+    }
   }
 ];
-
-export const DEFAULT_THEME = "mica";
 
 const THEME_BY_ID = new Map(THEMES.map((theme) => [theme.id, theme]));
 
@@ -78,25 +97,17 @@ export const THEME_CLASS_NAMES = THEMES.map((theme) => `theme-${theme.id}`);
 export const getThemeDefinition = (themeId: string): ThemeDefinition =>
   THEME_BY_ID.get(themeId) ?? THEME_BY_ID.get(DEFAULT_THEME)!;
 
-export const normalizeThemeId = (themeId: string): string => {
-  if (isStoreTheme(themeId)) return themeId;
-  return getThemeDefinition(themeId).id;
-};
+export const normalizeThemeId = (themeId: string): string =>
+  getThemeDefinition(themeId).id;
 
-export const getThemeLabel = (themeId: string, locale: Locale): string => {
-  if (isStoreTheme(themeId)) return themeId.slice(STORE_THEME_PREFIX.length);
-  return getThemeDefinition(themeId).labels[locale];
-};
+export const getThemeLabel = (themeId: string, locale: Locale): string =>
+  getThemeDefinition(themeId).labels[locale];
 
-export const supportsCustomBackground = (themeId: string): boolean => {
-  if (isStoreTheme(themeId)) return false;
-  return Boolean(getThemeDefinition(themeId).supportsCustomBackground);
-};
+export const supportsCustomBackground = (themeId: string): boolean =>
+  Boolean(getThemeDefinition(themeId).supportsCustomBackground);
 
-export const supportsSurfaceOpacity = (themeId: string): boolean => {
-  if (isStoreTheme(themeId)) return false;
-  return Boolean(getThemeDefinition(themeId).supportsSurfaceOpacity);
-};
+export const supportsSurfaceOpacity = (themeId: string): boolean =>
+  Boolean(getThemeDefinition(themeId).supportsSurfaceOpacity);
 
 export const clearThemeClasses = (...targets: Array<Element | null | undefined>) => {
   for (const target of targets) {

@@ -1,6 +1,7 @@
-use crate::app_state::SettingsState;
+use crate::app_state::{PasteQueue, SettingsState};
 use crate::error::{AppError, AppResult};
 use crate::global_state::HOTKEY_STRING;
+use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -86,6 +87,11 @@ pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
     let rich_hotkey = settings.rich_paste_hotkey.lock().unwrap().clone();
     let search_hotkey = settings.search_hotkey.lock().unwrap().clone();
     let quick_paste_modifier = settings.quick_paste_modifier.lock().unwrap().clone();
+    let sequential_mode = settings.sequential_mode.load(Ordering::Relaxed);
+    let has_paste_queue = {
+        let queue = app_handle.state::<PasteQueue>().inner().0.lock().unwrap();
+        !queue.items.is_empty()
+    };
 
     if !main_hotkey.is_empty() && !is_win_v_hotkey(&main_hotkey) {
         if let Some(shortcut) = parse_shortcut(&main_hotkey) {
@@ -93,8 +99,10 @@ pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
         }
     }
 
-    if let Some(shortcut) = parse_shortcut(&sequential_hotkey) {
-        let _ = app_handle.global_shortcut().register(shortcut);
+    if sequential_mode || has_paste_queue {
+        if let Some(shortcut) = parse_shortcut(&sequential_hotkey) {
+            let _ = app_handle.global_shortcut().register(shortcut);
+        }
     }
 
     if let Some(shortcut) = parse_shortcut(&rich_hotkey) {
