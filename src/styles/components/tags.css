@@ -5,19 +5,16 @@
     left: 0;
     right: 0;
     z-index: 100000 !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 8px;
+    display: block !important;
     visibility: visible !important;
     opacity: 1 !important;
     pointer-events: auto !important;
-    min-height: 50px !important;
-    max-height: min(280px, 50vh);
+    max-height: min(240px, 45vh);
     overflow-y: auto;
     overflow-x: hidden;
     width: 100%;
-    margin-top: 4px;
-    padding: 10px 10px 12px;
+    margin-top: 2px;
+    padding: 6px 8px;
     background: var(--bg-element) !important;
     border: var(--tags-border);
     border-radius: var(--tags-radius);
@@ -27,49 +24,55 @@
     box-sizing: border-box;
 }
 
-.tags-label {
-    font-size: 11px;
-    font-weight: 800;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    opacity: 0.7;
-}
-
 .tags-list {
     display: flex;
     flex-wrap: wrap;
     gap: var(--layout-tag-list-gap);
 }
 
+.item-tags-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--layout-tag-list-gap);
+    margin-top: 2px;
+    padding-top: 0;
+}
+
+.item-tags-container.overlay {
+    margin-top: 0;
+}
+
 .tag-chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     padding: var(--layout-tag-chip-padding);
     font-size: var(--clipboard-tag-font-size);
     font-weight: var(--tag-chip-font-weight);
     font-family: var(--tag-chip-font-family);
     text-transform: var(--tag-chip-text-transform);
     letter-spacing: var(--tag-chip-letter-spacing);
-    line-height: 1.2;
+    line-height: 1.15;
     color: #fff;
     cursor: pointer;
     user-select: none;
     border: var(--tag-chip-border);
     border-radius: var(--tag-chip-radius);
     box-shadow: var(--tag-chip-shadow);
-    transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+    transition: filter 0.12s ease, opacity 0.12s ease;
 }
 
 .tag-chip:hover {
     transform: var(--tag-chip-hover-transform);
     box-shadow: var(--tag-chip-hover-shadow);
-    filter: brightness(1.08);
+    filter: brightness(1.06);
 }
 
 .tag-chip:active {
     transform: var(--tag-chip-active-transform);
     box-shadow: var(--tag-chip-active-shadow);
+    filter: brightness(0.96);
 }
 
 /* Inline tag editor: input + floating suggestion list (same column width) */

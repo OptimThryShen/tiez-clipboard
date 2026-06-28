@@ -531,18 +531,21 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </label>
                     </div>
 
-                    {props.sequentialMode && (
-                        <div className="setting-item">
-                            <div className="item-label-group">
-                                <span className="item-label">{props.t('sequential_paste_hotkey_label')}</span>
-                                <span className="hint">{props.isRecordingSequential ? props.t('hotkey_recording_esc') : props.t('hotkey_click_hint')}</span>
-                            </div>
-                            <div
-                                className={`key-group ${props.isRecordingSequential ? 'recording' : ''}`}
-                                onClick={() => props.setIsRecordingSequential(true)}
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                    if (!props.isRecordingSequential) return;
+                    <div className="setting-item">
+                        <div className="item-label-group">
+                            <span className="item-label">{props.t('sequential_paste_hotkey_label')}</span>
+                            <span className="hint">
+                                {props.sequentialMode
+                                    ? (props.isRecordingSequential ? props.t('hotkey_recording_esc') : props.t('hotkey_click_hint'))
+                                    : (props.t('sequential_paste_hotkey_inactive_hint') || '仅在开启顺序粘贴时生效')}
+                            </span>
+                        </div>
+                        <div
+                            className={`key-group ${props.isRecordingSequential ? 'recording' : ''}`}
+                            onClick={() => props.setIsRecordingSequential(true)}
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                                if (!props.isRecordingSequential) return;
                                     e.preventDefault();
                                     e.stopPropagation();
 
@@ -577,7 +580,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 )}
                             </div>
                         </div>
-                    )}
 
                     <div className="setting-item">
                         <props.LabelWithHint

@@ -1,5 +1,4 @@
 import type { RefObject } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronLeft,
   MessageSquare,
@@ -96,6 +95,8 @@ const AppHeader = ({
       default: return t('type_text') || 'Text';
     }
   };
+
+  const searchVisible = showSearchBox || search.trim().length > 0;
 
   return (
     <header
@@ -203,20 +204,12 @@ const AppHeader = ({
       </div>
 
       {!showSettings && !showTagManager && !showEmojiPanel && (
-        <AnimatePresence>
-          {(showSearchBox || search.trim().length > 0) && (
-            <motion.div
-              initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
-              animate={{
-                height: "auto",
-                opacity: 1,
-                transitionEnd: { overflow: "visible" }
-              }}
-              exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
-              transition={{ duration: 0.2, ease: "circOut" }}
-              style={{ flexShrink: 0 }}
-            >
-              <div className="search-container">
+        <div
+          className={`search-reveal${searchVisible ? " is-open" : ""}`}
+          aria-hidden={!searchVisible}
+        >
+          <div className="search-reveal-inner">
+            <div className="search-container">
                 <div className="search-input-wrap">
                   <div className="search-input-row">
                     <span className="search-prompt" aria-hidden="true">
@@ -226,7 +219,7 @@ const AppHeader = ({
                     <input
                     ref={searchInputRef}
                     type="text"
-                    className={`search-input ${showTagFilter && allTags.length > 0 ? 'dropdown-open' : ''}`}
+                    className={`search-input ${showTagFilter && searchIsFocused && allTags.length > 0 ? 'dropdown-open' : ''}`}
                     placeholder={t('search_placeholder')}
                     value={search}
                     onCompositionStart={() => setIsComposing(true)}
@@ -258,7 +251,6 @@ const AppHeader = ({
                   </div>
                   {showTagFilter && searchIsFocused && allTags.length > 0 && (
                     <div className="tags-dropdown">
-                      <div className="tags-label">{t('tags') || "Tags"}</div>
                       <div className="tags-list">
                         {allTags.map(tag => {
                           const tagBackground = getTagColor(tag, theme);
@@ -319,10 +311,9 @@ const AppHeader = ({
                   ))}
                 </div>
 
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+          </div>
+        </div>
       )}
     </header>
   );

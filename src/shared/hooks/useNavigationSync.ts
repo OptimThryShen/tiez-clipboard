@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isTauriRuntime } from "../lib/tauriRuntime";
@@ -16,7 +16,7 @@ export const useNavigationSync = ({
   chatMode,
   showEmojiPanel
 }: UseNavigationSyncOptions) => {
-  useEffect(() => {
+  const syncNavigationEnabled = useCallback(() => {
     if (!isTauriRuntime()) return;
 
     const shouldDisableNavigation = showSettings || showTagManager || chatMode || showEmojiPanel;
@@ -25,7 +25,7 @@ export const useNavigationSync = ({
       return;
     }
 
-    // Only enable global navigation when the window is actually visible.
+    // Clipboard list mode: only enable keyboard/mouse routing when the window is visible.
     getCurrentWindow()
       .isVisible()
       .then((visible) => {
@@ -35,4 +35,21 @@ export const useNavigationSync = ({
         invoke("set_navigation_enabled", { enabled: false }).catch(console.error);
       });
   }, [showSettings, showTagManager, chatMode, showEmojiPanel]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    syncNavigationEnabled();
+
+    const appWindow = getCurrentWindow();
+    const unlistenShow = appWindow.listen("tauri://show", syncNavigationEnabled);
+    const unlistenHide = appWindow.listen("tauri://hide", () => {
+      invoke("set_navigation_enabled", { enabled: false }).catch(console.error);
+    });
+
+    return () => {
+      unlistenShow.then((unlisten) => unlisten()).catch(() => {});
+      unlistenHide.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [syncNavigationEnabled]);
 };

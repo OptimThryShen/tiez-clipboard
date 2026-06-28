@@ -439,7 +439,7 @@
 
 .advanced-workbench {
   display: grid;
-  grid-template-columns: var(--advanced-sidebar-width, 120px) 4px minmax(0, 1fr);
+  grid-template-columns: var(--advanced-sidebar-width, 120px) 2px minmax(0, 1fr);
   grid-template-rows: 1fr !important;
   flex: 1 !important;
   min-height: 0 !important;
@@ -870,7 +870,7 @@
 @media (max-width: 340px) {
   .advanced-workbench {
     grid-template-columns: 1fr !important;
-    grid-template-rows: var(--advanced-sidebar-height, 180px) 4px minmax(0, 1fr) !important;
+    grid-template-rows: var(--advanced-sidebar-height, 180px) 2px minmax(0, 1fr) !important;
   }
 
   .advanced-sidebar {

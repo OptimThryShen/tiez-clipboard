@@ -197,6 +197,7 @@ pub fn set_clipboard_image_with_formats(
     _data: ImageData,
     _gif_data: Option<&Vec<u8>>,
     _png_data: Option<&Vec<u8>>,
+    _file_path: Option<&str>,
 ) -> Result<Option<String>, String> {
     Ok(None)
 }

@@ -8,6 +8,7 @@ type UseSearchScrollOptions = {
   showSettings: boolean;
   showTagManager: boolean;
   appSettings: Record<string, string>;
+  dismissSearchTagFilter?: () => void;
 };
 
 export const useSearchScroll = ({
@@ -16,7 +17,8 @@ export const useSearchScroll = ({
   search,
   showSettings,
   showTagManager,
-  appSettings
+  appSettings,
+  dismissSearchTagFilter
 }: UseSearchScrollOptions) => {
   const scrollTriggerRef = useRef(0);
   const listScrollTopRef = useRef(0);
@@ -41,6 +43,7 @@ export const useSearchScroll = ({
           if (!showSearchBox) {
             scrollTriggerRef.current += Math.abs(e.deltaY);
             if (scrollTriggerRef.current > 45) {
+              dismissSearchTagFilter?.();
               setShowSearchBox(true);
               scrollTriggerRef.current = 0;
             }
@@ -52,6 +55,10 @@ export const useSearchScroll = ({
         scrollTriggerRef.current = 0;
       }
 
+      if (e.deltaY > 10) {
+        dismissSearchTagFilter?.();
+      }
+
       if (
         e.deltaY > 10 &&
         showSearchBox &&
@@ -59,6 +66,7 @@ export const useSearchScroll = ({
         appSettings["app.show_search_box"] !== "true"
       ) {
         // See App.tsx note: do not persist setting when hiding temporary search.
+        dismissSearchTagFilter?.();
         setShowSearchBox(false);
       }
     },
@@ -68,7 +76,8 @@ export const useSearchScroll = ({
       showSearchBox,
       search,
       appSettings,
-      setShowSearchBox
+      setShowSearchBox,
+      dismissSearchTagFilter
     ]
   );
 

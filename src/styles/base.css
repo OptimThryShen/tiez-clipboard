@@ -70,14 +70,14 @@
   --layout-meta-font-weight: 700;
   --layout-meta-border-bottom: 1px dashed var(--panel-divider-color);
   --layout-meta-padding-bottom: 0;
-  --layout-tag-list-gap: 6px;
-  --layout-tag-chip-padding: 2px 8px;
-  --layout-overlay-tag-padding: 1px 10px;
-  --layout-overlay-tag-min-height: 20px;
+  --layout-tag-list-gap: 4px;
+  --layout-tag-chip-padding: 1px 6px;
+  --layout-overlay-tag-padding: 1px 6px;
+  --layout-overlay-tag-min-height: 18px;
   --layout-overlay-tag-font-size: var(--clipboard-tag-font-size);
   --layout-overlay-tag-line-height: 1;
-  --layout-overlay-tag-reserve: 24px;
-  --tag-chip-font-weight: 700;
+  --layout-overlay-tag-reserve: 22px;
+  --tag-chip-font-weight: 600;
   --tag-chip-font-family: inherit;
   --tag-chip-text-transform: none;
   --tag-chip-letter-spacing: 0;
@@ -220,15 +220,15 @@
   --dialog-button-active-transform: translateY(0);
 
   --tags-border: 1px solid var(--line-soft);
-  --tags-radius: 16px;
-  --tags-shadow: var(--shadow-sm);
-  --tag-chip-border: 1px solid rgba(24, 34, 53, 0.08);
-  --tag-chip-radius: var(--radius-pill);
-  --tag-chip-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
-  --tag-chip-hover-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
-  --tag-chip-hover-transform: translateY(-1px);
-  --tag-chip-active-shadow: 0 2px 6px rgba(15, 23, 42, 0.1);
-  --tag-chip-active-transform: translateY(0);
+  --tags-radius: 8px;
+  --tags-shadow: none;
+  --tag-chip-border: none;
+  --tag-chip-radius: 4px;
+  --tag-chip-shadow: none;
+  --tag-chip-hover-shadow: none;
+  --tag-chip-hover-transform: none;
+  --tag-chip-active-shadow: none;
+  --tag-chip-active-transform: none;
 
   --menu-border: 1px solid var(--line-soft);
   --menu-radius: 14px;

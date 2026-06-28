@@ -353,7 +353,7 @@ export const useSettingsPostInit = ({
     setCloudSyncServer(settings["cloud_sync_server"] || "");
     setCloudSyncApiKey(settings["cloud_sync_api_key"] || "");
     setCloudSyncIntervalSec(settings["cloud_sync_interval_sec"] || "120");
-    setCloudSyncSnapshotIntervalMin(settings["cloud_sync_snapshot_interval_min"] || "720");
+    setCloudSyncSnapshotIntervalMin(settings["cloud_sync_snapshot_interval_min"] || "60");
     setCloudSyncWebdavUrl(settings["cloud_sync_webdav_url"] || "");
     setCloudSyncWebdavUsername(settings["cloud_sync_webdav_username"] || "");
     setCloudSyncWebdavPassword(settings["cloud_sync_webdav_password"] || "");

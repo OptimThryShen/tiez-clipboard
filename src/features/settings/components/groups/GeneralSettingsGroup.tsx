@@ -172,28 +172,26 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
-                {!isMacPlatform && (
-                    <div className="setting-item">
-                        <LabelWithHint
-                            label={t('follow_mouse')}
-                            hint={t('follow_mouse_hint')}
-                            hintKey="follow_mouse"
+                <div className="setting-item">
+                    <LabelWithHint
+                        label={t('follow_mouse')}
+                        hint={t('follow_mouse_hint')}
+                        hintKey="follow_mouse"
+                    />
+                    <label className="switch">
+                        <input
+                            className="cb"
+                            type="checkbox"
+                            checked={followMouse}
+                            onChange={(e) => {
+                                const val = e.target.checked;
+                                setFollowMouse(val);
+                                invoke("set_follow_mouse", { enabled: val }).catch(console.error);
+                            }}
                         />
-                        <label className="switch">
-                            <input
-                                className="cb"
-                                type="checkbox"
-                                checked={followMouse}
-                                onChange={(e) => {
-                                    const val = e.target.checked;
-                                    setFollowMouse(val);
-                                    invoke("set_follow_mouse", { enabled: val }).catch(console.error);
-                                }}
-                            />
-                            <div className="toggle"><div className="left" /><div className="right" /></div>
-                        </label>
-                    </div>
-                )}
+                        <div className="toggle"><div className="left" /><div className="right" /></div>
+                    </label>
+                </div>
 
                 {isMacPlatform && (
                     <MacAccessibilityPermission t={t} LabelWithHint={LabelWithHint} />

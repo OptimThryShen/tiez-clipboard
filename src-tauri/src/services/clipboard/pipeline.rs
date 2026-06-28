@@ -109,11 +109,18 @@ impl PipelineStage for DiscoveryStage {
     fn process(&self, ctx: &mut PipelineContext) {
         let (content_type, content, html_content) = match &ctx.data {
             ClipboardData::Text(t) => (detect_content_type(t), t.clone(), None),
-            ClipboardData::RichText { text, html } => (
-                "rich_text".to_string(),
-                derive_rich_text_content(text, Some(html)),
-                Some(html.clone()),
-            ),
+            ClipboardData::RichText { text, html } => {
+                let line_plain = normalize_clipboard_line_endings(text);
+                let content = if looks_like_cf_html_header_text(&line_plain)
+                    || (line_plain.is_empty() && !html.trim().is_empty())
+                    || looks_like_html_fragment(&line_plain)
+                {
+                    derive_rich_text_content(text, Some(html))
+                } else {
+                    line_plain
+                };
+                ("rich_text".to_string(), content, Some(html.clone()))
+            }
             ClipboardData::Image { data_url } => ("image".to_string(), data_url.clone(), None),
             ClipboardData::Files(f) => {
                 let content = f.join("\n");
@@ -228,7 +235,7 @@ impl PipelineStage for TransformationStage {
                             ctx.should_stop = true;
                             return;
                         }
-                        entry.content = cleaned.trim().replace("\r\n", "\n");
+                        entry.content = cleaned.replace("\r\n", "\n");
                         entry.preview =
                             build_entry_preview(&entry.content_type, &entry.content, None);
                     }
@@ -246,7 +253,7 @@ impl PipelineStage for TransformationStage {
                         ctx.should_stop = true;
                         return;
                     }
-                    entry.content = cleaned.trim().replace("\r\n", "\n");
+                    entry.content = cleaned.replace("\r\n", "\n");
                     entry.preview =
                         build_entry_preview(&entry.content_type, &entry.content, None);
                 }
@@ -595,6 +602,20 @@ impl PipelineStage for DistributionStage {
 
         if settings.persistent.load(Ordering::Relaxed) && entry.id > 0 {
             crate::services::cloud_sync::request_cloud_sync(ctx.app_handle.clone());
+        }
+
+        if entry.is_external && entry.id != 0 {
+            if let Some(path) =
+                crate::services::content_handler::existing_file_path_from_content(&entry.content)
+            {
+                crate::services::content_handler::register_file_preview_watch(
+                    ctx.app_handle.clone(),
+                    entry.id,
+                    path,
+                    entry.content_type.clone(),
+                    true,
+                );
+            }
         }
     }
 }

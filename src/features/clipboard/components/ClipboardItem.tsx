@@ -38,7 +38,7 @@ import {
     getTagTextColor
 } from "../../../shared/lib/utils";
 import HtmlContent from "../../../shared/components/HtmlContent";
-import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { toTauriLocalImageSrc, withImageCacheBust } from "../../../shared/lib/localImageSrc";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getFileIcon as getSystemFileIcon, peekFileIcon } from "../../../shared/lib/fileIcon";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
@@ -1299,14 +1299,6 @@ const ClipboardItem = ({
     const renderTagsContainer = (overlay = false) => (
         <div
             className={`item-tags-container${overlay ? ' overlay' : ''}${isEditingTags ? ' tag-edit-active' : ''}`}
-            style={{
-                marginTop: overlay ? '0' : '2px',
-                display: 'flex',
-                flexWrap: 'wrap',
-                justifyContent: 'flex-end',
-                gap: '4px',
-                paddingTop: '0'
-            }}
         >
             {item.tags?.map((tag) => {
                 const tagBackground = tagColors?.[tag] || getTagColor(tag, theme);
@@ -1318,9 +1310,6 @@ const ClipboardItem = ({
                         style={{
                             background: tagBackground,
                             color: tagTextColor,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
                         }}
                     >
                         {tag}
@@ -1495,13 +1484,14 @@ const ClipboardItem = ({
             ref={itemRef}
             id={id}
             data-test-clipboard-item
+            data-clipboard-item-id={String(item.id)}
             layout={!disableLayout}
             initial={false}
             animate={{ marginBottom: 0 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.1 }}
             className={`history-item ${isSelected ? "selected" : ""} ${compactMode ? "compact" : ""} ${item.is_pinned ? "pinned" : ""} ${className || ''}`}
-            onMouseDown={(e) => {
+            onMouseDownCapture={(e) => {
                 const target = e.target as HTMLElement;
                 if (e.button !== 0) return;
 
@@ -1524,10 +1514,8 @@ const ClipboardItem = ({
                 if (target.closest('a')) {
                     return;
                 }
-                // e.preventDefault() stops macOS from transferring key-window focus to TieZ
-                // when the user clicks on a clipboard item, including pinned mode.
-                // Without this, the first click activates TieZ and the original input
-                // target loses focus before we dispatch the paste keystroke.
+                // Capture phase + preventDefault so clicks on <img>/<video> still paste:
+                // WebKit handles media mousedown defaults before bubble reaches this node.
                 e.preventDefault();
                 void hideCompactPreview();
                 onCopy(false); // Plain text by default
@@ -1727,15 +1715,19 @@ const ClipboardItem = ({
                         ) : (
                             <img
                                 src={
-                                    item.content.startsWith("data:")
-                                        ? item.content
-                                        : (
-                                            toTauriLocalImageSrc(item.content) ||
-                                            (item.is_external ? convertFileSrc(item.content) : item.content)
-                                        )
+                                    withImageCacheBust(
+                                        item.content.startsWith("data:")
+                                            ? item.content
+                                            : (
+                                                toTauriLocalImageSrc(item.content) ||
+                                                (item.is_external ? convertFileSrc(item.content) : item.content)
+                                            ),
+                                        item.timestamp
+                                    ) || ""
                                 }
                                 alt={t('image_preview')}
                                 className="image-preview"
+                                draggable={false}
                                 loading="lazy"
                                 style={isSensitiveHidden ? { filter: 'blur(8px)' } : {}}
                                 onError={(e) => {
@@ -1761,6 +1753,7 @@ const ClipboardItem = ({
                                 preload="metadata"
                                 muted
                                 playsInline
+                                draggable={false}
                                 className="video-thumbnail-element"
                                 onLoadedMetadata={(e) => seekVideoPreviewFrame(e.currentTarget)}
                             />

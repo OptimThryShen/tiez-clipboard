@@ -23,17 +23,17 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 #[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetWindowThreadProcessId,
+    GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId,
 };
 use crate::services::clipboard::{
     attach_rich_image_fallback, attach_rich_named_formats, build_clipboard_text_fingerprint,
     capture_preserved_named_formats_from_clipboard, clipboard_image_fallback_data_url,
-    derive_rich_text_content, extract_animated_image_data_url_from_html, parse_cf_html,
+    derive_rich_text_content, extract_animated_image_data_url_from_html,
+    normalize_plain_text_for_clipboard_paste, parse_cf_html, plain_text_from_tabular_html,
+    repair_html_fragment, sanitize_tabular_html_for_paste, split_rich_html_and_image_fallback,
+    split_rich_html_and_named_formats,
 };
 use arboard::Clipboard;
-
-const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
-const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
 
 enum ClipboardSnapshot {
     Empty,
@@ -178,26 +178,6 @@ pub(crate) fn remember_recent_paste(
     queue.last_paste_timestamp_ms = now_ms();
 }
 
-fn split_rich_html_and_image_fallback(html: &str) -> (String, Option<String>) {
-    if let Some(start) = html.rfind(RICH_IMAGE_FALLBACK_PREFIX) {
-        let marker_start = start + RICH_IMAGE_FALLBACK_PREFIX.len();
-        if let Some(end_rel) = html[marker_start..].find(RICH_IMAGE_FALLBACK_SUFFIX) {
-            let marker_end = marker_start + end_rel;
-            let mut cleaned = String::with_capacity(html.len());
-            cleaned.push_str(&html[..start]);
-            cleaned.push_str(&html[marker_end + RICH_IMAGE_FALLBACK_SUFFIX.len()..]);
-
-            let payload = html[marker_start..marker_end].trim();
-            if payload.is_empty() {
-                return (cleaned.trim().to_string(), None);
-            }
-            // Accept both data URL fallback and persisted local file path fallback.
-            return (cleaned.trim().to_string(), Some(payload.to_string()));
-        }
-    }
-    (html.to_string(), None)
-}
-
 fn resolve_rich_image_fallback_bytes(payload: &str) -> Option<Vec<u8>> {
     let value = payload.trim();
 
@@ -311,6 +291,30 @@ fn materialize_rich_html_for_paste(
     )
 }
 
+#[cfg(target_os = "windows")]
+fn set_windows_formatted_clipboard(
+    plain: &str,
+    html_fragment: &str,
+    named_formats: &[crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat],
+) -> AppResult<()> {
+    use crate::services::clipboard::encode_cf_html;
+
+    let cf_html = encode_cf_html(html_fragment);
+    unsafe {
+        crate::infrastructure::windows_api::win_clipboard::set_clipboard_text_and_html(
+            plain, &cf_html,
+        )
+        .map_err(AppError::Internal)?;
+        if !named_formats.is_empty() {
+            crate::infrastructure::windows_api::win_clipboard::append_named_clipboard_formats(
+                named_formats,
+            )
+            .map_err(AppError::Internal)?;
+        }
+    }
+    Ok(())
+}
+
 async fn copy_to_clipboard_inner(
     app_handle: tauri::AppHandle,
     state: &DbState,
@@ -352,14 +356,6 @@ async fn copy_to_clipboard_inner(
                 html_content = item.html_content.clone();
                 content_type = item.content_type.clone();
             }
-        }
-    }
-
-    if content_type == "rich_text" {
-        let normalized =
-            crate::services::clipboard::derive_rich_text_content(&content, html_content.as_deref());
-        if !normalized.trim().is_empty() {
-            content = normalized;
         }
     }
 
@@ -473,14 +469,6 @@ pub async fn paste_content_transiently(
         }
     }
 
-    if current_type == "rich_text" {
-        let normalized =
-            crate::services::clipboard::derive_rich_text_content(&content, html_content.as_deref());
-        if !normalized.trim().is_empty() {
-            content = normalized;
-        }
-    }
-
     remember_recent_paste(
         &app_handle,
         &content,
@@ -589,32 +577,43 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
         }
     }
 
-    // 2. If the clipboard window was visible for an item click/selection, re-activate the
-    // previously focused app before sending Command+V. On macOS a non-focusable window can
-    // still cause the source text field to lose first-responder status without becoming
-    // the official focused window, so checking visibility is more reliable than focus here.
-    if window_was_visible {
-        let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID.load(Ordering::Relaxed);
-        let mut reactivated = false;
-        if prev_pid != 0 {
-            reactivated =
-                crate::infrastructure::macos_api::apps::activate_app_by_pid(prev_pid as i32);
-        }
+    // 2. Hand focus back to the target app before sending the paste keystroke.
+    if window_was_visible || window_pinned {
+        #[cfg(target_os = "windows")]
+        {
+            use crate::global_state::LAST_ACTIVE_HWND;
+            use crate::infrastructure::windows_ext::WindowExt;
 
-        if !reactivated {
-            let prev_app = crate::global_state::get_last_active_app_name();
-            if !prev_app.is_empty() {
-                println!("[DEBUG] Reactivating previous app by name: {}", prev_app);
-                let _ = crate::infrastructure::macos_api::apps::activate_app_by_name(&prev_app);
+            let last_hwnd_val = LAST_ACTIVE_HWND.load(Ordering::Relaxed);
+            if last_hwnd_val != 0 {
+                WindowExt::force_focus_window(HWND(last_hwnd_val as _));
             }
         }
 
-        // Give macOS time to complete the focus transfer before we send the paste keystroke.
-        // Reduced from 150ms to 60ms as native activation is much faster.
-        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-    } else if window_pinned {
-        // Keep a small settle delay for non-activating pinned windows.
-        tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+        #[cfg(target_os = "macos")]
+        {
+            let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID.load(Ordering::Relaxed);
+            let mut reactivated = false;
+            if prev_pid != 0 {
+                reactivated =
+                    crate::infrastructure::macos_api::apps::activate_app_by_pid(prev_pid as i32);
+            }
+
+            if !reactivated {
+                let prev_app = crate::global_state::get_last_active_app_name();
+                if !prev_app.is_empty() {
+                    println!("[DEBUG] Reactivating previous app by name: {}", prev_app);
+                    let _ = crate::infrastructure::macos_api::apps::activate_app_by_name(&prev_app);
+                }
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(if window_pinned {
+            80
+        } else {
+            60
+        }))
+        .await;
     } else {
         // When TieZ never took focus, only wait for the hide animation and hotkey key-up to settle.
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
@@ -678,7 +677,7 @@ async fn copy_content_to_system_clipboard(
                     // For image type with local path, read pixels for better compatibility with chat apps
                     let bytes = std::fs::read(content).map_err(AppError::from)?;
                     let (primary_hash, _secondary_hash) =
-                        copy_image_bytes_to_clipboard(bytes, current_time)?;
+                        copy_image_bytes_to_clipboard(bytes, current_time, Some(content))?;
                     // Keep LAST_APP_SET_HASH as content_hash (path hash)
                     // Store pixel/byte hash in HASH_ALT
                     crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
@@ -703,7 +702,7 @@ async fn copy_content_to_system_clipboard(
                     .map_err(|e| AppError::Internal(format!("Base64 解码失败: {}", e)))?;
 
                 let (primary_hash, _secondary_hash) =
-                    copy_image_bytes_to_clipboard(bytes, current_time)?;
+                    copy_image_bytes_to_clipboard(bytes, current_time, None)?;
                 // Keep LAST_APP_SET_HASH as content_hash (dataurl hash)
                 // Store pixel/byte hash in HASH_ALT
                 crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
@@ -717,38 +716,59 @@ async fn copy_content_to_system_clipboard(
         ct if ct == "rich_text" || (paste_with_format && html_content.is_some()) => {
             if let Some(html) = html_content {
                 if paste_with_format {
+                    let (html_without_formats, named_formats) =
+                        split_rich_html_and_named_formats(html);
                     let (clean_html, fallback_image_data_url) =
-                        split_rich_html_and_image_fallback(html);
+                        split_rich_html_and_image_fallback(&html_without_formats);
                     let base_html = if clean_html.trim().is_empty() {
-                        html.to_string()
+                        repair_html_fragment(html)
                     } else {
-                        clean_html
+                        repair_html_fragment(&clean_html)
                     };
                     let (final_html, image_bytes) = materialize_rich_html_for_paste(
                         &base_html,
                         fallback_image_data_url.as_deref(),
                     );
+                    let paste_html = sanitize_tabular_html_for_paste(&final_html);
+                    let paste_plain = plain_text_from_tabular_html(&paste_html)
+                        .filter(|value| !value.is_empty())
+                        .unwrap_or_else(|| normalize_plain_text_for_clipboard_paste(content));
 
                     #[cfg(target_os = "macos")]
                     {
                         crate::infrastructure::macos_api::clipboard::set_clipboard_text_html_and_image(
-                            content,
-                            &final_html,
+                            &paste_plain,
+                            &paste_html,
                             image_bytes
                         ).map_err(AppError::Internal)?;
                     }
 
-                    #[cfg(not(target_os = "macos"))]
+                    #[cfg(target_os = "windows")]
                     {
                         if let Some(bytes) = image_bytes {
                             let (primary_hash, _secondary_hash) =
-                                copy_image_bytes_to_clipboard(bytes, current_time)?;
+                                copy_image_bytes_to_clipboard(bytes, current_time, None)?;
+                            crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
+                        } else {
+                            set_windows_formatted_clipboard(
+                                &paste_plain,
+                                &paste_html,
+                                &named_formats,
+                            )?;
+                        }
+                    }
+
+                    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+                    {
+                        if let Some(bytes) = image_bytes {
+                            let (primary_hash, _secondary_hash) =
+                                copy_image_bytes_to_clipboard(bytes, current_time, None)?;
                             crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
                         } else {
                             let mut clipboard =
                                 arboard::Clipboard::new().map_err(AppError::from)?;
                             clipboard
-                                .set_html(final_html, Some(content.to_string()))
+                                .set_html(paste_html, Some(paste_plain))
                                 .map_err(AppError::from)?;
                         }
                     }
@@ -767,7 +787,76 @@ async fn copy_content_to_system_clipboard(
     Ok(())
 }
 
-fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, current_time: u64) -> AppResult<(u64, u64)> {
+#[cfg(target_os = "windows")]
+fn image_extension_for_bytes(bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 3 && &bytes[0..3] == b"GIF" {
+        "gif"
+    } else if bytes.len() >= 8
+        && bytes[0] == 0x89
+        && &bytes[1..4] == b"PNG"
+        && bytes[4] == 0x0D
+        && bytes[5] == 0x0A
+        && bytes[6] == 0x1A
+        && bytes[7] == 0x0A
+    {
+        "png"
+    } else if bytes.len() >= 3 && &bytes[0..3] == b"\xFF\xD8\xFF" {
+        "jpg"
+    } else if bytes.len() >= 12
+        && &bytes[0..4] == b"RIFF"
+        && bytes.get(8..12) == Some(b"WEBP")
+    {
+        "webp"
+    } else {
+        "png"
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn write_temp_image_path(bytes: &[u8]) -> AppResult<String> {
+    let ext = image_extension_for_bytes(bytes);
+    let filename = format!(
+        "TieZ_IMG_{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        ext
+    );
+    let path = std::env::temp_dir().join(filename);
+    std::fs::write(&path, bytes).map_err(AppError::from)?;
+    path.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| AppError::Internal("temp image path is not valid UTF-8".to_string()))
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_image_paste_path(bytes: &[u8], source_path: Option<&str>) -> AppResult<String> {
+    if let Some(path) = source_path.map(str::trim).filter(|value| !value.is_empty()) {
+        if std::path::Path::new(path).exists() {
+            return Ok(path.to_string());
+        }
+    }
+    write_temp_image_path(bytes)
+}
+
+#[cfg(target_os = "windows")]
+fn encode_png_from_rgba(rgba: &image::RgbaImage) -> AppResult<Vec<u8>> {
+    let mut png_buf = Vec::new();
+    image::DynamicImage::ImageRgba8(rgba.clone())
+        .write_to(
+            &mut std::io::Cursor::new(&mut png_buf),
+            image::ImageFormat::Png,
+        )
+        .map_err(|e| AppError::Internal(format!("PNG 编码失败: {}", e)))?;
+    Ok(png_buf)
+}
+
+fn copy_image_bytes_to_clipboard(
+    bytes: Vec<u8>,
+    current_time: u64,
+    source_path: Option<&str>,
+) -> AppResult<(u64, u64)> {
     // Check if it's a GIF by magic number
     let is_gif = bytes.len() > 3 && &bytes[0..3] == b"GIF";
 
@@ -804,19 +893,50 @@ fn copy_image_bytes_to_clipboard(bytes: Vec<u8>, current_time: u64) -> AppResult
         (byte_hash, 0)
     };
 
-    let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-    clipboard
-        .set_image(arboard::ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: raw_bytes.into(),
-        })
-        .map_err(AppError::from)?;
+    #[cfg(target_os = "windows")]
+    {
+        let paste_path = resolve_image_paste_path(&bytes, source_path)?;
+        let png_data = if is_gif {
+            None
+        } else if image_extension_for_bytes(&bytes) == "png" {
+            Some(bytes.clone())
+        } else {
+            Some(encode_png_from_rgba(
+                &image::RgbaImage::from_raw(width, height, raw_bytes.clone()).ok_or_else(|| {
+                    AppError::Internal("无法构建 RGBA 图像".to_string())
+                })?,
+            )?)
+        };
 
-    // On macOS, there's no direct equivalent to CF_HDROP for images copied this way.
-    // The image is copied as pixel data.
-    // The LAST_APP_SET_HASH will be the content_hash (e.g., data URL hash or file path hash).
-    // The LAST_APP_SET_HASH_ALT will be the pixel hash.
+        unsafe {
+            crate::infrastructure::windows_api::win_clipboard::set_clipboard_image_with_formats(
+                crate::infrastructure::windows_api::win_clipboard::ImageData {
+                    width: width as usize,
+                    height: height as usize,
+                    bytes: raw_bytes,
+                },
+                if is_gif { Some(bytes.as_slice()) } else { None },
+                png_data.as_deref(),
+                Some(paste_path.as_str()),
+            )
+            .map_err(AppError::Internal)?;
+        }
+
+        return Ok((primary_hash, secondary_hash));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = source_path;
+        let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
+        clipboard
+            .set_image(arboard::ImageData {
+                width: width as usize,
+                height: height as usize,
+                bytes: raw_bytes.into(),
+            })
+            .map_err(AppError::from)?;
+    }
 
     Ok((primary_hash, secondary_hash))
 }
@@ -918,6 +1038,7 @@ async fn perform_paste_action(
         .ok()
         .flatten()
         .unwrap_or_else(|| "shift_insert".to_string());
+    let paste_method = resolve_paste_method_for_target(&paste_method);
     send_paste_keystroke(&paste_method, content, Some(content_type));
 
     // Hide after paste if not pinned
@@ -953,6 +1074,65 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
         crate::app::window_manager::release_modifier_keys();
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+}
+
+fn resolve_paste_method_for_target(method: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        return resolve_windows_paste_method(method);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        method.to_string()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn resolve_windows_paste_method(method: &str) -> String {
+    if method != "shift_insert" {
+        return method.to_string();
+    }
+
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return method.to_string();
+        }
+
+        let mut class_buf = [0u16; 256];
+        let class_len = GetClassNameW(hwnd, &mut class_buf);
+        let class_name = if class_len > 0 {
+            String::from_utf16_lossy(&class_buf[..class_len as usize])
+        } else {
+            String::new()
+        };
+
+        let app_name = crate::infrastructure::windows_api::window_tracker::get_active_app_info()
+            .app_name
+            .to_ascii_lowercase();
+
+        if class_name.contains("ConsoleWindowClass")
+            || class_name.contains("CASCADIA_HOSTING_WINDOW_CLASS")
+            || class_name.contains("Mintty")
+            || class_name.contains("VirtualConsoleClass")
+            || app_name.contains("putty")
+            || app_name.contains("windowsterminal")
+        {
+            return "ctrl_shift_v".to_string();
+        }
+
+        if class_name.contains("Chrome_WidgetWin")
+            || app_name.contains("qq")
+            || app_name.contains("telegram")
+            || app_name.contains("wechat")
+            || app_name.contains("weixin")
+            || app_name.contains("txplatform")
+        {
+            return "ctrl_v".to_string();
+        }
+    }
+
+    method.to_string()
 }
 
 pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: Option<&str>) {
@@ -1078,6 +1258,84 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
                             wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
                             wScan: ctrl_scan,
                             dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+            ];
+        } else if effective_method == "ctrl_shift_v" {
+            let v_scan = MapVirtualKeyW(VK_V.0 as u32, MAPVK_VK_TO_VSC) as u16;
+            let ctrl_scan = MapVirtualKeyW(VK_CONTROL.0 as u32, MAPVK_VK_TO_VSC) as u16;
+            let shift_scan = MapVirtualKeyW(VK_SHIFT.0 as u32, MAPVK_VK_TO_VSC) as u16;
+
+            let inputs_down = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_SHIFT,
+                            wScan: shift_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: ctrl_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: v_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                },
+            ];
+            SendInput(&inputs_down, std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
+            let inputs_up = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: v_scan,
+                            dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: ctrl_scan,
+                            dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: VK_SHIFT,
+                            wScan: shift_scan,
+                            dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE,
                             ..Default::default()
                         },
                     },
@@ -1335,6 +1593,7 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
         }
     }
 
+    #[cfg(target_os = "windows")]
     if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
         crate::services::ui_sound::schedule_paste_sound(app);
     }

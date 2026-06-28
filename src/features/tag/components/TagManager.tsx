@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, type MouseEvent } from 'react';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { listen, emit } from '@tauri-apps/api/event';
 import {
@@ -6,6 +6,7 @@ import {
     Clock, MousePointer2, ChevronLeft, Plus, Search, ExternalLink, CheckSquare, Copy
 } from 'lucide-react';
 import { getTagColor } from "../../../shared/lib/utils";
+import { toTauriLocalImageSrc, withImageCacheBust } from "../../../shared/lib/localImageSrc";
 import type { ClipboardEntry } from "../../../shared/types";
 
 interface TagManagerProps {
@@ -282,8 +283,31 @@ export default function TagManager({ t, theme }: TagManagerProps) {
 
     const copyToClipboard = async (id: number, content: string, type: string) => {
         try {
-            await invoke('copy_to_clipboard', { content, contentType: type, paste: true, id, deleteAfterUse: false });
+            if (document.activeElement instanceof HTMLElement) {
+                document.activeElement.blur();
+            }
+            const invokeContent =
+                id !== 0 && (type === "image" || type === "video" || type === "file")
+                    ? ""
+                    : content;
+            await invoke('copy_to_clipboard', {
+                content: invokeContent,
+                contentType: type,
+                paste: true,
+                id,
+                deleteAfterUse: false
+            });
         } catch (err) { console.error(err); }
+    };
+
+    const handleTagItemMouseDown = (e: MouseEvent, item: ClipboardEntry) => {
+        if (e.button !== 0 || isManageMode) return;
+        const target = e.target as HTMLElement;
+        if (target.closest('button, input, textarea, [role="button"]')) {
+            return;
+        }
+        e.preventDefault();
+        void copyToClipboard(item.id, item.content, item.content_type);
     };
 
     const filteredTags = useMemo(() => {
@@ -591,6 +615,9 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                 <div
                                     key={item.id}
                                     className={`themed-card ${selectedItemIds.has(item.id) ? 'selected' : ''}`}
+                                    data-tag-item-id={String(item.id)}
+                                    data-tag-item-type={item.content_type}
+                                    onMouseDownCapture={(e) => handleTagItemMouseDown(e, item)}
                                     onClick={() => {
                                         if (isManageMode) {
                                             setSelectedItemIds(prev => {
@@ -599,8 +626,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                                 else next.add(item.id);
                                                 return next;
                                             });
-                                        } else {
-                                            copyToClipboard(item.id, item.content, item.content_type);
                                         }
                                     }}
                                 >
@@ -650,7 +675,14 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                     {item.content_type === 'image' ? (
                                         <div className="card-media">
                                             <img
-                                                src={item.content.startsWith('data:') ? item.content : convertFileSrc(item.content)}
+                                                src={
+                                                    withImageCacheBust(
+                                                        item.content.startsWith('data:')
+                                                            ? item.content
+                                                            : (toTauriLocalImageSrc(item.content) || convertFileSrc(item.content)),
+                                                        item.timestamp
+                                                    ) || ""
+                                                }
                                                 alt=""
                                                 className="image-preview"
                                                 loading="lazy"
@@ -1066,9 +1098,9 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 .confirm-dialog-button { padding: 6px 16px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: transparent; color: var(--text-primary); cursor: pointer; }
                 .confirm-dialog-button.primary { background: var(--accent-color); color: white; border: none; }
 
-                .tag-divider { width: 6px; cursor: col-resize; position: relative; z-index: 5; background: transparent; transition: background 0.2s; display: flex; align-items: center; justify-content: center; }
+                .tag-divider { width: 2px; cursor: col-resize; position: relative; z-index: 5; background: transparent; transition: background 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
                 .tag-divider:hover, .tag-divider.active { background: var(--accent-light); }
-                .tag-divider-handle { width: 2px; height: 24px; background: var(--text-muted); opacity: 0.3; border-radius: 1px; }
+                .tag-divider-handle { width: 1px; height: 20px; background: var(--text-muted); opacity: 0.35; border-radius: 1px; }
 
                 /* Custom Scrollbar */
                 .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -1076,8 +1108,8 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 
                 /* Theme Adaptations */
-                .theme-mica .tag-sidebar, .theme-acrylic .tag-sidebar { border-radius: 12px; margin: 8px 4px 8px 8px; height: calc(100% - 16px); }
-                .theme-mica .tag-content, .theme-acrylic .tag-content { border-radius: 12px; margin: 8px 8px 8px 4px; height: calc(100% - 16px); border: 1px solid var(--panel-divider-color); }
+                .theme-mica .tag-sidebar, .theme-acrylic .tag-sidebar { border-radius: 12px; margin: 8px 0 8px 8px; height: calc(100% - 16px); }
+                .theme-mica .tag-content, .theme-acrylic .tag-content { border-radius: 12px; margin: 8px 8px 8px 0; height: calc(100% - 16px); border: 1px solid var(--panel-divider-color); }
 
                 /* Stacked Layout Support */
                 .stacked-layout {
@@ -1085,8 +1117,8 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                     grid-template-rows: var(--tm-sidebar-height, 180px) auto 1fr;
                 }
                 .stacked-layout .tag-sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--panel-divider-color); }
-                .stacked-layout .tag-divider { width: 100%; height: 6px; cursor: row-resize; }
-                .stacked-layout .tag-divider-handle { width: 24px; height: 2px; }
+                .stacked-layout .tag-divider { width: 100%; height: 2px; cursor: row-resize; }
+                .stacked-layout .tag-divider-handle { width: 20px; height: 1px; }
                 .stacked-layout .theme-mica .tag-sidebar, .stacked-layout .theme-acrylic .tag-sidebar { margin: 8px 8px 4px 8px; height: calc(var(--tm-sidebar-height, 180px) - 12px); width: calc(100% - 16px); }
                 .stacked-layout .theme-mica .tag-content, .stacked-layout .theme-acrylic .tag-content { margin: 4px 8px 8px 8px; width: calc(100% - 16px); height: auto; }
             `}</style>

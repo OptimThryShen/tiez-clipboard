@@ -20,7 +20,8 @@ use urlencoding::decode;
 const DEFAULT_INTERVAL_SECS: u64 = 120;
 const MIN_INTERVAL_SECS: u64 = 5;
 const MAX_INTERVAL_SECS: u64 = 3600;
-const DEFAULT_SNAPSHOT_INTERVAL_MIN: i64 = 720;
+const DEFAULT_SNAPSHOT_INTERVAL_MIN: i64 = 60;
+const SNAPSHOT_PUSH_MIN_INTERVAL_SECS: i64 = 5 * 60;
 const MIN_SNAPSHOT_INTERVAL_MIN: i64 = 5;
 const MAX_SNAPSHOT_INTERVAL_MIN: i64 = 1440;
 const SYNC_FETCH_PAGE_SIZE: i32 = 1000;
@@ -35,8 +36,8 @@ const CLOUD_SYNC_WEBDAV_LOCAL_SEQ_KEY: &str = "cloud_sync_webdav_local_seq";
 const CLOUD_SYNC_WEBDAV_OP_CURSOR_MAP_KEY: &str = "cloud_sync_webdav_op_cursor_map";
 const CLOUD_SYNC_WEBDAV_BLOB_CACHE_KEY: &str = "cloud_sync_webdav_blob_cache";
 const CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PUSH_AT_KEY: &str = "cloud_sync_webdav_last_snapshot_push_at";
-const CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PULL_AT_KEY: &str = "cloud_sync_webdav_last_snapshot_pull_at";
 const CLOUD_SYNC_WEBDAV_LAST_HEAD_REBUILD_AT_KEY: &str = "cloud_sync_webdav_last_head_rebuild_at";
+const CLOUD_SYNC_WEBDAV_SNAPSHOT_CURSOR_MAP_KEY: &str = "cloud_sync_webdav_snapshot_cursor_map";
 const BLOB_KIND_IMAGE: &str = "image";
 const BLOB_KIND_CONTENT: &str = "content";
 const BLOB_KIND_HTML: &str = "html";
@@ -1083,6 +1084,46 @@ fn save_webdav_op_cursor_map(app: &AppHandle, map: &HashMap<String, i64>) {
             .settings_repo
             .set(CLOUD_SYNC_WEBDAV_OP_CURSOR_MAP_KEY, &payload);
     }
+}
+
+fn load_webdav_snapshot_cursor_map(app: &AppHandle) -> HashMap<String, i64> {
+    let raw = app
+        .try_state::<DbState>()
+        .and_then(|db| {
+            db.settings_repo
+                .get(CLOUD_SYNC_WEBDAV_SNAPSHOT_CURSOR_MAP_KEY)
+                .ok()
+                .flatten()
+        })
+        .unwrap_or_default();
+    if raw.trim().is_empty() {
+        return HashMap::new();
+    }
+    serde_json::from_str::<HashMap<String, i64>>(&raw).unwrap_or_default()
+}
+
+fn save_webdav_snapshot_cursor_map(app: &AppHandle, map: &HashMap<String, i64>) {
+    if let Some(db_state) = app.try_state::<DbState>() {
+        let payload = serde_json::to_string(map).unwrap_or_else(|_| "{}".to_string());
+        let _ = db_state
+            .settings_repo
+            .set(CLOUD_SYNC_WEBDAV_SNAPSHOT_CURSOR_MAP_KEY, &payload);
+    }
+}
+
+fn merge_webdav_sync_heads(base: &mut WebDavSyncHead, incoming: WebDavSyncHead) {
+    for (device_id, incoming_device) in incoming.devices {
+        let entry = base.devices.entry(device_id).or_default();
+        entry.latest_op_seq = entry.latest_op_seq.max(incoming_device.latest_op_seq);
+        entry.snapshot_updated_at = entry
+            .snapshot_updated_at
+            .max(incoming_device.snapshot_updated_at);
+        entry.snapshot_op_seq = entry.snapshot_op_seq.max(incoming_device.snapshot_op_seq);
+        entry.settings_updated_at = entry
+            .settings_updated_at
+            .max(incoming_device.settings_updated_at);
+    }
+    base.updated_at = base.updated_at.max(incoming.updated_at);
 }
 
 fn load_webdav_blob_cache(app: &AppHandle) -> HashMap<String, i64> {
@@ -2488,12 +2529,7 @@ async fn rebuild_webdav_sync_head(
         devices: BTreeMap::new(),
     };
 
-    for op_ref in list_webdav_op_refs(client, cfg, &paths.ops_path).await? {
-        update_webdav_head_device(&mut head, &op_ref.device_id, |device| {
-            device.latest_op_seq = device.latest_op_seq.max(op_ref.seq);
-        });
-    }
-
+    // Index from bounded per-device files only — never PROPFIND the ops/ directory.
     for device_id in list_webdav_snapshot_ids(client, cfg, &paths.devices_path).await? {
         let snapshot = fetch_webdav_snapshot(client, cfg, &paths.devices_path, &device_id).await?;
         let updated_at = snapshot
@@ -2525,6 +2561,29 @@ async fn rebuild_webdav_sync_head(
     Ok(head)
 }
 
+async fn ensure_head_covers_known_devices(
+    client: &Client,
+    cfg: &CloudSyncConfig,
+    devices_path: &str,
+    head: &mut WebDavSyncHead,
+) -> AppResult<()> {
+    for device_id in list_webdav_snapshot_ids(client, cfg, devices_path).await? {
+        if head.devices.contains_key(&device_id) {
+            continue;
+        }
+        let Some(snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
+        else {
+            continue;
+        };
+        update_webdav_head_device(head, &device_id, |device| {
+            device.latest_op_seq = device.latest_op_seq.max(snapshot.latest_op_seq);
+            device.snapshot_updated_at = device.snapshot_updated_at.max(snapshot.updated_at);
+            device.snapshot_op_seq = device.snapshot_op_seq.max(snapshot.latest_op_seq);
+        });
+    }
+    Ok(())
+}
+
 async fn resolve_webdav_sync_head(
     app: &AppHandle,
     client: &Client,
@@ -2549,8 +2608,13 @@ async fn resolve_webdav_sync_head(
             Ok(rebuilt)
         }
         Err(err) => {
-            if let Some(existing) = fetched {
-                Ok(existing)
+            if let Some(mut existing) = fetched {
+                if let Ok(fresh) = rebuild_webdav_sync_head(client, cfg, paths).await {
+                    merge_webdav_sync_heads(&mut existing, fresh);
+                    Ok(existing)
+                } else {
+                    Ok(existing)
+                }
             } else {
                 Err(err)
             }
@@ -2565,10 +2629,9 @@ async fn pull_remote_webdav_ops_from_head(
     blobs_path: &str,
     ops_path: &str,
     head: &WebDavSyncHead,
-) -> AppResult<(usize, bool)> {
+) -> AppResult<usize> {
     let mut cursor_map = load_webdav_op_cursor_map(app);
     let mut received = 0usize;
-    let mut head_stale = false;
 
     for (device_id, device_head) in &head.devices {
         if crate::app::system::same_anon_id(device_id, &cfg.device_id) {
@@ -2585,7 +2648,8 @@ async fn pull_remote_webdav_ops_from_head(
 
         for seq in (last_seq + 1)..=device_head.latest_op_seq {
             if cloud_sync_cancel_requested() {
-                return Ok((received, head_stale));
+                save_webdav_op_cursor_map(app, &cursor_map);
+                return Ok(received);
             }
 
             let op_ref = WebDavOpRef {
@@ -2601,18 +2665,22 @@ async fn pull_remote_webdav_ops_from_head(
                     cursor_map.insert(device_id.clone(), last_seq);
                 }
                 Some(_) | None => {
-                    head_stale = true;
-                    break;
+                    // Ops are ephemeral; missing batches are expected after snapshot compaction.
+                    last_seq = seq;
                 }
             }
+        }
+
+        if last_seq > cursor_map.get(device_id).copied().unwrap_or(0) {
+            cursor_map.insert(device_id.clone(), last_seq);
         }
     }
 
     save_webdav_op_cursor_map(app, &cursor_map);
-    Ok((received, head_stale))
+    Ok(received)
 }
 
-async fn pull_remote_webdav_snapshots_from_head(
+async fn pull_remote_device_snapshots(
     app: &AppHandle,
     client: &Client,
     cfg: &CloudSyncConfig,
@@ -2620,8 +2688,11 @@ async fn pull_remote_webdav_snapshots_from_head(
     devices_path: &str,
     head: &WebDavSyncHead,
 ) -> AppResult<usize> {
+    let mut snapshot_cursor = load_webdav_snapshot_cursor_map(app);
     let mut remote_items: Vec<CloudSyncItem> = Vec::new();
-    let mut device_ids: Vec<(String, i64)> = head
+    let mut seen_devices: HashSet<String> = HashSet::new();
+
+    let mut candidates: Vec<(String, i64)> = head
         .devices
         .iter()
         .filter_map(|(device_id, device_head)| {
@@ -2630,24 +2701,47 @@ async fn pull_remote_webdav_snapshots_from_head(
             {
                 None
             } else {
+                seen_devices.insert(device_id.clone());
                 Some((device_id.clone(), device_head.snapshot_updated_at))
             }
         })
         .collect();
 
-    device_ids.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    for device_id in list_webdav_snapshot_ids(client, cfg, devices_path).await? {
+        if crate::app::system::same_anon_id(&device_id, &cfg.device_id) || !seen_devices.insert(device_id.clone()) {
+            continue;
+        }
+        if let Some(snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await? {
+            if snapshot.updated_at > 0 {
+                candidates.push((device_id, snapshot.updated_at));
+            }
+        }
+    }
 
-    for (device_id, _) in device_ids.into_iter().take(MAX_REMOTE_SNAPSHOTS) {
+    candidates.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    for (device_id, _) in candidates.into_iter().take(MAX_REMOTE_SNAPSHOTS) {
         if cloud_sync_cancel_requested() {
             break;
         }
-        if let Some(mut snapshot) =
-            fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
-        {
-            enrich_item_blobs_after_pull(app, client, cfg, blobs_path, &mut snapshot.entries)
-                .await?;
-            remote_items.extend(snapshot.entries);
+        let last_pulled = snapshot_cursor.get(&device_id).copied().unwrap_or(0);
+        let Some(mut snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
+        else {
+            continue;
+        };
+        if snapshot.updated_at <= last_pulled {
+            continue;
         }
+
+        enrich_item_blobs_after_pull(app, client, cfg, blobs_path, &mut snapshot.entries).await?;
+        remote_items.extend(snapshot.entries);
+        snapshot_cursor.insert(device_id, snapshot.updated_at);
+    }
+
+    save_webdav_snapshot_cursor_map(app, &snapshot_cursor);
+
+    if remote_items.is_empty() {
+        return Ok(0);
     }
 
     remote_items.sort_by_key(|item| item.timestamp);
@@ -2747,67 +2841,19 @@ fn should_run_periodic_snapshot(last_ts: i64, now: i64, interval_secs: i64) -> b
     now.saturating_sub(last_ts) >= interval_secs.saturating_mul(1000)
 }
 
-fn should_push_webdav_snapshot(app: &AppHandle, now: i64, snapshot_interval_secs: i64) -> bool {
-    let last = get_setting_i64(app, CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PUSH_AT_KEY, 0);
-    should_run_periodic_snapshot(last, now, snapshot_interval_secs)
-}
-
-fn should_pull_webdav_snapshot(
+fn should_push_webdav_snapshot(
     app: &AppHandle,
     now: i64,
-    has_remote_op_cursor: bool,
     snapshot_interval_secs: i64,
+    has_local_changes: bool,
 ) -> bool {
-    let last = get_setting_i64(app, CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PULL_AT_KEY, 0);
-    if !has_remote_op_cursor {
-        // Cold-start fallback for new peers without op cursors yet.
-        return should_run_periodic_snapshot(last, now, (5 * 60).min(snapshot_interval_secs));
+    let last = get_setting_i64(app, CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PUSH_AT_KEY, 0);
+    if should_run_periodic_snapshot(last, now, snapshot_interval_secs) {
+        return true;
     }
-    should_run_periodic_snapshot(last, now, snapshot_interval_secs)
-}
-
-async fn pull_remote_webdav_ops(
-    app: &AppHandle,
-    client: &Client,
-    cfg: &CloudSyncConfig,
-    ops_path: &str,
-    blobs_path: &str,
-) -> AppResult<usize> {
-    let refs = list_webdav_op_refs(client, cfg, ops_path).await?;
-    if refs.is_empty() {
-        return Ok(0);
-    }
-
-    let mut cursor_map = load_webdav_op_cursor_map(app);
-    let mut received = 0usize;
-    let _total_refs = refs.len();
-    for (_index, op_ref) in refs.into_iter().enumerate() {
-        if cloud_sync_cancel_requested() {
-            break;
-        }
-        if crate::app::system::same_anon_id(&op_ref.device_id, &cfg.device_id) {
-            continue;
-        }
-        let last_seq = cursor_map.get(&op_ref.device_id).copied().unwrap_or(0);
-        if op_ref.seq <= last_seq {
-            continue;
-        }
-
-        if let Some(mut batch) = fetch_webdav_ops_batch(client, cfg, ops_path, &op_ref).await? {
-            if batch.device_id != op_ref.device_id {
-                continue;
-            }
-            if cloud_sync_cancel_requested() {
-                break;
-            }
-            enrich_item_blobs_after_pull(app, client, cfg, blobs_path, &mut batch.entries).await?;
-            received += apply_remote_changes(app, &batch.entries, &cfg.content_prefs)?;
-            let next_seq = batch.seq.max(op_ref.seq).max(last_seq);
-            cursor_map.insert(op_ref.device_id.clone(), next_seq);
-        }
-    }
-    save_webdav_op_cursor_map(app, &cursor_map);
-    Ok(received)
+    has_local_changes
+        && last > 0
+        && now.saturating_sub(last) >= SNAPSHOT_PUSH_MIN_INTERVAL_SECS.saturating_mul(1000)
 }
 
 async fn sync_once_http(app: &AppHandle, cfg: &CloudSyncConfig) -> AppResult<CloudSyncStatus> {
@@ -2899,17 +2945,47 @@ async fn sync_once_webdav(
     let client = build_http_client()?;
     let paths = ensure_webdav_directories(&client, cfg).await?;
     let mut sync_head = resolve_webdav_sync_head(app, &client, cfg, &paths, now).await?;
+    ensure_head_covers_known_devices(&client, cfg, &paths.devices_path, &mut sync_head).await?;
     let mut sync_head_dirty = false;
     let mut webdav_blob_cache = load_webdav_blob_cache(app);
-    let should_pull_snapshot = force_snapshot
-        || should_pull_webdav_snapshot(
-            app,
-            now,
-            !load_webdav_op_cursor_map(app).is_empty(),
-            cfg.snapshot_interval_secs,
-        );
-    let should_push_snapshot =
-        force_snapshot || should_push_webdav_snapshot(app, now, cfg.snapshot_interval_secs);
+    let should_push_snapshot = force_snapshot
+        || should_push_webdav_snapshot(app, now, cfg.snapshot_interval_secs, !delta_items.is_empty());
+
+    // 1) Pull authoritative per-device snapshots every cycle (bounded devices/ listing).
+    let mut received_items = pull_remote_device_snapshots(
+        app,
+        &client,
+        cfg,
+        &paths.blobs_path,
+        &paths.devices_path,
+        &sync_head,
+    )
+    .await?;
+
+    if cloud_sync_cancel_requested() {
+        return Ok(disabled_status());
+    }
+
+    // 2) Pull settings when a peer has published a newer snapshot.
+    received_items += pull_remote_settings_snapshot_from_head(
+        app,
+        &client,
+        cfg,
+        &paths.settings_path,
+        &sync_head,
+    )
+    .await?;
+
+    // 3) Pull ephemeral incremental ops on top of snapshots.
+    received_items += pull_remote_webdav_ops_from_head(
+        app,
+        &client,
+        cfg,
+        &paths.blobs_path,
+        &paths.ops_path,
+        &sync_head,
+    )
+    .await?;
 
     let mut uploaded_items = 0usize;
     if !delta_items.is_empty() {
@@ -2943,36 +3019,6 @@ async fn sync_once_webdav(
         return Ok(disabled_status());
     }
 
-    let (mut received_items, head_stale) = pull_remote_webdav_ops_from_head(
-        app,
-        &client,
-        cfg,
-        &paths.blobs_path,
-        &paths.ops_path,
-        &sync_head,
-    )
-    .await?;
-    if head_stale {
-        let rebuilt = rebuild_webdav_sync_head(&client, cfg, &paths).await?;
-        if rebuilt != sync_head {
-            sync_head = rebuilt;
-            sync_head.updated_at = now_ms();
-            upload_webdav_sync_head(&client, cfg, &paths.head_path, &sync_head).await?;
-            touch_webdav_head_rebuild_at(app, now);
-        }
-        received_items +=
-            pull_remote_webdav_ops(app, &client, cfg, &paths.ops_path, &paths.blobs_path).await?;
-        received_items += pull_remote_webdav_snapshots_from_head(
-            app,
-            &client,
-            cfg,
-            &paths.blobs_path,
-            &paths.devices_path,
-            &sync_head,
-        )
-        .await?;
-    }
-
     // Incremental Emoji Sync check
     if let Ok(emoji_op) = check_and_create_emoji_sync_op(app) {
         if let Some(op) = emoji_op {
@@ -2988,28 +3034,6 @@ async fn sync_once_webdav(
     }
 
     save_webdav_blob_cache(app, &webdav_blob_cache);
-
-    if should_pull_snapshot {
-        received_items += pull_remote_webdav_snapshots_from_head(
-            app,
-            &client,
-            cfg,
-            &paths.blobs_path,
-            &paths.devices_path,
-            &sync_head,
-        )
-        .await?;
-
-        received_items += pull_remote_settings_snapshot_from_head(
-            app,
-            &client,
-            cfg,
-            &paths.settings_path,
-            &sync_head,
-        )
-        .await?;
-        set_setting_i64(app, CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PULL_AT_KEY, now);
-    }
 
     if should_push_snapshot {
         if cloud_sync_cancel_requested() {

@@ -1,6 +1,7 @@
-use crate::app_state::{PasteQueue, SettingsState};
+use crate::app_state::SettingsState;
 use crate::error::{AppError, AppResult};
 use crate::global_state::HOTKEY_STRING;
+use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
@@ -78,6 +79,19 @@ pub fn quick_paste_index_from_shortcut(modifier: &str, shortcut: &Shortcut) -> O
     })
 }
 
+fn register_unique_shortcut(
+    app_handle: &AppHandle,
+    hotkey: &str,
+    registered: &mut HashSet<String>,
+) {
+    if let Some(shortcut) = parse_shortcut(hotkey) {
+        let key = format!("{shortcut:?}");
+        if registered.insert(key) {
+            let _ = app_handle.global_shortcut().register(shortcut);
+        }
+    }
+}
+
 pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
     let _ = app_handle.global_shortcut().unregister_all();
 
@@ -88,34 +102,25 @@ pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
     let search_hotkey = settings.search_hotkey.lock().unwrap().clone();
     let quick_paste_modifier = settings.quick_paste_modifier.lock().unwrap().clone();
     let sequential_mode = settings.sequential_mode.load(Ordering::Relaxed);
-    let has_paste_queue = {
-        let queue = app_handle.state::<PasteQueue>().inner().0.lock().unwrap();
-        !queue.items.is_empty()
-    };
+    let mut registered = HashSet::new();
 
     if !main_hotkey.is_empty() && !is_win_v_hotkey(&main_hotkey) {
-        if let Some(shortcut) = parse_shortcut(&main_hotkey) {
-            let _ = app_handle.global_shortcut().register(shortcut);
-        }
+        register_unique_shortcut(app_handle, &main_hotkey, &mut registered);
     }
 
-    if sequential_mode || has_paste_queue {
-        if let Some(shortcut) = parse_shortcut(&sequential_hotkey) {
-            let _ = app_handle.global_shortcut().register(shortcut);
-        }
+    // Only bind sequential paste while the mode is enabled (#125).
+    // Do not keep Alt+V registered for stale queue items after the mode is turned off.
+    if sequential_mode {
+        register_unique_shortcut(app_handle, &sequential_hotkey, &mut registered);
     }
 
-    if let Some(shortcut) = parse_shortcut(&rich_hotkey) {
-        let _ = app_handle.global_shortcut().register(shortcut);
-    }
-
-    if let Some(shortcut) = parse_shortcut(&search_hotkey) {
-        let _ = app_handle.global_shortcut().register(shortcut);
-    }
+    register_unique_shortcut(app_handle, &rich_hotkey, &mut registered);
+    register_unique_shortcut(app_handle, &search_hotkey, &mut registered);
 
     for index in 0..QUICK_PASTE_KEYS.len() {
-        if let Some(shortcut) = quick_paste_shortcut(&quick_paste_modifier, index) {
-            let _ = app_handle.global_shortcut().register(shortcut);
+        if let Some(prefix) = quick_paste_modifier_prefix(&quick_paste_modifier) {
+            let hotkey = format!("{prefix}+{}", QUICK_PASTE_KEYS[index]);
+            register_unique_shortcut(app_handle, &hotkey, &mut registered);
         }
     }
 

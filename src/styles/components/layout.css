@@ -1,4 +1,6 @@
 header {
+  position: relative;
+  z-index: 100;
   padding: var(--layout-header-padding-y) 0;
   background: var(--bg-toolbar);
   border-bottom: var(--toolbar-border);
@@ -170,6 +172,48 @@ header {
   box-sizing: border-box;
 }
 
+.search-reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    grid-template-rows 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.search-reveal.is-open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.search-reveal-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.search-reveal.is-open .search-reveal-inner {
+  overflow: visible;
+}
+
+.search-reveal .search-container {
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.search-reveal.is-open .search-container {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-reveal,
+  .search-reveal .search-container {
+    transition-duration: 0.01ms;
+  }
+}
+
 .search-container {
   position: relative;
   width: 100%;
@@ -180,6 +224,7 @@ header {
 
 .search-input-wrap {
   position: relative;
+  z-index: 2;
 }
 
 .search-input-row {

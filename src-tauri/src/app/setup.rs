@@ -1689,12 +1689,7 @@ pub fn handle_global_shortcut(
             val.replace("Win", "Super").parse::<Shortcut>()
         } {
             if shortcut == &seq_s {
-                let is_seq = settings.sequential_mode.load(Ordering::Relaxed);
-                let has_items = {
-                    let q_notification = app.state::<PasteQueue>().inner().0.lock().unwrap();
-                    !q_notification.items.is_empty()
-                };
-                if is_seq || has_items {
+                if settings.sequential_mode.load(Ordering::Relaxed) {
                     crate::services::paste_queue::paste_next_step(app.clone());
                 }
             }

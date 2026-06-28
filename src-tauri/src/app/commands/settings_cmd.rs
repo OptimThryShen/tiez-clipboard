@@ -1,5 +1,5 @@
 use crate::app::commands::hotkey_cmd::{normalize_quick_paste_modifier, sync_registered_hotkeys};
-use crate::app_state::SettingsState;
+use crate::app_state::{PasteQueue, SettingsState};
 use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
@@ -17,6 +17,16 @@ pub fn set_sequential_mode(
     let _ = db_state
         .settings_repo
         .set("app.sequential_mode", &enabled.to_string());
+
+    if !enabled {
+        let paste_queue = app_handle.state::<PasteQueue>();
+        let mut queue = paste_queue.inner().0.lock().unwrap();
+        queue.items.clear();
+        queue.last_action_was_paste = false;
+        queue.last_pasted_content = None;
+        queue.last_pasted_fingerprint = None;
+    }
+
     let _ = sync_registered_hotkeys(&app_handle);
 }
 

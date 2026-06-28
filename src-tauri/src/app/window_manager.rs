@@ -173,6 +173,116 @@ fn remap_fixed_window_position(
     )
 }
 
+fn global_cursor_physical(window: &WebviewWindow) -> Option<(i32, i32)> {
+    #[cfg(windows)]
+    {
+        let mut point = POINT::default();
+        unsafe {
+            if GetCursorPos(&mut point).is_err() {
+                return None;
+            }
+        }
+        Some((point.x, point.y))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        window
+            .cursor_position()
+            .ok()
+            .map(|cursor| (cursor.x.round() as i32, cursor.y.round() as i32))
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        let _ = window;
+        None
+    }
+}
+
+fn position_window_follow_mouse(
+    window: &WebviewWindow,
+    cursor_x: i32,
+    cursor_y: i32,
+    w: i32,
+    h: i32,
+) {
+    let mut target_x = cursor_x - (w / 2);
+    let mut target_y = cursor_y + 12;
+
+    let mut target_monitor: Option<tauri::Monitor> = None;
+    if let Ok(monitors) = window.available_monitors() {
+        for m in &monitors {
+            let m_pos = m.position();
+            let m_size = m.size();
+            let mx = m_pos.x;
+            let my = m_pos.y;
+            let mw = m_size.width as i32;
+            let mh = m_size.height as i32;
+            if cursor_x >= mx
+                && cursor_x < mx + mw
+                && cursor_y >= my
+                && cursor_y < my + mh
+            {
+                target_monitor = Some(m.clone());
+                break;
+            }
+        }
+        if target_monitor.is_none() && !monitors.is_empty() {
+            target_monitor = Some(monitors[0].clone());
+        }
+    }
+
+    if let Some(m) = target_monitor.as_ref() {
+        let m_pos = m.position();
+        let m_size = m.size();
+        let mx = m_pos.x;
+        let my = m_pos.y;
+        let mw = m_size.width as i32;
+        let mh = m_size.height as i32;
+        if target_x < mx {
+            target_x = mx + 5;
+        }
+        if target_x + w > mx + mw {
+            target_x = mx + mw - w - 5;
+        }
+        if target_y + h > my + mh {
+            let above_y = cursor_y - h - 12;
+            if above_y >= my {
+                target_y = above_y;
+            } else {
+                target_y = my + mh - h - 5;
+            }
+        }
+        if target_y < my {
+            target_y = my + 5;
+        }
+    }
+
+    let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+        x: target_x,
+        y: target_y,
+    }));
+}
+
+fn maybe_position_window_follow_mouse(app: &AppHandle, window: &WebviewWindow) {
+    let settings = app.state::<SettingsState>();
+    if !settings.follow_mouse.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(size) = window.outer_size() else {
+        return;
+    };
+    let Some((cursor_x, cursor_y)) = global_cursor_physical(window) else {
+        return;
+    };
+    position_window_follow_mouse(
+        window,
+        cursor_x,
+        cursor_y,
+        size.width as i32,
+        size.height as i32,
+    );
+}
+
 pub fn toggle_window(app: &AppHandle) {
     #[cfg(target_os = "windows")]
     toggle_window_windows(app);
@@ -231,72 +341,14 @@ fn toggle_window_windows(app: &AppHandle) {
         if let Ok(size) = window.outer_size() {
             let settings = app.state::<SettingsState>();
             if settings.follow_mouse.load(Ordering::Relaxed) {
-                let w = size.width as i32;
-                let h = size.height as i32;
-
-                #[cfg(windows)]
-                {
-                    let mut point = POINT::default();
-                    unsafe {
-                        let _ = GetCursorPos(&mut point);
-                    }
-                    let mut target_x = point.x - (w / 2);
-                    let mut target_y = point.y + 12;
-
-                    let mut target_monitor: Option<tauri::Monitor> = None;
-                    if let Ok(monitors) = window.available_monitors() {
-                        for m in &monitors {
-                            let m_pos = m.position();
-                            let m_size = m.size();
-                            let mx = m_pos.x;
-                            let my = m_pos.y;
-                            let mw = m_size.width as i32;
-                            let mh = m_size.height as i32;
-                            if point.x >= mx
-                                && point.x < mx + mw
-                                && point.y >= my
-                                && point.y < my + mh
-                            {
-                                target_monitor = Some(m.clone());
-                                break;
-                            }
-                        }
-                        if target_monitor.is_none() && !monitors.is_empty() {
-                            target_monitor = Some(monitors[0].clone());
-                        }
-                    }
-
-                    if let Some(m) = target_monitor.as_ref() {
-                        let m_pos = m.position();
-                        let m_size = m.size();
-                        let mx = m_pos.x;
-                        let my = m_pos.y;
-                        let mw = m_size.width as i32;
-                        let mh = m_size.height as i32;
-                        if target_x < mx {
-                            target_x = mx + 5;
-                        }
-                        if target_x + w > mx + mw {
-                            target_x = mx + mw - w - 5;
-                        }
-                        if target_y + h > my + mh {
-                            let above_y = point.y - h - 12;
-                            if above_y >= my {
-                                target_y = above_y;
-                            } else {
-                                target_y = my + mh - h - 5;
-                            }
-                        }
-                        if target_y < my {
-                            target_y = my + 5;
-                        }
-                    }
-
-                    let _ =
-                        window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
-                            x: target_x,
-                            y: target_y,
-                        }));
+                if let Some((cursor_x, cursor_y)) = global_cursor_physical(&window) {
+                    position_window_follow_mouse(
+                        &window,
+                        cursor_x,
+                        cursor_y,
+                        size.width as i32,
+                        size.height as i32,
+                    );
                 }
             } else if was_docked {
                 let mut target_monitor = window.current_monitor().ok().flatten();
@@ -535,6 +587,7 @@ fn toggle_window_macos(app_handle: &AppHandle) {
             .as_millis() as u64;
         if !expanded {
             LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+            maybe_position_window_follow_mouse(app_handle, &window);
         }
 
         apply_window_vibrancy(app_handle, &window);

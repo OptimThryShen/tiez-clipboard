@@ -417,10 +417,11 @@ pub fn clipboard_image_fallback_data_url() -> Option<String> {
 pub use pipeline::{ClipboardData, ClipboardPipeline, PipelineContext};
 pub use utils::{
     attach_rich_image_fallback, attach_rich_named_formats, build_clipboard_text_fingerprint,
-    build_entry_preview, derive_rich_text_content, embed_local_images, entry_matches_search,
-    entry_searchable_text, extract_animated_image_data_url_from_html,
+    build_entry_preview, derive_rich_text_content, embed_local_images, encode_cf_html,
+    entry_matches_search, entry_searchable_text, extract_animated_image_data_url_from_html,
     extract_animated_image_data_url_from_text, extract_first_image_data_url_from_html,
-    parse_cf_html, repair_html_fragment, split_rich_html_and_image_fallback,
+    normalize_plain_text_for_clipboard_paste, parse_cf_html, plain_text_from_tabular_html,
+    repair_html_fragment, sanitize_tabular_html_for_paste, split_rich_html_and_image_fallback,
     split_rich_html_and_named_formats, truncate_html_for_preview,
 };
 

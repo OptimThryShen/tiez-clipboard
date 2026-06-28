@@ -866,18 +866,72 @@ pub unsafe fn set_clipboard_image_and_gif(
     result
 }
 
-/// Set image with multiple formats: GIF (optional), PNG (optional), and DIB
-/// This maximizes compatibility with different applications
-/// For GIF: Also sets CF_HDROP with temp file path (WeChat/QQ need this for animated GIFs)
+unsafe fn set_clipboard_unicode_text_locked(text: &str) -> Result<(), String> {
+    let mut wide: Vec<u16> = text.encode_utf16().collect();
+    wide.push(0);
+    let byte_len = wide.len() * 2;
+    let h_text = GlobalAlloc(GHND, byte_len).map_err(|e| e.to_string())?;
+    let p_text = GlobalLock(h_text);
+    if p_text.is_null() {
+        return Err("GlobalLock failed".to_string());
+    }
+    std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, p_text as *mut u8, byte_len);
+    let _ = GlobalUnlock(h_text);
+    if SetClipboardData(
+        CF_UNICODETEXT,
+        Some(windows::Win32::Foundation::HANDLE(h_text.0 as _)),
+    )
+    .is_err()
+    {
+        return Err("SetClipboardData (CF_UNICODETEXT) failed".to_string());
+    }
+    Ok(())
+}
+
+unsafe fn set_clipboard_hdrop_path_locked(path: &str) -> Result<(), String> {
+    let mut buffer: Vec<u16> = path.encode_utf16().collect();
+    buffer.push(0);
+    buffer.push(0);
+
+    let dropfiles_size = 20;
+    let buffer_size = buffer.len() * 2;
+    let total_size = dropfiles_size + buffer_size;
+
+    let h_global = GlobalAlloc(GHND, total_size).map_err(|e| e.to_string())?;
+    let p_mem = GlobalLock(h_global);
+    if p_mem.is_null() {
+        return Err("GlobalLock failed".to_string());
+    }
+
+    *(p_mem as *mut u32) = 20;
+    *(p_mem.add(16) as *mut i32) = 1;
+    let p_files = p_mem.add(20) as *mut u16;
+    std::ptr::copy_nonoverlapping(buffer.as_ptr(), p_files, buffer.len());
+
+    let _ = GlobalUnlock(h_global);
+    if SetClipboardData(
+        CF_HDROP,
+        Some(windows::Win32::Foundation::HANDLE(h_global.0 as _)),
+    )
+    .is_err()
+    {
+        return Err("SetClipboardData (CF_HDROP) failed".to_string());
+    }
+    Ok(())
+}
+
+/// Set image with multiple formats: GIF (optional), PNG (optional), DIB, and optional file path.
+/// When `file_path` is set, also publishes CF_HDROP + CF_UNICODETEXT for path-aware apps (#134).
 pub unsafe fn set_clipboard_image_with_formats(
     image: ImageData,
     gif_data: Option<&[u8]>,
     png_data: Option<&[u8]>,
+    file_path: Option<&str>,
 ) -> Result<Option<String>, String> {
     use windows::Win32::System::DataExchange::RegisterClipboardFormatW;
 
-    // For GIF, create temp file first (before opening clipboard)
-    let gif_temp_path: Option<String> = if let Some(gif_bytes) = gif_data {
+    // For GIF without an existing path, create a temp file before opening the clipboard.
+    let gif_temp_path: Option<String> = if gif_data.is_some() && file_path.is_none() {
         let temp_dir = std::env::temp_dir();
         let filename = format!(
             "TieZ_GIF_{}.gif",
@@ -887,14 +941,24 @@ pub unsafe fn set_clipboard_image_with_formats(
                 .as_millis()
         );
         let path = temp_dir.join(filename);
-        if std::fs::write(&path, gif_bytes).is_ok() {
-            path.to_str().map(|s| s.to_string())
+        if let Some(gif_bytes) = gif_data {
+            if std::fs::write(&path, gif_bytes).is_ok() {
+                path.to_str().map(|s| s.to_string())
+            } else {
+                None
+            }
         } else {
             None
         }
     } else {
         None
     };
+
+    let hdrop_path = file_path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .or(gif_temp_path.clone());
 
     if OpenClipboard(None).is_err() {
         return Err("Cannot open clipboard".into());
@@ -903,35 +967,10 @@ pub unsafe fn set_clipboard_image_with_formats(
     let result = (|| {
         let _ = EmptyClipboard();
 
-        // 1. Set CF_HDROP for GIF (WeChat/QQ need file path for animated GIF)
-        if let Some(ref path) = gif_temp_path {
-            let mut buffer: Vec<u16> = Vec::new();
-            buffer.extend(path.encode_utf16());
-            buffer.push(0);
-            buffer.push(0); // Double null terminator
-
-            let dropfiles_size = 20;
-            let buffer_size = buffer.len() * 2;
-            let total_size = dropfiles_size + buffer_size;
-
-            if let Ok(h_global) = GlobalAlloc(GHND, total_size) {
-                let p_mem = GlobalLock(h_global);
-                if !p_mem.is_null() {
-                    // Write DROPFILES struct
-                    *(p_mem as *mut u32) = 20; // pFiles offset
-                    *(p_mem.add(16) as *mut i32) = 1; // fWide = true
-
-                    // Write file path
-                    let p_files = p_mem.add(20) as *mut u16;
-                    std::ptr::copy_nonoverlapping(buffer.as_ptr(), p_files, buffer.len());
-
-                    let _ = GlobalUnlock(h_global);
-                    let _ = SetClipboardData(
-                        CF_HDROP,
-                        Some(windows::Win32::Foundation::HANDLE(h_global.0 as _)),
-                    );
-                }
-            }
+        // 1. File reference + path text for apps that cannot consume raw bitmap data (#134).
+        if let Some(ref path) = hdrop_path {
+            set_clipboard_hdrop_path_locked(path)?;
+            set_clipboard_unicode_text_locked(path)?;
         }
 
         // 2. Set GIF formats (if available)
@@ -1051,7 +1090,7 @@ pub unsafe fn set_clipboard_image_with_formats(
             return Err("SetClipboardData (CF_DIB) failed".to_string());
         }
 
-        Ok(gif_temp_path.clone())
+        Ok(hdrop_path.clone())
     })();
 
     let _ = CloseClipboard();

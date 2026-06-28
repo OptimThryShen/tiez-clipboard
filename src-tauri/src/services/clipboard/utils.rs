@@ -387,6 +387,31 @@ fn save_image_bytes_to_attachments(
     }
 }
 
+/// Normalize line endings only; keep leading/trailing spaces and tabs (#97).
+pub fn normalize_clipboard_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn is_whitespace_only(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| c.is_whitespace())
+}
+
+fn has_edge_whitespace(text: &str) -> bool {
+    let normalized = normalize_clipboard_line_endings(text);
+    !normalized.is_empty() && normalized != normalized.trim()
+}
+
+/// Render spaces/tabs visibly in list previews without changing stored content.
+pub fn visible_whitespace_preview(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            ' ' => '·',
+            '\t' => '→',
+            other => other,
+        })
+        .collect()
+}
+
 fn collapse_preview_whitespace(text: &str) -> String {
     static WHITESPACE_RE: OnceLock<Regex> = OnceLock::new();
 
@@ -670,7 +695,7 @@ fn looks_like_html_fragment_shallow(text: &str) -> bool {
         || (lower.contains("cellpadding=") && lower.contains("cellspacing="))
 }
 
-fn looks_like_html_fragment(text: &str) -> bool {
+pub(crate) fn looks_like_html_fragment(text: &str) -> bool {
     let repaired = strip_office_preview_noise(text);
     looks_like_html_fragment_shallow(&repaired)
 }
@@ -894,9 +919,27 @@ pub fn infer_rich_html_from_plain_text(
 }
 
 pub fn derive_rich_text_content(content: &str, html_content: Option<&str>) -> String {
-    let sanitized_plain = sanitize_rich_text_plain_text(content);
-    if looks_like_obsidian_callout_markdown(&sanitized_plain) {
-        return sanitized_plain;
+    let line_plain = normalize_clipboard_line_endings(content);
+    if looks_like_obsidian_callout_markdown(&line_plain) {
+        return line_plain;
+    }
+
+    // Prefer clipboard plain text when present — including whitespace-only (#97).
+    if !line_plain.is_empty()
+        && !looks_like_cf_html_header_text(&line_plain)
+        && !looks_like_html_fragment(&line_plain)
+    {
+        let lower = line_plain.to_ascii_lowercase();
+        let needs_office_strip = lower.contains("microsoftinternetexplorer")
+            || lower.contains("documentnotspecified");
+        if !needs_office_strip {
+            let candidate = line_plain.clone();
+            if is_whitespace_only(&line_plain) || !candidate.is_empty() {
+                if !is_office_style_definition_text(&collapse_preview_whitespace(&candidate)) {
+                    return candidate;
+                }
+            }
+        }
     }
 
     let html_text = html_content
@@ -913,7 +956,7 @@ pub fn derive_rich_text_content(content: &str, html_content: Option<&str>) -> St
         }
     }
 
-    sanitized_plain
+    sanitize_rich_text_plain_text(content)
 }
 
 pub fn build_entry_preview(
@@ -925,7 +968,10 @@ pub fn build_entry_preview(
         return "[Image Content]".to_string();
     }
 
-    let preview_text = if content_type == "rich_text" {
+    let line_content = normalize_clipboard_line_endings(content);
+    let preview_text = if is_whitespace_only(&line_content) || has_edge_whitespace(&line_content) {
+        visible_whitespace_preview(&line_content)
+    } else if content_type == "rich_text" {
         let clean_text = derive_rich_text_content(content, html_content);
         let preview = collapse_preview_whitespace(&clean_text);
         let normalized_content = collapse_preview_whitespace(content);
@@ -936,7 +982,13 @@ pub fn build_entry_preview(
                 && looks_like_html_fragment(content)
                 && preview == normalized_content)
         {
-            RICH_TEXT_PREVIEW_FALLBACK.to_string()
+            if is_whitespace_only(&line_content) {
+                visible_whitespace_preview(&line_content)
+            } else {
+                RICH_TEXT_PREVIEW_FALLBACK.to_string()
+            }
+        } else if has_edge_whitespace(&clean_text) {
+            visible_whitespace_preview(&clean_text)
         } else {
             preview
         }
@@ -985,7 +1037,7 @@ pub fn entry_matches_search(entry: &ClipboardEntry, term: &str, tag_only: bool) 
         return entry
             .tags
             .iter()
-            .any(|t| t.to_lowercase().contains(&term));
+            .any(|t| t.eq_ignore_ascii_case(&term));
     }
 
     if entry
@@ -1116,6 +1168,130 @@ pub fn split_rich_html_and_named_formats(
         }
     }
     (html.to_string(), Vec::new())
+}
+
+fn strip_cf_html_fragment_markers(html: &str) -> String {
+    html.replace("<!--StartFragment-->", "")
+        .replace("<!--EndFragment-->", "")
+        .replace("<!-- start fragment -->", "")
+        .replace("<!-- end fragment -->", "")
+}
+
+fn table_row_has_visible_content(row_html: &str) -> bool {
+    static CELL_RE: OnceLock<Regex> = OnceLock::new();
+    static TAG_RE: OnceLock<Regex> = OnceLock::new();
+
+    let cell_re = CELL_RE.get_or_init(|| Regex::new(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>").unwrap());
+    let tag_re = TAG_RE.get_or_init(|| Regex::new(r"(?is)<[^>]+>").unwrap());
+
+    cell_re.captures_iter(row_html).any(|cap| {
+        let raw = cap.get(1).map(|m| m.as_str()).unwrap_or_default();
+        let decoded = decode_basic_html_entities(tag_re.replace_all(raw, " ").as_ref());
+        !collapse_line_whitespace(&decoded).is_empty()
+    })
+}
+
+/// Remove Office/Excel spacer rows and CF_HTML fragment markers before clipboard paste (#122).
+pub fn sanitize_tabular_html_for_paste(html: &str) -> String {
+    let lowered = html.to_ascii_lowercase();
+    if !lowered.contains("<tr") {
+        return strip_cf_html_fragment_markers(html).trim().to_string();
+    }
+
+    static TR_RE: OnceLock<Regex> = OnceLock::new();
+    let tr_re = TR_RE.get_or_init(|| Regex::new(r"(?is)<tr\b[^>]*>.*?</tr>").unwrap());
+
+    let stripped = strip_cf_html_fragment_markers(html);
+    let sanitized = tr_re
+        .replace_all(&stripped, |caps: &regex::Captures| {
+            let row = caps.get(0).map(|m| m.as_str()).unwrap_or_default();
+            if table_row_has_visible_content(row) {
+                row.to_string()
+            } else {
+                String::new()
+            }
+        })
+        .into_owned();
+
+    sanitized.trim().to_string()
+}
+
+/// Build plain text that matches sanitized table rows for CF_UNICODETEXT/HTML pairing.
+pub fn plain_text_from_tabular_html(html: &str) -> Option<String> {
+    if !html.to_ascii_lowercase().contains("<tr") {
+        return None;
+    }
+
+    static TR_RE: OnceLock<Regex> = OnceLock::new();
+    static CELL_RE: OnceLock<Regex> = OnceLock::new();
+    static TAG_RE: OnceLock<Regex> = OnceLock::new();
+
+    let tr_re = TR_RE.get_or_init(|| Regex::new(r"(?is)<tr\b[^>]*>(.*?)</tr>").unwrap());
+    let cell_re = CELL_RE.get_or_init(|| Regex::new(r"(?is)<t[dh]\b[^>]*>(.*?)</t[dh]>").unwrap());
+    let tag_re = TAG_RE.get_or_init(|| Regex::new(r"(?is)<[^>]+>").unwrap());
+
+    let mut rows = Vec::new();
+    for cap in tr_re.captures_iter(html) {
+        let row_inner = cap.get(1).map(|m| m.as_str()).unwrap_or_default();
+        let cells: Vec<String> = cell_re
+            .captures_iter(row_inner)
+            .map(|cell_cap| {
+                let raw = cell_cap.get(1).map(|m| m.as_str()).unwrap_or_default();
+                let decoded = decode_basic_html_entities(tag_re.replace_all(raw, " ").as_ref());
+                collapse_line_whitespace(&decoded)
+            })
+            .collect();
+        if cells.is_empty() {
+            continue;
+        }
+        rows.push(cells.join("\t"));
+    }
+
+    if rows.is_empty() {
+        return None;
+    }
+
+    Some(rows.join("\r\n"))
+}
+
+pub fn normalize_plain_text_for_clipboard_paste(text: &str) -> String {
+    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+    let trimmed = normalized.trim_end();
+    #[cfg(target_os = "windows")]
+    {
+        return trimmed.replace('\n', "\r\n");
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        trimmed.to_string()
+    }
+}
+
+/// Wrap an HTML fragment in the Windows CF_HTML envelope expected by Office apps.
+pub fn encode_cf_html(fragment: &str) -> String {
+    let h_version = "Version:0.9";
+    let h_start_html = "\r\nStartHTML:";
+    let h_end_html = "\r\nEndHTML:";
+    let h_start_frag = "\r\nStartFragment:";
+    let h_end_frag = "\r\nEndFragment:";
+    let c_start_frag = "\r\n<html>\r\n<body>\r\n<!--StartFragment-->\r\n";
+    let c_end_frag = "\r\n<!--EndFragment-->\r\n</body>\r\n</html>";
+    let h_len = h_version.len()
+        + h_start_html.len()
+        + 10
+        + h_end_html.len()
+        + 10
+        + h_start_frag.len()
+        + 10
+        + h_end_frag.len()
+        + 10;
+    let n_start_html = h_len + 2;
+    let n_start_frag = h_len + c_start_frag.len();
+    let n_end_frag = n_start_frag + fragment.len();
+    let n_end_html = n_end_frag + c_end_frag.len();
+    format!(
+        "{h_version}{h_start_html}{n_start_html:010}{h_end_html}{n_end_html:010}{h_start_frag}{n_start_frag:010}{h_end_frag}{n_end_frag:010}{c_start_frag}{fragment}{c_end_frag}"
+    )
 }
 
 pub fn externalize_rich_image_fallback(html: &str, data_dir: &Path) -> String {
@@ -1272,10 +1448,12 @@ mod tests {
         attach_rich_named_formats, build_entry_preview, collapse_preview_whitespace,
         derive_rich_text_content, entry_matches_search, extract_animated_image_data_url_from_html,
         extract_animated_image_data_url_from_text, extract_first_image_data_url_from_html,
-        infer_rich_html_from_plain_text, normalize_clipboard_plain_text,
-        parse_app_cleanup_policies, parse_cf_html, parse_cleanup_rules,
+        infer_rich_html_from_plain_text, normalize_clipboard_line_endings,
+        normalize_clipboard_plain_text, parse_app_cleanup_policies, parse_cf_html,
+        parse_cleanup_rules, plain_text_from_tabular_html, sanitize_tabular_html_for_paste,
         split_rich_html_and_image_fallback, split_rich_html_and_named_formats,
-        truncate_html_for_preview, AppCleanupPolicy, HTML_TRUNCATION_SUFFIX,
+        truncate_html_for_preview, visible_whitespace_preview,
+        AppCleanupPolicy, HTML_TRUNCATION_SUFFIX,
     };
     use base64::Engine;
     use crate::domain::models::ClipboardEntry;
@@ -1363,6 +1541,16 @@ mod tests {
     }
 
     #[test]
+    fn entry_matches_search_tag_only_requires_exact_tag_name() {
+        let mut entry = sample_entry("text", "hello", "hello");
+        entry.tags = vec!["AI".to_string(), "AI工具".to_string()];
+
+        assert!(entry_matches_search(&entry, "ai", true));
+        assert!(!entry_matches_search(&entry, "AI工具", true));
+        assert!(!entry_matches_search(&entry, "工具", true));
+    }
+
+    #[test]
     fn rich_text_preview_prefers_readable_html_text() {
         let html = "<table><tr><td>Alpha</td><td>Beta</td></tr><tr><td>Gamma</td><td>Delta</td></tr></table>";
         let preview = build_entry_preview("rich_text", "table border=0 cellpadding=0", Some(html));
@@ -1393,6 +1581,36 @@ mod tests {
         let preview = build_entry_preview("rich_text", html, Some(html));
 
         assert_eq!(preview, "学院意见 通过");
+    }
+
+    #[test]
+    fn build_entry_preview_preserves_whitespace_only_content() {
+        assert_eq!(build_entry_preview("text", "   ", None), "···");
+        assert_eq!(build_entry_preview("text", "\t\t", None), "→→");
+    }
+
+    #[test]
+    fn build_entry_preview_shows_edge_whitespace() {
+        assert_eq!(build_entry_preview("text", " test", None), "·test");
+        assert_eq!(build_entry_preview("text", "test ", None), "test·");
+    }
+
+    #[test]
+    fn derive_rich_text_content_prefers_plain_whitespace_over_html() {
+        let html = "<html><body>test</body></html>";
+        assert_eq!(derive_rich_text_content(" test", Some(html)), " test");
+        assert_eq!(derive_rich_text_content("   ", Some(html)), "   ");
+    }
+
+    #[test]
+    fn normalize_clipboard_line_endings_preserves_whitespace() {
+        assert_eq!(normalize_clipboard_line_endings(" \t\r\n"), " \t\n");
+        assert_eq!(normalize_clipboard_line_endings(" test "), " test ");
+    }
+
+    #[test]
+    fn visible_whitespace_preview_renders_spaces_and_tabs() {
+        assert_eq!(visible_whitespace_preview(" a\tb "), "·a→b·");
     }
 
     #[test]
@@ -1561,6 +1779,32 @@ mod tests {
             Some("data:image/png;base64,AAAA")
         );
         assert_eq!(cleaned, "<table><tr><td>Excel</td></tr></table>");
+    }
+
+    #[test]
+    fn sanitize_tabular_html_for_paste_removes_empty_excel_rows() {
+        let html = concat!(
+            "<table><tr><td>A</td></tr>",
+            "<tr><td>&nbsp;</td></tr>",
+            "<tr><td></td></tr>",
+            "<tr><td>B</td></tr></table>"
+        );
+
+        let sanitized = sanitize_tabular_html_for_paste(html);
+
+        assert!(sanitized.contains("<tr><td>A</td></tr>"));
+        assert!(sanitized.contains("<tr><td>B</td></tr>"));
+        assert_eq!(sanitized.matches("<tr").count(), 2);
+    }
+
+    #[test]
+    fn plain_text_from_tabular_html_matches_visible_rows() {
+        let html = "<table><tr><td>A</td></tr><tr><td>B</td></tr></table>";
+
+        assert_eq!(
+            plain_text_from_tabular_html(html).as_deref(),
+            Some("A\r\nB")
+        );
     }
 
     #[test]
@@ -2422,7 +2666,7 @@ pub fn parse_cf_html(raw: &[u8]) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+mod type_and_sensitive_tests {
     use super::*;
 
     mod detect_content_type_tests {

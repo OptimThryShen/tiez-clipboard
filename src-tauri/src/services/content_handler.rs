@@ -5,10 +5,15 @@ use crate::error::AppError;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use base64::{engine::general_purpose, Engine as _};
+use std::collections::HashSet;
 use std::io::Read;
 use std::process::Command;
+use std::sync::{LazyLock, Mutex};
 // Removed Windows CommandExt
 use tauri::{Emitter, Manager, State};
+
+static WATCHED_PREVIEW_ENTRY_IDS: LazyLock<Mutex<HashSet<i64>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[tauri::command]
 pub async fn open_content(
@@ -81,14 +86,72 @@ pub async fn open_content(
     )
     .await?;
 
-    // Start background watcher ONLY if we created a temp file
-    // Start background watcher ONLY if we created a temp file AND it's not rich_text
-    // Skip watcher for rich_text to avoid degrading it to plain text during back-write
-    if !use_direct_path && content_type != "rich_text" {
-        start_file_watcher(app_handle, file_path_clone, content_type, id);
+    // Watch temp files and external originals so list previews stay in sync (#117).
+    if id != 0 && content_type != "rich_text" {
+        register_file_preview_watch(
+            app_handle,
+            id,
+            file_path_clone,
+            content_type,
+            use_direct_path,
+        );
     }
 
     Ok(())
+}
+
+/// Watch an on-disk file and refresh list previews when it changes.
+pub fn register_file_preview_watch(
+    app_handle: tauri::AppHandle,
+    id: i64,
+    file_path: std::path::PathBuf,
+    content_type: String,
+    keep_path_on_change: bool,
+) {
+    if id == 0 {
+        return;
+    }
+
+    {
+        let mut watched = WATCHED_PREVIEW_ENTRY_IDS.lock().unwrap();
+        if !watched.insert(id) {
+            return;
+        }
+    }
+
+    std::thread::spawn(move || {
+        let mut last_mtime = std::fs::metadata(&file_path)
+            .ok()
+            .and_then(|m| m.modified().ok());
+        let start_time = std::time::Instant::now();
+
+        while start_time.elapsed().as_secs() < 3600 {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            if !file_path.exists() {
+                break;
+            }
+
+            let current_mtime = std::fs::metadata(&file_path)
+                .ok()
+                .and_then(|m| m.modified().ok());
+
+            if current_mtime != last_mtime {
+                last_mtime = current_mtime;
+                println!("File changed detected: {:?}", file_path);
+
+                if keep_path_on_change {
+                    touch_external_file_preview(&app_handle, id);
+                } else if let Some((new_content, preview)) =
+                    read_changed_file(&file_path, &content_type)
+                {
+                    update_database_with_changes(&app_handle, id, &new_content, &preview);
+                }
+            }
+        }
+
+        let _ = WATCHED_PREVIEW_ENTRY_IDS.lock().unwrap().remove(&id);
+    });
 }
 
 fn get_app_path_for_content_type(
@@ -127,6 +190,10 @@ async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<
 
 fn is_file_type(content_type: &str) -> bool {
     matches!(content_type, "file" | "video" | "image")
+}
+
+pub(crate) fn existing_file_path_from_content(content: &str) -> Option<std::path::PathBuf> {
+    get_existing_file_path(content)
 }
 
 fn get_existing_file_path(content: &str) -> Option<std::path::PathBuf> {
@@ -252,40 +319,32 @@ fn launch_with_default_app(
     Ok(())
 }
 
-fn start_file_watcher(
-    app_handle: tauri::AppHandle,
-    file_path: std::path::PathBuf,
-    content_type: String,
-    id: i64,
-) {
-    std::thread::spawn(move || {
-        let mut last_mtime = std::fs::metadata(&file_path)
-            .ok()
-            .and_then(|m| m.modified().ok());
-        let start_time = std::time::Instant::now();
+fn touch_external_file_preview(app_handle: &tauri::AppHandle, id: i64) {
+    let state = app_handle.state::<DbState>();
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut updated_entry = None;
 
-        // Monitor for 1 hour or until file deleted
-        while start_time.elapsed().as_secs() < 3600 {
-            std::thread::sleep(std::time::Duration::from_secs(2));
-
-            if !file_path.exists() {
-                break;
-            }
-
-            let current_mtime = std::fs::metadata(&file_path)
-                .ok()
-                .and_then(|m| m.modified().ok());
-
-            if current_mtime != last_mtime {
-                last_mtime = current_mtime;
-                println!("File changed detected: {:?}", file_path);
-
-                if let Some((new_content, preview)) = read_changed_file(&file_path, &content_type) {
-                    update_database_with_changes(&app_handle, id, &new_content, &preview);
-                }
+    if id > 0 {
+        if state.repo.touch_entry(id, now).is_err() {
+            return;
+        }
+        if let Ok(Some(entry)) = state.repo.get_entry_by_id(id) {
+            updated_entry = Some(entry);
+        }
+    } else {
+        use crate::app_state::SessionHistory;
+        if let Some(session) = app_handle.try_state::<SessionHistory>() {
+            let mut history = session.0.lock().unwrap();
+            if let Some(item) = history.iter_mut().find(|i| i.id == id) {
+                item.timestamp = now;
+                updated_entry = Some(item.clone());
             }
         }
-    });
+    }
+
+    if let Some(entry) = updated_entry {
+        let _ = app_handle.emit("clipboard-updated", entry);
+    }
 }
 
 fn read_changed_file(file_path: &std::path::Path, content_type: &str) -> Option<(String, String)> {

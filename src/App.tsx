@@ -101,6 +101,36 @@ type MacosNonactivatingClick = {
   screenY: number;
 };
 
+const CLIPBOARD_ITEM_ID_PREFIX = "clipboard-item-";
+
+const stackElementsAtPoint = (clientX: number, clientY: number): HTMLElement[] =>
+  document
+    .elementsFromPoint(clientX, clientY)
+    .filter((node): node is HTMLElement => node instanceof HTMLElement);
+
+const parseClipboardItemId = (itemEl: HTMLElement): number | null => {
+  const dataId = itemEl.dataset.clipboardItemId;
+  if (dataId) {
+    const parsed = Number(dataId);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (!itemEl.id.startsWith(CLIPBOARD_ITEM_ID_PREFIX)) return null;
+  const parsed = Number(itemEl.id.slice(CLIPBOARD_ITEM_ID_PREFIX.length));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const invokeContentForPaste = (item: ClipboardEntry): string => {
+  if (
+    item.id !== 0 &&
+    (item.content_type === "image" ||
+      item.content_type === "video" ||
+      item.content_type === "file")
+  ) {
+    return "";
+  }
+  return item.content;
+};
+
 const handleMacosNonactivatingClick = (
   payload: MacosNonactivatingClick,
   history: ClipboardEntry[],
@@ -116,10 +146,62 @@ const handleMacosNonactivatingClick = (
   const { clientX, clientY } = payload;
   if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
 
-  const target = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
-  if (!target) return;
+  const stack = stackElementsAtPoint(clientX, clientY);
+  if (stack.length === 0) return;
 
-  const itemEl = target.closest("[data-test-clipboard-item]") as HTMLElement | null;
+  const target = stack[0];
+
+  const overlayRoot = stack
+    .map(
+      (node) =>
+        node.closest(
+          ".settings-panel-root, .settings-view, .themed-tag-manager, .emoji-panel, .file-transfer-panel"
+        ) as HTMLElement | null
+    )
+    .find(Boolean);
+  if (overlayRoot) {
+    const interactive = target.closest(
+      'button, input, textarea, select, label.switch, a, [role="button"], [role="switch"], [role="tab"]'
+    ) as HTMLElement | null;
+    if (interactive && overlayRoot.contains(interactive)) {
+      invoke("activate_window_focus").catch(console.error);
+      setTimeout(() => interactive.click(), 0);
+      return;
+    }
+
+    if (overlayRoot.classList.contains("themed-tag-manager")) {
+      const card = stack
+        .map((node) => node.closest(".themed-card") as HTMLElement | null)
+        .find((node) => node && overlayRoot.contains(node));
+      if (card) {
+        if (target.closest('button, input, textarea, [role="button"]')) {
+          return;
+        }
+        const itemId = Number(card.dataset.tagItemId);
+        const contentType = card.dataset.tagItemType || "text";
+        if (!Number.isFinite(itemId)) return;
+        void invoke("copy_to_clipboard", {
+          content: "",
+          contentType,
+          paste: true,
+          id: itemId,
+          deleteAfterUse: false
+        }).catch(console.error);
+      }
+      return;
+    }
+
+    return;
+  }
+
+  let itemEl: HTMLElement | null = null;
+  for (const node of stack) {
+    const candidate = node.closest("[data-test-clipboard-item]") as HTMLElement | null;
+    if (candidate) {
+      itemEl = candidate;
+      break;
+    }
+  }
   if (!itemEl) return;
 
   const interactive = target.closest(
@@ -135,15 +217,15 @@ const handleMacosNonactivatingClick = (
     return;
   }
 
-  const idMatch = itemEl.id.match(/^clipboard-item-(\d+)$/);
-  if (!idMatch) return;
+  const itemId = parseClipboardItemId(itemEl);
+  if (itemId === null) return;
 
-  const item = history.find((entry) => entry.id === Number(idMatch[1]));
+  const item = history.find((entry) => entry.id === itemId);
   if (!item) return;
 
   void copyToClipboard(
     item.id,
-    item.content,
+    invokeContentForPaste(item),
     item.content_type,
     false,
     item.is_pinned,
@@ -412,6 +494,20 @@ const App = () => {
 
   const debouncedSearch = useDebounce(search, 400);
   const searchInputRef = useInputFocus<HTMLInputElement>();
+
+  const dismissSearchTagFilter = useCallback(() => {
+    setShowTagFilter(false);
+    setSearchIsFocused(false);
+    if (searchInputRef.current && document.activeElement === searchInputRef.current) {
+      searchInputRef.current.blur();
+    }
+  }, [setShowTagFilter, setSearchIsFocused, searchInputRef]);
+
+  useEffect(() => {
+    if (!showSearchBox) {
+      dismissSearchTagFilter();
+    }
+  }, [showSearchBox, dismissSearchTagFilter]);
   const tagColors = useTagColors();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -446,7 +542,8 @@ const App = () => {
     search,
     showSettings,
     showTagManager: effectiveShowTagManager,
-    appSettings
+    appSettings,
+    dismissSearchTagFilter
   });
 
   const showScrollTopVisible = showScrollTop && scrollTopButtonEnabled;
@@ -524,8 +621,11 @@ const App = () => {
 
   const handleListScroll = useCallback((offset: number) => {
     handleSearchScroll(offset);
+    if (offset > 0) {
+      dismissSearchTagFilter();
+    }
     setShowScrollTop(offset > 200);
-  }, [handleSearchScroll]);
+  }, [handleSearchScroll, dismissSearchTagFilter]);
 
   const handleScrollTop = useCallback(() => {
     if (virtualListRef.current?.scrollToTop) {

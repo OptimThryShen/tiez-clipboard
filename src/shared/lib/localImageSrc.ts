@@ -40,3 +40,14 @@ export const toTauriLocalImageSrc = (rawSrc: string): string | null => {
   return convertFileSrc(value);
 };
 
+export const withImageCacheBust = (
+  src: string | null | undefined,
+  revision?: number | null
+): string | null => {
+  if (!src) return null;
+  if (/^(data:|blob:|https?:)/i.test(src)) return src;
+  const token = revision ?? Date.now();
+  const joiner = src.includes("?") ? "&" : "?";
+  return `${src}${joiner}tiez_rev=${token}`;
+};
+

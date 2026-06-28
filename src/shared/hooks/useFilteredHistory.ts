@@ -29,7 +29,7 @@ export const useFilteredHistory = ({
       if (!effectiveSearch) return true;
 
       if (isTagSearch) {
-        return item.tags?.some((tag) => tag.toLowerCase().includes(effectiveSearch)) ?? false;
+        return item.tags?.some((tag) => tag.toLowerCase() === effectiveSearch) ?? false;
       }
 
       return (

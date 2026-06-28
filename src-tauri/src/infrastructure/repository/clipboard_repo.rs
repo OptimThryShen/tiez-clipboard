@@ -954,7 +954,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 "SELECT DISTINCT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path
                  FROM clipboard_history ch
                  INNER JOIN entry_tags et ON ch.id = et.entry_id
-                 WHERE et.tag LIKE '%' || ?1 || '%'
+                 WHERE et.tag COLLATE NOCASE = ?1
                  ORDER BY ch.timestamp DESC
                  LIMIT ?2"
             } else {
@@ -1028,7 +1028,7 @@ impl ClipboardRepository for SqliteClipboardRepository {
                          WHERE se.entry_id = ch.id
                            AND se.tag COLLATE NOCASE IN {}
                      )
-                       AND et.tag LIKE '%' || ?1 || '%'
+                       AND et.tag COLLATE NOCASE = ?1
                      ORDER BY ch.timestamp DESC, ch.id DESC
                      LIMIT ?2",
                     sensitive_tags_sql

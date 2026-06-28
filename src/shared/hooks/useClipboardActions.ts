@@ -39,9 +39,14 @@ export const useClipboardActions = ({
         }
 
         const shouldDelete = deleteAfterPaste && !isPinned && tags.length === 0;
+        const invokeContent =
+          id !== 0 &&
+          (contentType === "image" || contentType === "video" || contentType === "file")
+            ? ""
+            : content;
 
         await invoke("copy_to_clipboard", {
-          content,
+          content: invokeContent,
           contentType,
           paste: true,
           id: id,

@@ -42,8 +42,13 @@ pub mod windows_api {
         pub unsafe fn set_clipboard_text_and_html(_text: &str, _: &str) -> Result<(), String> {
             Ok(())
         }
-        pub fn set_clipboard_image_with_formats(_data: ImageData) -> Result<(), String> {
-            Ok(())
+        pub fn set_clipboard_image_with_formats(
+            _data: ImageData,
+            _gif_data: Option<&[u8]>,
+            _png_data: Option<&[u8]>,
+            _file_path: Option<&str>,
+        ) -> Result<Option<String>, String> {
+            Ok(None)
         }
     }
 

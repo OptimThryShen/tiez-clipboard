@@ -13,7 +13,7 @@ export function entryMatchesSearch(
   }
 
   if (tagOnly) {
-    return item.tags?.some((tag) => tag.toLowerCase().includes(term)) ?? false;
+    return item.tags?.some((tag) => tag.toLowerCase() === term) ?? false;
   }
 
   if (item.tags?.some((tag) => tag.toLowerCase().includes(term))) {
