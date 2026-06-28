@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { getHotkeyDisplayTokens } from "../../../../shared/lib/hotkeyDisplay";
 import { isMacPlatform } from "../../../../shared/lib/platform";
@@ -46,6 +47,10 @@ interface ClipboardSettingsGroupProps {
     setDeleteAfterPaste: (val: boolean) => void;
     moveToTopAfterPaste: boolean;
     setMoveToTopAfterPaste: (val: boolean) => void;
+    pasteMethod: string;
+    setPasteMethod: (val: string) => void;
+    registryWinVEnabled: boolean;
+    setRegistryWinVEnabled: (val: boolean) => void;
     sequentialMode: boolean;
     setSequentialModeState: (val: boolean) => void;
     sequentialHotkey: string;
@@ -450,6 +455,55 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
+                    {!isMacPlatform() && (
+                        <div className="setting-item">
+                            <props.LabelWithHint
+                                label={props.t('paste_method')}
+                                hint={props.t(`paste_method_${props.pasteMethod}_hint`)}
+                                hintKey="paste_method"
+                            />
+                            <select
+                                className="search-input"
+                                style={{ borderRadius: '0', padding: '6px', width: '110px', background: 'var(--bg-input)', border: '2px solid var(--border-dark)', color: 'var(--text-primary)', fontSize: '12px' }}
+                                value={props.pasteMethod}
+                                onChange={async (e) => {
+                                    const val = e.target.value;
+
+                                    if (val === 'game_mode') {
+                                        try {
+                                            const isAdmin = await invoke<boolean>("check_is_admin");
+                                            if (!isAdmin) {
+                                                const confirmed = await ask(
+                                                    props.t('game_mode_admin_required') || "Game Mode requires Administrator privileges to work correctly with games (especially for IME/Input handling). Restart as Admin now?",
+                                                    {
+                                                        title: props.t('admin_required') || "Administrator Required",
+                                                        kind: 'warning'
+                                                    }
+                                                );
+
+                                                if (confirmed) {
+                                                    await invoke("save_setting", { key: 'app.paste_method', value: 'game_mode' });
+                                                    await invoke("restart_as_admin");
+                                                    return;
+                                                } else {
+                                                    return;
+                                                }
+                                            }
+                                        } catch (err) {
+                                            console.error("Failed to check admin status:", err);
+                                        }
+                                    }
+
+                                    props.setPasteMethod(val);
+                                    invoke("save_setting", { key: 'app.paste_method', value: val }).catch(console.error);
+                                }}
+                            >
+                                <option value="shift_insert">{props.t('paste_method_shift_insert')}</option>
+                                <option value="ctrl_v">{props.t('paste_method_ctrl_v')}</option>
+                                <option value="game_mode">{props.t('paste_method_game_mode')}</option>
+                            </select>
+                        </div>
+                    )}
                     {/* macOS cleanup: Removed Paste Method selection */}
                     <div className="setting-item">
                         <props.LabelWithHint
@@ -744,7 +798,66 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </div>
                     </div>
 
-                    {/* macOS cleanup: Removed Win+V Shortcut switch */}
+                    {!isMacPlatform() && (
+                        <div className="setting-item">
+                            <props.LabelWithHint
+                                label={props.t('use_win_v_shortcut')}
+                                hint={props.t('use_win_v_shortcut_hint')}
+                                hintKey="use_win_v_shortcut"
+                            />
+                            <label className="switch">
+                                <input
+                                    className="cb"
+                                    type="checkbox"
+                                    checked={props.registryWinVEnabled}
+                                    onChange={async (e) => {
+                                        const enabled = e.target.checked;
+                                        props.setRegistryWinVEnabled(enabled);
+                                        try {
+                                            await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(enabled) });
+                                            const changed = await invoke<boolean>("trigger_registry_win_v_optimization", { enable: enabled });
+                                            let targetHotkey = "Alt+C";
+                                            if (enabled) {
+                                                if (props.hotkey && props.hotkey !== "Win+V") {
+                                                    props.saveAppSetting('pre_win_v_hotkey', props.hotkey);
+                                                }
+                                                targetHotkey = "Win+V";
+                                            } else {
+                                                const savedPreHotkey = props.appSettings['app.pre_win_v_hotkey'];
+                                                if (savedPreHotkey && savedPreHotkey !== "Win+V") {
+                                                    targetHotkey = savedPreHotkey;
+                                                }
+                                            }
+
+                                            if (!enabled) {
+                                                await props.updateHotkey(targetHotkey);
+                                            } else if (!changed) {
+                                                props.updateHotkey(targetHotkey);
+                                            }
+
+                                            if (changed) {
+                                                const confirmed = await ask(
+                                                    props.t('restart_explorer_confirm'),
+                                                    { title: props.t('restart_explorer_title'), kind: 'warning' }
+                                                );
+                                                if (confirmed) {
+                                                    await invoke("restart_explorer");
+                                                    if (enabled) {
+                                                        setTimeout(() => {
+                                                            props.updateHotkey(targetHotkey);
+                                                        }, 1500);
+                                                    }
+                                                }
+                                            }
+                                        } catch (err) {
+                                            console.error("Failed to configure Win+V shortcut:", err);
+                                        }
+                                    }}
+                                />
+                                <div className="toggle"><div className="left" /><div className="right" /></div>
+                            </label>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

@@ -186,6 +186,11 @@ pub fn save_setting(
                 .edge_docking
                 .store(value == "true", Ordering::Relaxed);
         }
+        "app.follow_mouse" => {
+            settings_state
+                .follow_mouse
+                .store(value != "false", Ordering::Relaxed);
+        }
 
         "app.hide_tray_icon" => {
             settings_state
@@ -663,4 +668,18 @@ pub fn set_edge_docking(
         crate::app::setup::persist_edge_dock(&app_handle, 0);
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_follow_mouse(
+    app_handle: AppHandle,
+    state: State<'_, crate::app_state::SettingsState>,
+    enabled: bool,
+) -> AppResult<()> {
+    state.follow_mouse.store(enabled, Ordering::Relaxed);
+    let db_state = app_handle.state::<DbState>();
+    db_state
+        .settings_repo
+        .set("app.follow_mouse", &enabled.to_string())
+        .map_err(AppError::from)
 }

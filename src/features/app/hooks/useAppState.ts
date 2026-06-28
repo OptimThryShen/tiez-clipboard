@@ -87,7 +87,7 @@ export const useAppState = (): AppState => {
   const [showAppBorder, setShowAppBorder] = useState(false);
   const [winClipboardDisabled, setWinClipboardDisabled] = useState(false);
   const [registryWinVEnabled, setRegistryWinVEnabled] = useState(false);
-  const [pasteMethod, setPasteMethod] = useState("simulate");
+  const [pasteMethod, setPasteMethod] = useState("shift_insert");
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [colorMode, setColorMode] = useState("system");
   const [showSourceAppIcon, setShowSourceAppIcon] = useState(true);

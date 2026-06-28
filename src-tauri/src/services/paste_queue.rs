@@ -3,6 +3,7 @@ use crate::app::commands::hotkey_cmd::sync_registered_hotkeys;
 use crate::database::DbState;
 use crate::error::AppResult;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use tauri::{Emitter, Manager, State};
 
 #[tauri::command]
@@ -173,7 +174,15 @@ async fn paste_next_step_inner(app_handle: tauri::AppHandle) {
             }
 
             // 6. Send paste keystroke
-            crate::services::clipboard_ops::send_paste_keystroke(Some(&content), Some(&c_type));
+            let paste_method = app_handle
+                .try_state::<crate::database::DbState>()
+                .and_then(|db| db.settings_repo.get("app.paste_method").ok().flatten())
+                .unwrap_or_else(|| "shift_insert".to_string());
+            crate::services::clipboard_ops::send_paste_keystroke(
+                &paste_method,
+                Some(&content),
+                Some(&c_type),
+            );
 
             // Settle time
             std::thread::sleep(std::time::Duration::from_millis(20));

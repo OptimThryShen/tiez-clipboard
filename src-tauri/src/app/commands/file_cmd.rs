@@ -149,6 +149,34 @@ pub(crate) fn save_emoji_favorite_bytes_to_dir(
     Ok(target_path.to_string_lossy().to_string())
 }
 
+pub(crate) fn list_emoji_favorite_paths_in_dir(data_dir: &std::path::Path) -> AppResult<Vec<String>> {
+    let favorites_dir = data_dir.join("emoji_favorites");
+    if !favorites_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(&favorites_dir).map_err(AppError::from)? {
+        let path = entry.map_err(AppError::from)?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        if normalize_image_ext(ext).is_some() {
+            paths.push(path.to_string_lossy().to_string());
+        }
+    }
+
+    paths.sort();
+    Ok(paths)
+}
+
+#[tauri::command]
+pub fn list_emoji_favorites(app_data: State<'_, AppDataDir>) -> AppResult<Vec<String>> {
+    let data_dir = app_data.0.lock().unwrap().clone();
+    list_emoji_favorite_paths_in_dir(&data_dir)
+}
+
 #[tauri::command]
 pub async fn save_emoji_favorite(
     app_data: State<'_, AppDataDir>,

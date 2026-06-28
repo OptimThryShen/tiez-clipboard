@@ -9,7 +9,6 @@ import {
     supportsSurfaceOpacity
 } from "../../../../shared/config/themes";
 import type { Locale } from "../../../../shared/types";
-
 interface LabelWithHintProps {
     label: string;
     hint?: string | ReactNode;

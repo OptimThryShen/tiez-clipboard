@@ -30,6 +30,7 @@ pub struct SettingsState {
     pub hide_tray_icon: AtomicBool,
     pub hide_dock_icon: AtomicBool,
     pub edge_docking: AtomicBool,
+    pub follow_mouse: AtomicBool,
     pub arrow_key_selection: AtomicBool,
     pub main_hotkey: Mutex<String>,
     pub monitors: Mutex<Vec<tauri::Monitor>>,

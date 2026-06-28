@@ -1,5 +1,5 @@
 // Global state module
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicUsize};
 
 pub static GLOBAL_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 pub static HOTKEY_STRING: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
@@ -14,6 +14,7 @@ pub static CLIPBOARD_MONITOR_PAUSED: AtomicBool = AtomicBool::new(false);
 // For macOS: store the name of the frontmost app before we show TieZ,
 // so we can re-activate it before pasting.
 pub static LAST_ACTIVE_APP_PID: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+pub static LAST_ACTIVE_HWND: AtomicUsize = AtomicUsize::new(0);
 pub static LAST_ACTIVE_APP_NAME: std::sync::OnceLock<std::sync::Mutex<String>> =
     std::sync::OnceLock::new();
 

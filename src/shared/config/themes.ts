@@ -97,8 +97,10 @@ export const THEME_CLASS_NAMES = THEMES.map((theme) => `theme-${theme.id}`);
 export const getThemeDefinition = (themeId: string): ThemeDefinition =>
   THEME_BY_ID.get(themeId) ?? THEME_BY_ID.get(DEFAULT_THEME)!;
 
-export const normalizeThemeId = (themeId: string): string =>
-  getThemeDefinition(themeId).id;
+export const normalizeThemeId = (themeId: string): string => {
+  if (themeId.startsWith("store-")) return DEFAULT_THEME;
+  return getThemeDefinition(themeId).id;
+};
 
 export const getThemeLabel = (themeId: string, locale: Locale): string =>
   getThemeDefinition(themeId).labels[locale];

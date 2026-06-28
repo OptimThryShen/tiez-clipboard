@@ -13,6 +13,18 @@ use std::sync::atomic::Ordering;
 use std::sync::OnceLock;
 use tauri::{Emitter, Manager, State};
 use urlencoding::decode;
+#[cfg(target_os = "windows")]
+use windows::Win32::Foundation::HWND;
+#[cfg(target_os = "windows")]
+use windows::Win32::System::Threading::AttachThreadInput;
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP,
+};
+#[cfg(target_os = "windows")]
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetForegroundWindow, GetWindowThreadProcessId,
+};
 use crate::services::clipboard::{
     attach_rich_image_fallback, attach_rich_named_formats, build_clipboard_text_fingerprint,
     capture_preserved_named_formats_from_clipboard, clipboard_image_fallback_data_url,
@@ -390,7 +402,11 @@ pub async fn paste_text_directly(app_handle: tauri::AppHandle, content: String) 
     }
 
     handle_window_focus_for_paste(&app_handle).await?;
-    send_paste_keystroke(Some(&content), Some("text"));
+    let paste_method = app_handle
+        .try_state::<DbState>()
+        .and_then(|db| db.settings_repo.get("app.paste_method").ok().flatten())
+        .unwrap_or_else(|| "shift_insert".to_string());
+    send_paste_keystroke(&paste_method, Some(&content), Some("text"));
     hide_window_after_paste(&app_handle).await;
 
     Ok(())
@@ -896,7 +912,13 @@ async fn perform_paste_action(
     }
 
     // Send paste keystroke
-    send_paste_keystroke(content, Some(content_type));
+    let paste_method = state
+        .settings_repo
+        .get("app.paste_method")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "shift_insert".to_string());
+    send_paste_keystroke(&paste_method, content, Some(content_type));
 
     // Hide after paste if not pinned
     hide_window_after_paste(app_handle).await;
@@ -933,40 +955,384 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     }
 }
 
-pub fn send_paste_keystroke(_content: Option<&str>, _content_type: Option<&str>) {
-    println!("[DEBUG] Sending paste keystroke (Command+V) on macOS");
-    // Use AppleScript only for app re-activation. Sending synthetic key presses
-    // via `osascript`/`System Events` is much less reliable under TCC and may
-    // fail even when the main app itself has Accessibility permission.
-    //
-    // For the actual paste keystroke we prefer our native CGEvent-based path.
-    let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID.load(Ordering::Relaxed);
-    let mut reactivated = false;
-    if prev_pid != 0 {
-        reactivated = crate::infrastructure::macos_api::apps::activate_app_by_pid(prev_pid as i32);
-    }
+pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: Option<&str>) {
+    println!("[DEBUG] Sending paste keystroke using method: {}", method);
+#[cfg(target_os = "windows")]
+    unsafe {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            MapVirtualKeyW, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, VK_CONTROL,
+            VK_INSERT, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN, VK_SHIFT, VK_V,
+        };
 
-    if !reactivated {
-        let prev_app = crate::global_state::get_last_active_app_name();
-        if !prev_app.trim().is_empty() {
-            crate::infrastructure::macos_api::apps::activate_app_by_name(&prev_app);
+        // 1. Ensure all modifiers are released (including SHIFT, WIN, ALT, CTRL)
+        let release_modifiers = [
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_LWIN,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        ..Default::default()
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_RWIN,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        ..Default::default()
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_MENU,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        ..Default::default()
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_SHIFT,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        ..Default::default()
+                    },
+                },
+            },
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_CONTROL,
+                        dwFlags: KEYEVENTF_KEYUP,
+                        ..Default::default()
+                    },
+                },
+            },
+        ];
+        SendInput(&release_modifiers, std::mem::size_of::<INPUT>() as i32);
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        let can_type = matches!(content_type, Some("text" | "code" | "url" | "rich_text"));
+        let effective_method = if method == "game_mode" && !can_type {
+            "ctrl_v"
+        } else {
+            method
+        };
+
+        if effective_method == "ctrl_v" {
+            let v_scan = MapVirtualKeyW(VK_V.0 as u32, MAPVK_VK_TO_VSC) as u16;
+            let ctrl_scan = MapVirtualKeyW(VK_CONTROL.0 as u32, MAPVK_VK_TO_VSC) as u16;
+
+            let inputs = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: ctrl_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: v_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                },
+            ];
+            SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
+            let inputs_up = [
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: v_scan,
+                            dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+                INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: ctrl_scan,
+                            dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                            ..Default::default()
+                        },
+                    },
+                },
+            ];
+            SendInput(&inputs_up, std::mem::size_of::<INPUT>() as i32);
+        } else if effective_method == "game_mode" {
+            if let Some(text) = content {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+
+                let target_hwnd = GetForegroundWindow();
+                let target_thread = GetWindowThreadProcessId(target_hwnd, None);
+                let current_thread = windows::Win32::System::Threading::GetCurrentThreadId();
+                let mut attached = false;
+
+                if target_thread != 0 && target_thread != current_thread {
+                    if AttachThreadInput(current_thread, target_thread, true).as_bool() {
+                        attached = true;
+                    }
+                }
+
+                use windows::Win32::UI::Input::Ime::{
+                    ImmGetContext, ImmGetConversionStatus, ImmGetOpenStatus, ImmReleaseContext,
+                    ImmSetConversionStatus, ImmSetOpenStatus, IME_CMODE_ALPHANUMERIC,
+                    IME_CONVERSION_MODE, IME_SENTENCE_MODE, IME_SMODE_NONE,
+                };
+
+                let himc = ImmGetContext(target_hwnd);
+                let mut ime_open = false;
+                let mut ime_conv = IME_CONVERSION_MODE(0);
+                let mut ime_sentence = IME_SENTENCE_MODE(0);
+                let mut has_himc = false;
+
+                if !himc.0.is_null() {
+                    has_himc = true;
+                    ime_open = ImmGetOpenStatus(himc).as_bool();
+                    let _ =
+                        ImmGetConversionStatus(himc, Some(&mut ime_conv), Some(&mut ime_sentence));
+
+                    if ime_open {
+                        let _ = ImmSetOpenStatus(himc, false);
+                    }
+                    let _ = ImmSetConversionStatus(himc, IME_CMODE_ALPHANUMERIC, IME_SMODE_NONE);
+                }
+
+                let total_len = text.chars().count();
+                let (down_delay_ms, up_delay_ms, check_interval) = if total_len > 800 {
+                    (2u64, 2u64, 40usize)
+                } else if total_len > 200 {
+                    (4u64, 4u64, 30usize)
+                } else {
+                    (10u64, 10u64, 20usize)
+                };
+
+                let mut idx = 0usize;
+                for c in text.encode_utf16() {
+                    if idx % check_interval == 0 {
+                        let current_hwnd = GetForegroundWindow();
+                        if current_hwnd.0 != target_hwnd.0 {
+                            println!("[WARN] Game mode paste aborted: foreground window changed");
+                            break;
+                        }
+                    }
+                    if c == '\r' as u16 {
+                        idx += 1;
+                        continue;
+                    }
+                    if c == '\n' as u16 {
+                        let enter_scan = MapVirtualKeyW(VK_RETURN.0 as u32, MAPVK_VK_TO_VSC) as u16;
+                        let enter_down = INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 {
+                                ki: KEYBDINPUT {
+                                    wVk: VK_RETURN,
+                                    wScan: enter_scan,
+                                    dwFlags: KEYEVENTF_SCANCODE,
+                                    ..Default::default()
+                                },
+                            },
+                        };
+                        let enter_up = INPUT {
+                            r#type: INPUT_KEYBOARD,
+                            Anonymous: INPUT_0 {
+                                ki: KEYBDINPUT {
+                                    wVk: VK_RETURN,
+                                    wScan: enter_scan,
+                                    dwFlags: KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP,
+                                    ..Default::default()
+                                },
+                            },
+                        };
+                        SendInput(&[enter_down], std::mem::size_of::<INPUT>() as i32);
+                        std::thread::sleep(std::time::Duration::from_millis(down_delay_ms));
+                        SendInput(&[enter_up], std::mem::size_of::<INPUT>() as i32);
+                        std::thread::sleep(std::time::Duration::from_millis(up_delay_ms));
+                        idx += 1;
+                        continue;
+                    }
+                    let mut input = INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                                wScan: c,
+                                dwFlags:
+                                    windows::Win32::UI::Input::KeyboardAndMouse::KEYBD_EVENT_FLAGS(
+                                        4,
+                                    ), // KEYEVENTF_UNICODE
+                                ..Default::default()
+                            },
+                        },
+                    };
+                    SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                    std::thread::sleep(std::time::Duration::from_millis(down_delay_ms));
+                    input.Anonymous.ki.dwFlags |=
+                        windows::Win32::UI::Input::KeyboardAndMouse::KEYEVENTF_KEYUP;
+                    SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                    std::thread::sleep(std::time::Duration::from_millis(up_delay_ms));
+                    idx += 1;
+                }
+
+                if has_himc {
+                    let _ = ImmSetConversionStatus(himc, ime_conv, ime_sentence);
+                    if ime_open {
+                        let _ = ImmSetOpenStatus(himc, true);
+                    }
+                    let _ = ImmReleaseContext(target_hwnd, himc);
+                }
+
+                if attached {
+                    let _ = AttachThreadInput(current_thread, target_thread, false);
+                }
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                let ctrl_scan = MapVirtualKeyW(VK_CONTROL.0 as u32, MAPVK_VK_TO_VSC) as u16;
+                let v_scan = MapVirtualKeyW(VK_V.0 as u32, MAPVK_VK_TO_VSC) as u16;
+
+                let mut input = INPUT {
+                    r#type: INPUT_KEYBOARD,
+                    Anonymous: INPUT_0 {
+                        ki: KEYBDINPUT {
+                            wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(0),
+                            wScan: ctrl_scan,
+                            dwFlags: KEYEVENTF_SCANCODE,
+                            ..Default::default()
+                        },
+                    },
+                };
+
+                let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                input.Anonymous.ki.wScan = v_scan;
+                let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                input.Anonymous.ki.dwFlags |= KEYEVENTF_KEYUP;
+                let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+                std::thread::sleep(std::time::Duration::from_millis(80));
+                input.Anonymous.ki.wScan = ctrl_scan;
+                input.Anonymous.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
+                let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+            }
+        } else {
+            let shift_scan = MapVirtualKeyW(VK_SHIFT.0 as u32, MAPVK_VK_TO_VSC) as u16;
+            let insert_scan = MapVirtualKeyW(VK_INSERT.0 as u32, MAPVK_VK_TO_VSC) as u16;
+
+            let shift_down = INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_SHIFT,
+                        wScan: shift_scan,
+                        dwFlags: KEYEVENTF_SCANCODE,
+                        ..Default::default()
+                    },
+                },
+            };
+            SendInput(&[shift_down], std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            let insert_down = INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_INSERT,
+                        wScan: insert_scan,
+                        dwFlags: KEYEVENTF_EXTENDEDKEY | KEYEVENTF_SCANCODE,
+                        ..Default::default()
+                    },
+                },
+            };
+            SendInput(&[insert_down], std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            let insert_up = INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_INSERT,
+                        wScan: insert_scan,
+                        dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_EXTENDEDKEY | KEYEVENTF_SCANCODE,
+                        ..Default::default()
+                    },
+                },
+            };
+            SendInput(&[insert_up], std::mem::size_of::<INPUT>() as i32);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+
+            let shift_up = INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_SHIFT,
+                        wScan: shift_scan,
+                        dwFlags: KEYEVENTF_KEYUP | KEYEVENTF_SCANCODE,
+                        ..Default::default()
+                    },
+                },
+            };
+            SendInput(&[shift_up], std::mem::size_of::<INPUT>() as i32);
         }
     }
 
-    if !crate::infrastructure::macos_api::permissions::has_accessibility_permission() {
-        println!("[WARN] Accessibility permission missing; requesting permission prompt");
-        let _ = crate::infrastructure::macos_api::permissions::request_accessibility_permission();
-        return;
-    }
-
-    #[cfg(target_os = "macos")]
-    crate::infrastructure::macos_api::paste_key_monitor::suppress_paste_sound_briefly();
-    if crate::infrastructure::macos_api::permissions::send_command_v() {
-        if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
-            crate::services::ui_sound::schedule_paste_sound(app);
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _method = method;
+        let _content = content;
+        let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID.load(Ordering::Relaxed);
+        let mut reactivated = false;
+        if prev_pid != 0 {
+            reactivated =
+                crate::infrastructure::macos_api::apps::activate_app_by_pid(prev_pid as i32);
         }
-    } else {
-        println!("[WARN] Native Command+V dispatch failed");
+
+        if !reactivated {
+            let prev_app = crate::global_state::get_last_active_app_name();
+            if !prev_app.trim().is_empty() {
+                crate::infrastructure::macos_api::apps::activate_app_by_name(&prev_app);
+            }
+        }
+
+        if !crate::infrastructure::macos_api::permissions::has_accessibility_permission() {
+            println!("[WARN] Accessibility permission missing; requesting permission prompt");
+            let _ =
+                crate::infrastructure::macos_api::permissions::request_accessibility_permission();
+            return;
+        }
+
+        crate::infrastructure::macos_api::paste_key_monitor::suppress_paste_sound_briefly();
+        if crate::infrastructure::macos_api::permissions::send_command_v() {
+            if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
+                crate::services::ui_sound::schedule_paste_sound(app);
+            }
+        } else {
+            println!("[WARN] Native Command+V dispatch failed");
+        }
     }
 
     if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {

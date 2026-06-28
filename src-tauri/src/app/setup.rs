@@ -20,6 +20,7 @@ use crate::infrastructure::repository::settings_repo::{
 };
 use crate::infrastructure::repository::tag_repo::SqliteTagRepository;
 use crate::services::encryption_queue::init_encryption_queue;
+use crate::services::sensitive_align::spawn_sensitive_alignment;
 #[cfg(target_os = "windows")]
 use windows::Win32::Foundation::{HINSTANCE, HWND, POINT, RECT};
 #[cfg(target_os = "windows")]
@@ -75,7 +76,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     // 5. App State Management
     setup_state(app, conn_arc.clone(), &settings, app_dir.clone());
     app.manage(EncryptionQueueState(init_encryption_queue(app_handle.clone())));
-    // spawn_sensitive_alignment(app_handle.clone());
+    spawn_sensitive_alignment(app_handle.clone());
 
     // 6. App Visibility
     apply_initial_dock_visibility(app, &settings);
@@ -160,6 +161,18 @@ fn resolve_data_dir(app: &App) -> Result<std::path::PathBuf, Box<dyn std::error:
 }
 
 fn apply_startup_resets(repo: &impl SettingsRepository) {
+    #[cfg(target_os = "windows")]
+    {
+        let paste_method = repo
+            .get("app.paste_method")
+            .unwrap_or(Some("shift_insert".to_string()))
+            .unwrap_or("shift_insert".to_string());
+        if paste_method == "game_mode" && !crate::app::commands::system_cmd::check_is_admin() {
+            info!(">>> [STARTUP] Game Mode active without Admin privileges. Resetting to default.");
+            let _ = repo.set("app.paste_method", "shift_insert");
+        }
+    }
+
     #[cfg(target_os = "macos")]
     {
         fn migrate_hotkey_default(
@@ -234,6 +247,7 @@ pub struct StartupSettings {
     pub paste_sound_enabled: bool,
     pub hide_tray_icon: bool,
     pub hide_dock_icon: bool,
+    pub follow_mouse: bool,
     pub edge_docking: bool,
     pub last_edge_dock: String,
     pub window_pinned: bool,
@@ -353,6 +367,11 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        follow_mouse: repo
+            .get("app.follow_mouse")
+            .unwrap_or(Some("true".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(true),
         edge_docking: repo
             .get("app.edge_docking")
             .unwrap_or(Some("false".to_string()))
@@ -450,6 +469,7 @@ fn setup_state(
         paste_sound_enabled: AtomicBool::new(s.paste_sound_enabled),
         hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
         hide_dock_icon: AtomicBool::new(s.hide_dock_icon),
+        follow_mouse: AtomicBool::new(s.follow_mouse),
         edge_docking: AtomicBool::new(s.edge_docking),
         arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
@@ -862,6 +882,20 @@ fn start_services(app: &App, s: &StartupSettings, app_handle: AppHandle) {
         *guard = hotkey_str.clone();
     }
     let _ = crate::app::commands::sync_registered_hotkeys(&app_handle);
+
+    #[cfg(target_os = "windows")]
+    {
+        if db_state
+            .settings_repo
+            .get("app.use_win_v_shortcut")
+            .unwrap_or(Some("false".to_string()))
+            == Some("true".to_string())
+        {
+            if !crate::app::commands::system_cmd::get_registry_win_v_optimized_status() {
+                let _ = crate::app::commands::system_cmd::trigger_registry_win_v_optimization(true);
+            }
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]

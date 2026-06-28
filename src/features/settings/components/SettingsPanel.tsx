@@ -49,6 +49,10 @@ interface SettingsPanelProps {
     richTextSnapshotPreview: boolean;
     deleteAfterPaste: boolean;
     moveToTopAfterPaste: boolean;
+    pasteMethod: string;
+    setPasteMethod: (val: string) => void;
+    registryWinVEnabled: boolean;
+    setRegistryWinVEnabled: (val: boolean) => void;
     sequentialMode: boolean;
     sequentialHotkey: string;
     isRecordingSequential: boolean;
@@ -99,6 +103,8 @@ interface SettingsPanelProps {
     setHideDockIcon: (val: boolean) => void;
     edgeDocking: boolean;
     setEdgeDocking: (val: boolean) => void;
+    followMouse: boolean;
+    setFollowMouse: (val: boolean) => void;
     customBackground: string;
     setCustomBackground: (val: string) => void;
     customBackgroundOpacity: number;
@@ -243,7 +249,7 @@ interface SettingsPanelProps {
 const SettingsPanel = (props: SettingsPanelProps) => {
     const {
         t, theme, language, colorMode, showSourceAppIcon, setShowSourceAppIcon,
-        collapsedGroups, settingsSubpage, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, deleteAfterPaste, moveToTopAfterPaste,
+        collapsedGroups, settingsSubpage, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, deleteAfterPaste, moveToTopAfterPaste, pasteMethod, setPasteMethod, registryWinVEnabled, setRegistryWinVEnabled,
         sequentialMode, sequentialHotkey, isRecordingSequential,
         richPasteHotkey, isRecordingRich, searchHotkey, isRecordingSearch, quickPasteModifier, setQuickPasteModifier,
         privacyProtection, privacyProtectionKinds, setPrivacyProtectionKinds, privacyProtectionCustomRules, setPrivacyProtectionCustomRules, sensitiveMaskPrefixVisible, setSensitiveMaskPrefixVisible, sensitiveMaskSuffixVisible, setSensitiveMaskSuffixVisible, sensitiveMaskEmailDomain, setSensitiveMaskEmailDomain, cleanupRules, setCleanupRules, appCleanupPolicies, setAppCleanupPolicies, showSearchBox, setShowSearchBox, scrollTopButtonEnabled, setScrollTopButtonEnabled, arrowKeySelection, setArrowKeySelection,
@@ -252,6 +258,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         hideTrayIcon, setHideTrayIcon,
         hideDockIcon, setHideDockIcon,
         edgeDocking, setEdgeDocking,
+        followMouse, setFollowMouse,
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
@@ -504,6 +511,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setHideDockIcon={setHideDockIcon}
                 edgeDocking={edgeDocking}
                 setEdgeDocking={setEdgeDocking}
+                followMouse={followMouse}
+                setFollowMouse={setFollowMouse}
                 soundEnabled={soundEnabled}
                 setSoundEnabled={setSoundEnabled}
                 pasteSoundEnabled={pasteSoundEnabled}
@@ -558,6 +567,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setDeleteAfterPaste={setDeleteAfterPaste}
                 moveToTopAfterPaste={moveToTopAfterPaste}
                 setMoveToTopAfterPaste={setMoveToTopAfterPaste}
+                pasteMethod={pasteMethod}
+                setPasteMethod={setPasteMethod}
+                registryWinVEnabled={registryWinVEnabled}
+                setRegistryWinVEnabled={setRegistryWinVEnabled}
                 sequentialMode={sequentialMode}
                 setSequentialModeState={setSequentialModeState}
                 sequentialHotkey={sequentialHotkey}

@@ -2,6 +2,7 @@ use crate::app_state::SettingsState;
 use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State, Theme, WebviewWindow};
 use tauri_plugin_notification::NotificationExt;
 #[cfg(target_os = "macos")]
@@ -26,6 +27,46 @@ fn apply_macos_window_material(window: &WebviewWindow, theme: &str) {
             Some(NSVisualEffectState::FollowsWindowActiveState),
             Some(12.0),
         );
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlatformInfo {
+    pub platform: String,
+    pub is_windows_10: bool,
+    pub is_windows_11: bool,
+}
+
+#[tauri::command]
+pub fn get_platform_info() -> PlatformInfo {
+    #[cfg(target_os = "windows")]
+    {
+        let build = windows_version::OsVersion::current().build;
+        let is_windows_11 = build >= 22000;
+        let is_windows_10 = build >= 10240 && build < 22000;
+        PlatformInfo {
+            platform: "windows".to_string(),
+            is_windows_10,
+            is_windows_11,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        PlatformInfo {
+            platform: "macos".to_string(),
+            is_windows_10: false,
+            is_windows_11: false,
+        }
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        PlatformInfo {
+            platform: std::env::consts::OS.to_string(),
+            is_windows_10: false,
+            is_windows_11: false,
+        }
     }
 }
 
