@@ -14,9 +14,20 @@ export const isHtmlishTagText = (text: string): boolean => {
   return MISSING_LEADING_TAG_RE.test((text || "").trim());
 };
 
+export const hasRenderableCssRules = (text: string): boolean => {
+  if (!text || !text.includes("{")) return false;
+  return /(?:^|[;{\s])(?:color|font|background|text-decoration|line-height|letter-spacing|border|mso-font|mso-highlight)\s*:/im.test(
+    text
+  );
+};
+
 export const isOfficeStyleDefinitionText = (text: string): boolean => {
   const normalized = (text || "").replace(/\s+/g, " ").trim();
-  return normalized.length > 24 && OFFICE_STYLE_SIGNAL_RE.test(normalized);
+  if (normalized.length <= 24 || !OFFICE_STYLE_SIGNAL_RE.test(normalized)) {
+    return false;
+  }
+  // WPS/Word style blocks often include mso-* metadata and real CSS rules together.
+  return !hasRenderableCssRules(normalized);
 };
 
 export const repairHtmlFragment = (html: string): string => {
@@ -30,6 +41,36 @@ export const repairHtmlFragment = (html: string): string => {
   }
 
   return trimmed;
+};
+
+const RICH_NAMED_FORMATS_PREFIX = "<!--TIEZ_RICH_FORMATS:";
+const RICH_NAMED_FORMATS_SUFFIX = "-->";
+
+export const stripRichStorageMarkers = (html: string): string => {
+  let processed = (html || "").trim();
+  if (!processed) return processed;
+
+  const imageStart = processed.lastIndexOf("<!--TIEZ_RICH_IMAGE:");
+  if (imageStart >= 0) {
+    const markerStart = imageStart + "<!--TIEZ_RICH_IMAGE:".length;
+    const endRel = processed.slice(markerStart).indexOf("-->");
+    if (endRel >= 0) {
+      const markerEnd = markerStart + endRel;
+      processed = `${processed.slice(0, imageStart)}${processed.slice(markerEnd + 3)}`.trim();
+    }
+  }
+
+  const formatsStart = processed.lastIndexOf(RICH_NAMED_FORMATS_PREFIX);
+  if (formatsStart >= 0) {
+    const markerStart = formatsStart + RICH_NAMED_FORMATS_PREFIX.length;
+    const endRel = processed.slice(markerStart).indexOf(RICH_NAMED_FORMATS_SUFFIX);
+    if (endRel >= 0) {
+      const markerEnd = markerStart + endRel;
+      processed = `${processed.slice(0, formatsStart)}${processed.slice(markerEnd + RICH_NAMED_FORMATS_SUFFIX.length)}`.trim();
+    }
+  }
+
+  return processed;
 };
 
 export const extractRenderableHtmlFragment = (html: string): string => {

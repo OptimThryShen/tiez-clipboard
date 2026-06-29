@@ -401,6 +401,17 @@ fn has_edge_whitespace(text: &str) -> bool {
     !normalized.is_empty() && normalized != normalized.trim()
 }
 
+fn preserve_html_text_whitespace(text: &str) -> String {
+    if text.is_empty() {
+        return String::new();
+    }
+    if is_whitespace_only(text) {
+        normalize_clipboard_line_endings(text)
+    } else {
+        text.trim().to_string()
+    }
+}
+
 /// Render spaces/tabs visibly in list previews without changing stored content.
 pub fn visible_whitespace_preview(text: &str) -> String {
     text.chars()
@@ -443,12 +454,16 @@ pub fn build_clipboard_text_fingerprint(
 }
 
 fn collapse_line_whitespace(text: &str) -> String {
+    if is_whitespace_only(text) {
+        return text.to_string();
+    }
+
     static WHITESPACE_RE: OnceLock<Regex> = OnceLock::new();
 
+    // Collapse runs of whitespace within the line; keep leading/trailing (#97).
     WHITESPACE_RE
         .get_or_init(|| Regex::new(r"[^\S\r\n]+").unwrap())
-        .replace_all(text.trim(), " ")
-        .trim()
+        .replace_all(text, " ")
         .to_string()
 }
 
@@ -561,7 +576,7 @@ fn extract_renderable_html_region(html: &str) -> String {
     if let Some(start_idx) = trimmed.find("<!--StartFragment-->") {
         let start = start_idx + "<!--StartFragment-->".len();
         if let Some(end_rel) = trimmed[start..].find("<!--EndFragment-->") {
-            return trimmed[start..start + end_rel].trim().to_string();
+            return preserve_html_text_whitespace(&trimmed[start..start + end_rel]);
         }
     }
 
@@ -578,15 +593,15 @@ fn extract_renderable_html_region(html: &str) -> String {
         .captures(trimmed)
     {
         if let Some(body) = captures.get(1) {
-            return body.as_str().trim().to_string();
+            return preserve_html_text_whitespace(body.as_str());
         }
     }
 
-    HEAD_RE
-        .get_or_init(|| Regex::new(r"(?is)<head\b[\s\S]*?</head\s*>").unwrap())
-        .replace_all(trimmed, " ")
-        .trim()
-        .to_string()
+    preserve_html_text_whitespace(
+        &HEAD_RE
+            .get_or_init(|| Regex::new(r"(?is)<head\b[\s\S]*?</head\s*>").unwrap())
+            .replace_all(trimmed, " "),
+    )
 }
 
 pub fn repair_html_fragment(html: &str) -> String {
@@ -620,8 +635,14 @@ fn strip_office_preview_noise(text: &str) -> String {
     static RENDERABLE_CONTENT_TAG_RE: OnceLock<Regex> = OnceLock::new();
 
     let mut processed = extract_renderable_html_region(text);
+    if processed.is_empty() {
+        return processed;
+    }
     if processed.trim().is_empty() {
-        return processed.trim().to_string();
+        if is_whitespace_only(&processed) {
+            return normalize_clipboard_line_endings(&processed);
+        }
+        return String::new();
     }
 
     processed = OFFICE_XML_BLOCK_RE
@@ -672,7 +693,7 @@ fn strip_office_preview_noise(text: &str) -> String {
         }
     }
 
-    processed.trim().to_string()
+    preserve_html_text_whitespace(&processed)
 }
 
 fn looks_like_html_fragment_shallow(text: &str) -> bool {
@@ -740,8 +761,10 @@ fn extract_plain_text_from_htmlish(text: &str) -> String {
     }
     if is_office_style_definition_text(&collapse_preview_whitespace(&cleaned)) {
         String::new()
-    } else {
+    } else if is_whitespace_only(&cleaned) {
         cleaned
+    } else {
+        cleaned.trim().to_string()
     }
 }
 
@@ -760,7 +783,7 @@ fn looks_like_obsidian_callout_markdown(text: &str) -> bool {
         .is_match(first_non_empty)
 }
 
-fn source_app_likely_formats_rich_text(source_app: &str, source_app_path: Option<&str>) -> bool {
+fn build_app_haystack(source_app: &str, source_app_path: Option<&str>) -> String {
     let mut haystack = source_app.to_ascii_lowercase();
     if let Some(path) = source_app_path {
         if !haystack.is_empty() {
@@ -768,6 +791,76 @@ fn source_app_likely_formats_rich_text(source_app: &str, source_app_path: Option
         }
         haystack.push_str(&path.to_ascii_lowercase());
     }
+    haystack
+}
+
+pub fn app_likely_spreadsheet(source_app: &str, source_app_path: Option<&str>) -> bool {
+    let haystack = build_app_haystack(source_app, source_app_path);
+    [
+        "excel",
+        "calc",
+        "et",
+        "sheet",
+        "spreadsheet",
+        "numbers",
+        "wpssheet",
+        "wps表格",
+    ]
+    .iter()
+    .any(|needle| haystack.contains(needle))
+}
+
+pub fn app_likely_word_processor(source_app: &str, source_app_path: Option<&str>) -> bool {
+    if app_likely_spreadsheet(source_app, source_app_path) {
+        return false;
+    }
+
+    let haystack = build_app_haystack(source_app, source_app_path);
+    [
+        "wps",
+        "winword",
+        "microsoft word",
+        "word",
+        "writer",
+        "pages",
+        "textedit",
+        "libreoffice",
+        "soffice",
+    ]
+    .iter()
+    .any(|needle| haystack.contains(needle))
+}
+
+pub fn html_has_renderable_rich_body(html: &str) -> bool {
+    let plain = extract_plain_text_from_htmlish(html);
+    let collapsed = collapse_preview_whitespace(&plain);
+    !collapsed.is_empty() && !is_office_style_definition_text(&collapsed)
+}
+
+pub fn should_attach_rich_image_fallback_on_capture(
+    _source_app: &str,
+    _source_app_path: Option<&str>,
+) -> bool {
+    // Preview-only marker; paste path omits clipboard PNG for word processors.
+    true
+}
+
+pub fn should_use_rich_image_clipboard_fallback(
+    target_app: &str,
+    target_app_path: Option<&str>,
+    html: &str,
+) -> bool {
+    if app_likely_word_processor(target_app, target_app_path) {
+        return false;
+    }
+    if html_has_renderable_rich_body(html) && !app_likely_spreadsheet(target_app, target_app_path) {
+        return false;
+    }
+    true
+}
+
+fn source_app_likely_formats_rich_text(source_app: &str, source_app_path: Option<&str>) -> bool {
+    let haystack = build_app_haystack(source_app, source_app_path);
 
     [
         "wps",
@@ -918,6 +1011,55 @@ pub fn infer_rich_html_from_plain_text(
     None
 }
 
+pub struct ResolvedClipboardCapture {
+    pub text: String,
+    pub html: Option<String>,
+}
+
+/// Build capturable text/html from platform clipboard fragments (WPS/Office often omit plain text).
+pub fn resolve_clipboard_text_capture(
+    raw_text: Option<&str>,
+    raw_html: Option<&str>,
+    rtf_html: Option<String>,
+    rich_text_enabled: bool,
+    source_app: &str,
+    source_app_path: Option<&str>,
+) -> Option<ResolvedClipboardCapture> {
+    let mut text = raw_text.unwrap_or("").to_string();
+    let mut html = raw_html
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| value.to_string());
+
+    if html.is_none() {
+        html = rtf_html.filter(|value| !value.trim().is_empty());
+    }
+
+    if rich_text_enabled && html.is_none() && !text.is_empty() {
+        html = infer_rich_html_from_plain_text(&text, source_app, source_app_path);
+    }
+
+    if text.is_empty() {
+        if let Some(ref html_value) = html {
+            let derived = derive_rich_text_content("", Some(html_value));
+            if !derived.is_empty() || is_whitespace_only(&derived) {
+                text = derived;
+            }
+        }
+    }
+
+    if text.is_empty() && html.is_none() {
+        return None;
+    }
+
+    if text.is_empty() {
+        if let Some(ref html_value) = html {
+            text = derive_rich_text_content("", Some(html_value));
+        }
+    }
+
+    Some(ResolvedClipboardCapture { text, html })
+}
+
 pub fn derive_rich_text_content(content: &str, html_content: Option<&str>) -> String {
     let line_plain = normalize_clipboard_line_endings(content);
     if looks_like_obsidian_callout_markdown(&line_plain) {
@@ -969,7 +1111,9 @@ pub fn build_entry_preview(
     }
 
     let line_content = normalize_clipboard_line_endings(content);
-    let preview_text = if is_whitespace_only(&line_content) || has_edge_whitespace(&line_content) {
+    let preview_text = if !matches!(content_type, "rich_text" | "image" | "file" | "video")
+        && (is_whitespace_only(&line_content) || has_edge_whitespace(&line_content))
+    {
         visible_whitespace_preview(&line_content)
     } else if content_type == "rich_text" {
         let clean_text = derive_rich_text_content(content, html_content);
@@ -1055,6 +1199,23 @@ pub fn entry_matches_search(entry: &ClipboardEntry, term: &str, tag_only: bool) 
     entry_searchable_text(entry)
         .to_lowercase()
         .contains(&term)
+}
+
+pub fn rtf_bytes_from_named_formats(
+    formats: &[crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat],
+) -> Option<Vec<u8>> {
+    formats.iter().find_map(|format| {
+        let name = format.name.to_ascii_lowercase();
+        if name.contains("rtf") || name == "rich text format" || name == "public.rtf" {
+            if format.data.is_empty() {
+                None
+            } else {
+                Some(format.data.clone())
+            }
+        } else {
+            None
+        }
+    })
 }
 
 pub fn attach_rich_image_fallback(html: &str, payload: &str) -> String {
@@ -1187,7 +1348,7 @@ fn table_row_has_visible_content(row_html: &str) -> bool {
     cell_re.captures_iter(row_html).any(|cap| {
         let raw = cap.get(1).map(|m| m.as_str()).unwrap_or_default();
         let decoded = decode_basic_html_entities(tag_re.replace_all(raw, " ").as_ref());
-        !collapse_line_whitespace(&decoded).is_empty()
+        !decoded.trim().is_empty()
     })
 }
 
@@ -1254,16 +1415,35 @@ pub fn plain_text_from_tabular_html(html: &str) -> Option<String> {
     Some(rows.join("\r\n"))
 }
 
+pub fn plain_text_requires_exact_paste(text: &str) -> bool {
+    let normalized = normalize_clipboard_line_endings(text);
+    is_whitespace_only(&normalized) || has_edge_whitespace(&normalized)
+}
+
+fn escape_html_for_paste(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// HTML fragment that keeps leading/trailing spaces/tabs when target app prefers HTML paste (#97).
+pub fn build_exact_paste_html(plain: &str) -> String {
+    format!(
+        "<html><body><!--StartFragment--><span style=\"white-space:pre-wrap;\">{}</span><!--EndFragment--></body></html>",
+        escape_html_for_paste(plain)
+    )
+}
+
 pub fn normalize_plain_text_for_clipboard_paste(text: &str) -> String {
-    let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-    let trimmed = normalized.trim_end();
+    let normalized = normalize_clipboard_line_endings(text);
     #[cfg(target_os = "windows")]
     {
-        return trimmed.replace('\n', "\r\n");
+        return normalized.replace('\n', "\r\n");
     }
     #[cfg(not(target_os = "windows"))]
     {
-        trimmed.to_string()
+        normalized
     }
 }
 
@@ -1609,6 +1789,42 @@ mod tests {
     }
 
     #[test]
+    fn normalize_plain_text_for_clipboard_paste_preserves_edge_whitespace() {
+        assert_eq!(super::normalize_plain_text_for_clipboard_paste(" test "), " test ");
+        assert_eq!(super::normalize_plain_text_for_clipboard_paste("   "), "   ");
+        assert_eq!(super::normalize_plain_text_for_clipboard_paste("\t\t"), "\t\t");
+    }
+
+    #[test]
+    fn derive_rich_text_content_preserves_whitespace_from_html_only() {
+        let html = "<html><body>   </body></html>";
+        assert_eq!(derive_rich_text_content("", Some(html)), "   ");
+    }
+
+    #[test]
+    fn calc_text_hash_distinguishes_whitespace_only_content() {
+        use crate::database::calc_text_hash;
+
+        assert_ne!(calc_text_hash("   "), calc_text_hash(""));
+        assert_ne!(calc_text_hash(" test "), calc_text_hash("test"));
+    }
+
+    #[test]
+    fn build_exact_paste_html_preserves_edge_whitespace() {
+        let html = super::build_exact_paste_html(" test ");
+        assert!(html.contains("white-space:pre-wrap"));
+        assert!(html.contains(" test "));
+    }
+
+    #[test]
+    fn plain_text_requires_exact_paste_detects_edge_and_blank_content() {
+        assert!(super::plain_text_requires_exact_paste(" test"));
+        assert!(super::plain_text_requires_exact_paste("test "));
+        assert!(super::plain_text_requires_exact_paste("   "));
+        assert!(!super::plain_text_requires_exact_paste("hello world"));
+    }
+
+    #[test]
     fn visible_whitespace_preview_renders_spaces_and_tabs() {
         assert_eq!(visible_whitespace_preview(" a\tb "), "·a→b·");
     }
@@ -1642,6 +1858,59 @@ mod tests {
         let content = derive_rich_text_content(text, Some(html));
 
         assert_eq!(content, text);
+    }
+
+    #[test]
+    fn resolve_clipboard_text_capture_html_only_payload() {
+        let html = "<html><body><p>WPS 内容</p></body></html>";
+        let resolved = super::resolve_clipboard_text_capture(
+            None,
+            Some(html),
+            None,
+            true,
+            "WPS Office",
+            None,
+        )
+        .expect("html-only clipboard should be capturable");
+
+        assert_eq!(resolved.text, "WPS 内容");
+        assert_eq!(resolved.html.as_deref(), Some(html));
+    }
+
+    #[test]
+    fn rtf_bytes_from_named_formats_finds_rich_text_format() {
+        let formats = vec![
+            crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat {
+                name: "Rich Text Format".to_string(),
+                data: b"{\\rtf1\\ansi test}".to_vec(),
+            },
+        ];
+
+        assert_eq!(
+            super::rtf_bytes_from_named_formats(&formats).as_deref(),
+            Some(b"{\\rtf1\\ansi test}" as &[u8])
+        );
+    }
+
+    #[test]
+    fn should_not_use_image_fallback_when_pasting_to_wps() {
+        let html = "<html><body><p>正文内容</p></body></html>";
+        assert!(!super::should_use_rich_image_clipboard_fallback(
+            "WPS Office",
+            None,
+            html
+        ));
+        assert!(super::should_attach_rich_image_fallback_on_capture("WPS Office", None));
+    }
+
+    #[test]
+    fn should_use_image_fallback_for_excel_without_renderable_html() {
+        let html = "<table><tr><td></td></tr></table>";
+        assert!(super::should_use_rich_image_clipboard_fallback(
+            "Microsoft Excel",
+            None,
+            html
+        ));
     }
 
     #[test]

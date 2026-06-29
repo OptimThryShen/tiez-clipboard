@@ -344,8 +344,9 @@ impl PipelineStage for DeduplicationStage {
             };
 
             // Try precise match and normalized match
-            let normalized_content = content.trim().replace("\r\n", "\n");
-            let normalized_html = |html: &str| html.trim().replace("\r\n", "\n");
+            let normalized_content = normalize_clipboard_line_endings(&content);
+            let normalized_html =
+                |html: &str| normalize_clipboard_line_endings(html);
             let htmls_equivalent = |a: Option<&str>, b: Option<&str>| -> bool {
                 match (a, b) {
                     (None, None) => true,
@@ -435,9 +436,9 @@ impl PipelineStage for DeduplicationStage {
             {
                 let session = session_history.0.lock().unwrap();
                 let entry = ctx.entry.as_ref().expect("entry exists");
-                let normalized_content = entry.content.trim().replace("\r\n", "\n");
+                let normalized_content = normalize_clipboard_line_endings(&entry.content);
                 for item in session.iter() {
-                    let item_normalized = item.content.trim().replace("\r\n", "\n");
+                    let item_normalized = normalize_clipboard_line_endings(&item.content);
                     let html_match =
                         if entry.content_type == "rich_text" && item.content_type == "rich_text" {
                             htmls_equivalent(

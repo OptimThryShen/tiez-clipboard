@@ -2,11 +2,12 @@ import { toTauriLocalImageSrc } from "./localImageSrc";
 import {
   isHtmlishTagText,
   isOfficeStyleDefinitionText,
-  stripOfficePreviewNoise
+  stripOfficePreviewNoise,
+  stripRichStorageMarkers
 } from "./repairHtmlFragment";
 
 const SNAPSHOT_CACHE_LIMIT = 240;
-const SNAPSHOT_CACHE_VERSION = "v4";
+const SNAPSHOT_CACHE_VERSION = "v5";
 const snapshotCache = new Map<string, string>();
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
@@ -73,7 +74,7 @@ const normalizeRichHtml = (html: string): {
   };
 } | null => {
   const parser = new DOMParser();
-  let processed = stripOfficePreviewNoise(stripRichImageFallbackMarker((html || "").trim()));
+  let processed = stripOfficePreviewNoise(stripRichStorageMarkers(stripRichImageFallbackMarker((html || "").trim())));
   if (!processed) return null;
 
   if (

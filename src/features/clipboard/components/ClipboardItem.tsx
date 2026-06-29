@@ -42,13 +42,14 @@ import { toTauriLocalImageSrc, withImageCacheBust } from "../../../shared/lib/lo
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 import { getFileIcon as getSystemFileIcon, peekFileIcon } from "../../../shared/lib/fileIcon";
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
+import { stripRichStorageMarkers } from "../../../shared/lib/repairHtmlFragment";
 import { registerCompactPreviewControls } from "../lib/compactPreviewControls";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 const TABULAR_RICH_HTML_RE = /<(table|tr|td|th|thead|tbody|tfoot|colgroup|col)\b/i;
-const SPREADSHEET_SOURCE_RE = /\b(excel|et|wps|sheet|spreadsheet|calc)\b/i;
+const SPREADSHEET_SOURCE_RE = /\b(excel|et|wpssheet|wps表格|sheet|spreadsheet|calc)\b/i;
 const SPREADSHEET_APP_RE = /(?:^|[\\/])(excel|et|wps|wpssheet|soffice)(?:\.exe|\.app)?$/i;
 const STANDALONE_COLOR_RE = /^(#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})|(?:rgb|hsl)a?\(\s*[^)]+\s*\))$/i;
 const COMPACT_PREVIEW_DEBUG = false;
@@ -824,27 +825,30 @@ const ClipboardItem = ({
             sensitiveMaskEmailDomain
         ]
     );
-    const richTextCleanHtml = richTextFallback?.cleanHtml || item.html_content || "";
+    const richTextCleanHtml = stripRichStorageMarkers(richTextFallback?.cleanHtml || item.html_content || "");
     const richTextSnapshotDisplayMaxHeight = compactMode ? 40 : 64;
     const richTextSnapshotRenderMaxHeight = compactMode ? 100 : 200;
     const spreadsheetLikeRichSource = item.content_type === "rich_text"
         && !!item.html_content
         && isSpreadsheetLikeSource(item.source_app, item.source_app_path);
+    const tabularRichHtml = richHtmlLooksTabular(richTextCleanHtml);
+    const useSpreadsheetPreviewHeuristics = spreadsheetLikeRichSource && tabularRichHtml;
     const richTextHasAnimatedImageFallback = isAnimatedGifSrc(
         richTextFallback?.imagePayload || richTextFallback?.imageSrc || null
     );
     const preferHtmlRichPreview = item.content_type === "rich_text"
         && !!item.html_content
+        && !richTextSnapshotPreview
         && !richTextHasAnimatedImageFallback
-        && !richHtmlLooksTabular(richTextCleanHtml)
-        && !spreadsheetLikeRichSource;
+        && !tabularRichHtml
+        && !useSpreadsheetPreviewHeuristics;
     const preferGeneratedRichPreview = item.content_type === "rich_text"
         && !!item.html_content
         && !preferHtmlRichPreview
         && (
             !!richTextSnapshotPreview
-            || richHtmlLooksTabular(richTextCleanHtml)
-            || spreadsheetLikeRichSource
+            || tabularRichHtml
+            || useSpreadsheetPreviewHeuristics
         );
     const richTextSnapshotSrc = useMemo(() => {
         if (!preferGeneratedRichPreview) return null;
@@ -867,14 +871,15 @@ const ClipboardItem = ({
     const effectiveRichImageFallbackSrc = !richImageFallbackFailed
         ? (richTextFallback?.imageSrc || null)
         : null;
-    const preferImageFallbackForTabular = (
-        richHtmlLooksTabular(richTextCleanHtml) || spreadsheetLikeRichSource
-    ) && !!effectiveRichImageFallbackSrc;
+    const preferImageFallbackForTabular = useSpreadsheetPreviewHeuristics
+        && !!effectiveRichImageFallbackSrc;
     const richTextPreviewSrc = richTextHasAnimatedImageFallback
         ? (effectiveRichImageFallbackSrc || effectiveRichTextSnapshotSrc)
         : preferImageFallbackForTabular
             ? (effectiveRichImageFallbackSrc || effectiveRichTextSnapshotSrc)
-            : (effectiveRichTextSnapshotSrc || null);
+            : richTextSnapshotPreview
+                ? (effectiveRichTextSnapshotSrc || effectiveRichImageFallbackSrc)
+                : (effectiveRichTextSnapshotSrc || effectiveRichImageFallbackSrc);
     const useSnapshotPreviewImage = !!richTextPreviewSrc && richTextPreviewSrc === effectiveRichTextSnapshotSrc;
     const useRichImageFallback = !!richTextPreviewSrc && richTextPreviewSrc === effectiveRichImageFallbackSrc;
     const visibleTagCount = item.tags?.length || 0;

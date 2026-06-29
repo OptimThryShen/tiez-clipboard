@@ -505,10 +505,20 @@ body.theme-retro .history-item.compact .ai-options-dropdown button {
 .history-item.compact .content-preview:has(.file-thumbnail-card),
 .history-item.compact .content-preview:has(.image-preview) {
     max-height: none !important;
+    -webkit-box-orient: unset !important;
     -webkit-line-clamp: unset !important;
     line-clamp: unset !important;
     display: block;
     overflow: visible !important;
+}
+
+.history-item.compact .content-preview.rich-text {
+    display: block !important;
+    -webkit-box-orient: unset !important;
+    -webkit-line-clamp: unset !important;
+    line-clamp: unset !important;
+    max-height: 64px;
+    overflow: hidden !important;
 }
 
 /* Reduced padding for sensitive blur in compact mode to save height */

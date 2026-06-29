@@ -140,6 +140,17 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       if ((name === "href" || name === "src") && value.startsWith("javascript:")) {
         el.removeAttribute(attr.name);
       }
+      if (name === "style") {
+        const cleanedStyle = attr.value
+          .replace(/(?:^|;)\s*(?:transform|writing-mode|rotate|scale)\s*:[^;]*/gi, "")
+          .trim()
+          .replace(/^;+|;+$/g, "");
+        if (cleanedStyle) {
+          el.setAttribute("style", cleanedStyle);
+        } else {
+          el.removeAttribute("style");
+        }
+      }
     });
 
     // Handle local file images (including encoded file:// paths)

@@ -30,8 +30,11 @@ use crate::services::clipboard::{
     capture_preserved_named_formats_from_clipboard, clipboard_image_fallback_data_url,
     derive_rich_text_content, extract_animated_image_data_url_from_html,
     normalize_plain_text_for_clipboard_paste, parse_cf_html, plain_text_from_tabular_html,
-    repair_html_fragment, sanitize_tabular_html_for_paste, split_rich_html_and_image_fallback,
-    split_rich_html_and_named_formats,
+    plain_text_requires_exact_paste, build_exact_paste_html,
+    html_has_renderable_rich_body, repair_html_fragment, rtf_bytes_from_named_formats,
+    sanitize_tabular_html_for_paste, should_attach_rich_image_fallback_on_capture,
+    should_use_rich_image_clipboard_fallback, split_rich_html_and_image_fallback,
+    split_rich_html_and_named_formats, app_likely_word_processor,
 };
 use arboard::Clipboard;
 
@@ -269,12 +272,22 @@ fn append_fallback_image_to_html(html: &str, data_url: &str) -> String {
 fn materialize_rich_html_for_paste(
     html: &str,
     fallback_image_payload: Option<&str>,
+    use_image_fallback: bool,
 ) -> (String, Option<Vec<u8>>) {
     let html_with_embedded_images = crate::services::clipboard::embed_local_images(html);
+
+    if !use_image_fallback {
+        return (html_with_embedded_images, None);
+    }
+
     let fallback_bytes = fallback_image_payload.and_then(resolve_rich_image_fallback_bytes);
 
     if html_has_embedded_data_image(&html_with_embedded_images) {
         return (html_with_embedded_images, fallback_bytes);
+    }
+
+    if html_has_renderable_rich_body(&html_with_embedded_images) {
+        return (html_with_embedded_images, None);
     }
 
     let Some(payload) = fallback_image_payload else {
@@ -313,6 +326,21 @@ fn set_windows_formatted_clipboard(
         }
     }
     Ok(())
+}
+
+fn resolve_paste_with_format(
+    content: &str,
+    content_type: &str,
+    html_content: Option<&str>,
+    paste_with_format: Option<bool>,
+) -> bool {
+    let Some(_html) = html_content else {
+        return false;
+    };
+    if paste_with_format.unwrap_or(false) {
+        return true;
+    }
+    content_type == "rich_text" && !plain_text_requires_exact_paste(content)
 }
 
 async fn copy_to_clipboard_inner(
@@ -369,8 +397,12 @@ async fn copy_to_clipboard_inner(
         &content,
         &content_type,
         html_content.as_deref(),
-        paste_with_format
-            .unwrap_or(content_type == "rich_text" && html_content.as_deref().is_some()),
+        resolve_paste_with_format(
+            &content,
+            &content_type,
+            html_content.as_deref(),
+            paste_with_format,
+        ),
     )
     .await?;
 
@@ -481,8 +513,12 @@ pub async fn paste_content_transiently(
         &content,
         &current_type,
         html_content.as_deref(),
-        paste_with_format
-            .unwrap_or(current_type == "rich_text" && html_content.as_deref().is_some()),
+        resolve_paste_with_format(
+            &content,
+            &current_type,
+            html_content.as_deref(),
+            paste_with_format,
+        ),
     )
     .await?;
 
@@ -623,7 +659,7 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
 }
 
 fn calculate_content_hash(content: &str) -> (u64, u64) {
-    let normalized = content.trim().replace("\r\n", "\n");
+    let normalized = crate::services::clipboard::normalize_clipboard_line_endings(content);
     let mut hasher = DefaultHasher::new();
     normalized.hash(&mut hasher);
     let content_hash = hasher.finish();
@@ -725,37 +761,70 @@ async fn copy_content_to_system_clipboard(
                     } else {
                         repair_html_fragment(&clean_html)
                     };
+                    #[cfg(target_os = "windows")]
+                    let paste_target = {
+                        let info =
+                            crate::infrastructure::windows_api::window_tracker::get_clipboard_source_app_info();
+                        (info.app_name, info.process_path)
+                    };
+                    #[cfg(not(target_os = "windows"))]
+                    let paste_target = (
+                        crate::global_state::get_last_active_app_name(),
+                        None::<String>,
+                    );
+                    let use_image_fallback = should_use_rich_image_clipboard_fallback(
+                        &paste_target.0,
+                        paste_target.1.as_deref(),
+                        &base_html,
+                    );
                     let (final_html, image_bytes) = materialize_rich_html_for_paste(
                         &base_html,
                         fallback_image_data_url.as_deref(),
+                        use_image_fallback,
                     );
-                    let paste_html = sanitize_tabular_html_for_paste(&final_html);
-                    let paste_plain = plain_text_from_tabular_html(&paste_html)
+                    let mut paste_html = sanitize_tabular_html_for_paste(&final_html);
+                    let mut paste_plain = plain_text_from_tabular_html(&paste_html)
                         .filter(|value| !value.is_empty())
                         .unwrap_or_else(|| normalize_plain_text_for_clipboard_paste(content));
+                    if plain_text_requires_exact_paste(content) {
+                        paste_plain = normalize_plain_text_for_clipboard_paste(content);
+                        paste_html = sanitize_tabular_html_for_paste(&build_exact_paste_html(content));
+                    }
 
                     #[cfg(target_os = "macos")]
                     {
-                        crate::infrastructure::macos_api::clipboard::set_clipboard_text_html_and_image(
+                        let paste_rtf = if app_likely_word_processor(
+                            &paste_target.0,
+                            paste_target.1.as_deref(),
+                        ) {
+                            rtf_bytes_from_named_formats(&named_formats)
+                        } else {
+                            None
+                        };
+                        crate::infrastructure::macos_api::clipboard::set_clipboard_text_html_rtf_and_image(
                             &paste_plain,
                             &paste_html,
-                            image_bytes
-                        ).map_err(AppError::Internal)?;
+                            paste_rtf,
+                            image_bytes,
+                        )
+                        .map_err(AppError::Internal)?;
                     }
 
                     #[cfg(target_os = "windows")]
                     {
-                        if let Some(bytes) = image_bytes {
-                            let (primary_hash, _secondary_hash) =
-                                copy_image_bytes_to_clipboard(bytes, current_time, None)?;
-                            crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
-                        } else {
-                            set_windows_formatted_clipboard(
-                                &paste_plain,
-                                &paste_html,
-                                &named_formats,
+                        if image_bytes.is_some() {
+                            let (primary_hash, _secondary_hash) = copy_image_bytes_to_clipboard(
+                                image_bytes.unwrap(),
+                                current_time,
+                                None,
                             )?;
+                            crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
                         }
+                        set_windows_formatted_clipboard(
+                            &paste_plain,
+                            &paste_html,
+                            &named_formats,
+                        )?;
                     }
 
                     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]

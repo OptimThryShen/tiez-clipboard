@@ -20,6 +20,7 @@ import {
 import { getConciseTime } from "../../../shared/lib/utils";
 import type { Locale } from "../../../shared/types";
 import { toTauriLocalImageSrc } from "../../../shared/lib/localImageSrc";
+import { stripRichStorageMarkers } from "../../../shared/lib/repairHtmlFragment";
 import { getRichTextSnapshotDataUrl } from "../../../shared/lib/richTextSnapshot";
 
 type PreviewPayload = {
@@ -167,7 +168,7 @@ const CompactPreviewWindow = () => {
         if (!payload || payload.contentType !== "rich_text" || !payload.htmlContent) return null;
         if (!payload.richTextSnapshotPreview) return null;
         const { cleanHtml } = extractRichImageFallback(payload.htmlContent);
-        const htmlForSnapshot = cleanHtml || payload.htmlContent;
+        const htmlForSnapshot = stripRichStorageMarkers(cleanHtml || payload.htmlContent);
         return getRichTextSnapshotDataUrl(htmlForSnapshot, {
             width: 560,
             maxHeight: 1200

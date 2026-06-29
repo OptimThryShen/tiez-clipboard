@@ -96,12 +96,14 @@
 
 .content-preview.rich-text {
   display: block;
-  -webkit-line-clamp: none;
-  line-clamp: none;
+  -webkit-box-orient: unset;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
 }
 
 .content-preview.file-preview {
   display: block;
+  -webkit-box-orient: unset;
   -webkit-line-clamp: unset;
   line-clamp: unset;
 }

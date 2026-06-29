@@ -4,7 +4,8 @@ use objc2::rc::{autoreleasepool, Retained};
 use objc2::ClassType;
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{
-    NSPasteboard, NSPasteboardTypeHTML, NSPasteboardTypePNG, NSPasteboardTypeString,
+    NSPasteboard, NSPasteboardTypeHTML, NSPasteboardTypePNG, NSPasteboardTypeRTF,
+    NSPasteboardTypeRTFD, NSPasteboardTypeString,
 };
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSArray, NSData, NSDictionary, NSString, NSURL};
@@ -42,6 +43,10 @@ fn compute_clipboard_signature() -> u64 {
             let s = html.to_string();
             let len = s.len().min(CLIPBOARD_SIG_MAX_BYTES);
             s[..len].hash(&mut hasher);
+        } else if unsafe { pb.dataForType(NSPasteboardTypeRTF).is_some() } {
+            "__RTF__".hash(&mut hasher);
+        } else if unsafe { pb.dataForType(NSPasteboardTypeRTFD).is_some() } {
+            "__RTFD__".hash(&mut hasher);
         } else {
             // Check for image types too
             if unsafe { pb.dataForType(NSPasteboardTypePNG).is_some() } {
@@ -151,6 +156,20 @@ pub fn get_clipboard_html() -> Option<String> {
     None
 }
 
+pub fn get_clipboard_rtf() -> Option<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    return autoreleasepool(|_| {
+        let pb = NSPasteboard::generalPasteboard();
+        if let Some(data) = unsafe { pb.dataForType(NSPasteboardTypeRTF) } {
+            return Some(data.to_vec());
+        }
+        unsafe { pb.dataForType(NSPasteboardTypeRTFD) }.map(|data| data.to_vec())
+    });
+
+    #[cfg(not(target_os = "macos"))]
+    None
+}
+
 pub fn set_clipboard_files(_paths: Vec<String>) -> Result<(), String> {
     Ok(())
 }
@@ -158,6 +177,15 @@ pub fn set_clipboard_files(_paths: Vec<String>) -> Result<(), String> {
 pub fn set_clipboard_text_html_and_image(
     text: &str,
     html: &str,
+    png_bytes: Option<Vec<u8>>,
+) -> Result<(), String> {
+    set_clipboard_text_html_rtf_and_image(text, html, None, png_bytes)
+}
+
+pub fn set_clipboard_text_html_rtf_and_image(
+    text: &str,
+    html: &str,
+    rtf_bytes: Option<Vec<u8>>,
     png_bytes: Option<Vec<u8>>,
 ) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -173,6 +201,11 @@ pub fn set_clipboard_text_html_and_image(
             unsafe { pb.setString_forType(&ns_html, NSPasteboardTypeHTML) };
         }
 
+        if let Some(bytes) = rtf_bytes {
+            let ns_data = NSData::from_vec(bytes);
+            unsafe { pb.setData_forType(Some(&ns_data), NSPasteboardTypeRTF) };
+        }
+
         if let Some(bytes) = png_bytes {
             let ns_data = NSData::from_vec(bytes);
             unsafe { pb.setData_forType(Some(&ns_data), NSPasteboardTypePNG) };
@@ -182,11 +215,14 @@ pub fn set_clipboard_text_html_and_image(
     });
 
     #[cfg(not(target_os = "macos"))]
-    Err("Not supported on this platform".to_string())
+    {
+        let _ = (text, html, rtf_bytes, png_bytes);
+        Err("Not supported on this platform".to_string())
+    }
 }
 
 pub fn set_clipboard_text_and_html(text: &str, html: &str) -> Result<(), String> {
-    set_clipboard_text_html_and_image(text, html, None)
+    set_clipboard_text_html_rtf_and_image(text, html, None, None)
 }
 
 pub fn append_clipboard_text_and_html(_text: &str, _html: &str) -> Result<(), String> {
@@ -201,45 +237,53 @@ pub fn set_clipboard_image_with_formats(
 ) -> Result<Option<String>, String> {
     Ok(None)
 }
-#[allow(dead_code)]
-fn convert_rtf_to_html(rtf_bytes: &[u8]) -> Option<String> {
-    let mut child = Command::new("textutil")
-        .args([
-            "-convert",
-            "html",
-            "-stdin",
-            "-stdout",
-            "-format",
-            "rtf",
-            "-encoding",
-            "UTF-8",
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .ok()?;
+pub fn convert_rtf_to_html(rtf_bytes: &[u8]) -> Option<String> {
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = rtf_bytes;
+        return None;
+    }
 
-    if let Some(stdin) = child.stdin.as_mut() {
-        if stdin.write_all(rtf_bytes).is_err() {
+    #[cfg(target_os = "macos")]
+    {
+        let mut child = Command::new("textutil")
+            .args([
+                "-convert",
+                "html",
+                "-stdin",
+                "-stdout",
+                "-format",
+                "rtf",
+                "-encoding",
+                "UTF-8",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .ok()?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            if stdin.write_all(rtf_bytes).is_err() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        } else {
             let _ = child.kill();
             let _ = child.wait();
             return None;
         }
-    } else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    }
 
-    let output = child.wait_with_output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
+        let output = child.wait_with_output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
 
-    let html = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if html.is_empty() {
-        None
-    } else {
-        Some(html)
+        let html = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if html.is_empty() {
+            None
+        } else {
+            Some(html)
+        }
     }
 }
