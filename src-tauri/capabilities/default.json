@@ -25,6 +25,7 @@
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-visible-on-all-workspaces",
     "core:window:allow-current-monitor",
     "core:window:allow-cursor-position",
     "core:window:allow-create",

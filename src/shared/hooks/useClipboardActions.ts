@@ -147,11 +147,32 @@ export const useClipboardActions = ({
     [setHistory, virtualListRef]
   );
 
+  const handleUpdateNote = useCallback(
+    async (id: number, note: string) => {
+      const cleaned = note.trim();
+      try {
+        await invoke("update_entry_note", { id, note: cleaned });
+        setHistory((prev) =>
+          prev.map((item) => (item.id === id ? { ...item, note: cleaned } : item))
+        );
+        setTimeout(() => {
+          if (virtualListRef.current) {
+            virtualListRef.current.resetAfterIndex(0);
+          }
+        }, 0);
+      } catch (err) {
+        console.error("更新备注失败", err);
+      }
+    },
+    [setHistory, virtualListRef]
+  );
+
   return {
     copyToClipboard,
     openContent,
     deleteEntry,
     togglePin,
-    handleUpdateTags
+    handleUpdateTags,
+    handleUpdateNote
   };
 };

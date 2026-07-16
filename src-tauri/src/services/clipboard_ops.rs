@@ -604,7 +604,7 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
         window_was_visible = window.is_visible().unwrap_or(false);
         let _ = app_handle.emit("force-hide-compact-preview", ());
         #[cfg(not(target_os = "windows"))]
-        let _ = window.set_focusable(false);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         if !window_pinned {
             let _ = window.set_always_on_top(false);
             let _ = window.hide();
@@ -1090,7 +1090,7 @@ async fn perform_paste_action(
             println!("[WARN] Clipboard window STOLE focus back, attempting manual hide...");
             if let Some(window) = app_handle.get_webview_window("main") {
                 #[cfg(not(target_os = "windows"))]
-                let _ = window.set_focusable(false);
+                crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
                 let _ = window.hide();
                 crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
                 crate::app::window_manager::release_modifier_keys();
@@ -1124,7 +1124,7 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
         // In pinned mode, keep window non-focusable and restore focus back to last app
         if let Some(_window) = app_handle.get_webview_window("main") {
             #[cfg(target_os = "windows")]
-            let _ = _window.set_focusable(false);
+            crate::infrastructure::macos_api::window::set_window_focusable(&_window, false);
         }
         // On macOS, focus restoration is implicit after hiding a non-focusable window.
         return;
@@ -1136,7 +1136,7 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
             let _ = compact_preview.hide();
         }
         #[cfg(target_os = "windows")]
-        let _ = window.set_focusable(false);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         let _ = window.hide();
         crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
         crate::NAVIGATION_ENABLED.store(false, Ordering::Relaxed); // Disable navigation like hide_window_cmd does

@@ -177,10 +177,6 @@
     z-index: 48;
 }
 
-.hide-scrollbar::-webkit-scrollbar {
-    display: none;
-}
-
 /* --- Retro-specific accents --- */
 .theme-retro .tag-chip {
     font-weight: 800;

@@ -150,6 +150,16 @@ fn main_window_click_payload(point: CGPoint) -> Option<serde_json::Value> {
     }))
 }
 
+fn clipboard_panel_ready() -> bool {
+    use tauri::Manager;
+    use tauri_nspanel::ManagerExt;
+
+    let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() else {
+        return false;
+    };
+    app.get_webview_panel("main").is_ok()
+}
+
 fn hide_main_window_for_outside_click() {
     use tauri::{Emitter, Manager};
 
@@ -170,10 +180,11 @@ fn hide_main_window_for_outside_click() {
     }
 
     let _ = app.emit("force-hide-compact-preview", ());
-    let _ = window.set_always_on_top(false);
-    let _ = window.set_focusable(false);
-    crate::app::window_manager::clear_window_vibrancy(&window);
-    let _ = window.hide();
+    if !crate::infrastructure::macos_api::window::hide_clipboard_panel(app) {
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
+        crate::app::window_manager::clear_window_vibrancy(&window);
+        let _ = window.hide();
+    }
     crate::global_state::NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
     crate::global_state::NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
 }
@@ -235,6 +246,12 @@ unsafe extern "C" fn cmd_v_callback(
             {
                 return event;
             }
+            // After NSPanel + show_and_make_key, the webview receives real clicks.
+            // Swallowing here forced a synthetic path that often needed a second
+            // click before paste. Let the native mouse stream through.
+            if clipboard_panel_ready() {
+                return event;
+            }
             SWALLOW_NEXT_LEFT_MOUSE_UP.store(true, Ordering::SeqCst);
             if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
                 use tauri::Emitter;
@@ -259,17 +276,17 @@ unsafe extern "C" fn cmd_v_callback(
             }
         }
 
-        // Clipboard-list navigation. Because `toggle_window` no longer calls
-        // `set_focus()` on macOS (to avoid stealing focus from the previous
-        // app's text input, e.g. a Finder rename), TieZ is often NOT the
-        // frontmost app while the clipboard window is shown, so the webview
-        // cannot receive arrow/Enter/Esc via DOM keydown. This HID-level tap
-        // captures those keys system-wide and routes them to the same
-        // `navigation-action` channel the Windows low-level hook uses.
-        //
-        // Swallowing at the HID layer also means the previous (frontmost) app
-        // never sees the key (so e.g. a rename caret won't move), and the
-        // webview's DOM keydown never fires either, avoiding double-stepping.
+        // After NSPanel + show_and_make_key, the webview is key and receives
+        // real keydowns — let arrows/Enter/Esc through (same as mouse clicks).
+        // HID capture is only for the legacy non-key overlay path.
+        if clipboard_panel_ready() {
+            return event;
+        }
+
+        // Legacy path: window is shown without becoming key, so the webview
+        // cannot receive arrow/Enter/Esc via DOM keydown. Capture system-wide
+        // and route to the `navigation-action` channel (same as Windows).
+        // Swallowing also keeps the previous app from seeing the key.
         let no_modifiers = (flags
             & (K_CG_EVENT_FLAG_MASK_COMMAND
                 | K_CG_EVENT_FLAG_MASK_SHIFT
@@ -282,9 +299,20 @@ unsafe extern "C" fn cmd_v_callback(
             && crate::global_state::NAVIGATION_ENABLED.load(Ordering::SeqCst)
             && !crate::global_state::IS_HIDDEN.load(Ordering::Relaxed)
         {
+            use tauri::Manager;
+
+            let allow_arrow_nav = if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get()
+            {
+                app.state::<crate::app_state::SettingsState>()
+                    .arrow_key_selection
+                    .load(Ordering::Relaxed)
+            } else {
+                true
+            };
+
             let nav_action: Option<&'static str> = match keycode {
-                K_VK_UP_ARROW => Some("up"),
-                K_VK_DOWN_ARROW => Some("down"),
+                K_VK_UP_ARROW if allow_arrow_nav => Some("up"),
+                K_VK_DOWN_ARROW if allow_arrow_nav => Some("down"),
                 K_VK_RETURN => {
                     if crate::global_state::NAVIGATION_MODE_ACTIVE.load(Ordering::Relaxed) {
                         Some("enter")

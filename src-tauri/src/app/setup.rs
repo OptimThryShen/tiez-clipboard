@@ -508,15 +508,10 @@ fn apply_initial_dock_visibility(app: &mut App, s: &StartupSettings) {
 #[cfg(not(target_os = "macos"))]
 fn apply_initial_dock_visibility(_app: &mut App, _s: &StartupSettings) {}
 
-/// Set NSWindowCollectionBehavior::CanJoinAllSpaces so the window is
-/// visible on every macOS Space / desktop.
+/// Configure macOS Space / fullscreen overlay behavior for the main window.
 #[cfg(target_os = "macos")]
 fn set_window_all_spaces(window: &tauri::WebviewWindow) {
-    use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
-    if let Ok(ns_window_ptr) = window.ns_window() {
-        let ns_window: &NSWindow = unsafe { &*(ns_window_ptr as *const NSWindow) };
-        ns_window.setCollectionBehavior(NSWindowCollectionBehavior::CanJoinAllSpaces);
-    }
+    crate::infrastructure::macos_api::window::configure_overlay_space_behavior(window);
 }
 
 fn parse_dock_token(token: &str) -> i32 {
@@ -667,11 +662,11 @@ fn restore_pin_state_after_edge_expand(app_handle: &AppHandle, window: &tauri::W
     if prev != user_pinned {
         let _ = window.set_always_on_top(user_pinned);
         #[cfg(target_os = "windows")]
-        let _ = window.set_focusable(!user_pinned);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, !user_pinned);
         #[cfg(target_os = "macos")]
-        let _ = window.set_focusable(true);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
         #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-        let _ = window.set_focusable(false);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         let _ = app_handle.emit("window-pinned-changed", user_pinned);
     } else {
         let _ = window.set_always_on_top(user_pinned);
@@ -769,15 +764,11 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
         let _ = window.set_always_on_top(effective_pinned);
         #[cfg(target_os = "windows")]
         let _ = window.set_focusable(!effective_pinned);
-        #[cfg(not(target_os = "windows"))]
-        {
-            let _ = window.set_focusable(true);
-        }
+        #[cfg(target_os = "linux")]
+        let _ = window.set_focusable(true);
+        // macOS: avoid set_focusable after NSPanel conversion (tao ivar panic).
 
-        // macOS: focusing/non-focusing window handling is different.
-        // For now, relying on tauri's standard focusable property.
-
-        // macOS: make window appear on all Spaces
+        // macOS: Space flags before panel conversion.
         #[cfg(target_os = "macos")]
         set_window_all_spaces(&window);
     }
@@ -794,12 +785,34 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
 
     if should_show_main {
         if let Some(window) = app.get_webview_window("main") {
-            #[cfg(not(target_os = "windows"))]
-            let _ = window.set_focusable(true);
+            #[cfg(not(target_os = "macos"))]
+            {
+                #[cfg(not(target_os = "windows"))]
+                crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
+            }
             let _ = window.show();
 
             #[cfg(target_os = "macos")]
             {
+                // Convert AFTER final show/focusable work — to_panel drops tao ivars.
+                if let Err(err) =
+                    crate::infrastructure::macos_api::window::setup_clipboard_panel(&window)
+                {
+                    eprintln!("[macos-overlay] setup_clipboard_panel failed: {err}");
+                }
+                crate::infrastructure::macos_api::window::configure_overlay_space_behavior(
+                    &window,
+                );
+                let window_spaces = window.clone();
+                std::thread::spawn(move || {
+                    for delay_ms in [50_u64, 200, 600, 1200] {
+                        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                        crate::infrastructure::macos_api::window::configure_overlay_space_behavior_async(
+                            &window_spaces,
+                        );
+                    }
+                });
+
                 if restore_dock != 0 {
                     // The window was docked when the app last quit. Skip set_focus
                     // (which would pull the offscreen window back onscreen) and
@@ -831,7 +844,16 @@ fn setup_main_window(app: &App, s: &StartupSettings) {
         // Not showing on startup, but ensure window is focusable when it does appear
         #[cfg(not(target_os = "windows"))]
         if let Some(window) = app.get_webview_window("main") {
-            let _ = window.set_focusable(true);
+            #[cfg(not(target_os = "macos"))]
+            crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
+            #[cfg(target_os = "macos")]
+            {
+                if let Err(err) =
+                    crate::infrastructure::macos_api::window::setup_clipboard_panel(&window)
+                {
+                    eprintln!("[macos-overlay] setup_clipboard_panel failed: {err}");
+                }
+            }
         }
     }
 
@@ -1234,7 +1256,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                 let prev = WINDOW_PINNED.swap(user_pinned, Ordering::Relaxed);
                 if prev != user_pinned {
                     let _ = window.set_always_on_top(user_pinned);
-                    let _ = window.set_focusable(true);
+                    crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
                     let _ = app_handle.emit("window-pinned-changed", user_pinned);
                 }
             }
@@ -1404,7 +1426,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         // click-outside-to-hide checks WINDOW_PINNED (user pin only).
                         if !WINDOW_PINNED.load(Ordering::Relaxed) {
                             let _ = window.set_always_on_top(true);
-                            let _ = window.set_focusable(false);
+                            crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
                             #[cfg(windows)]
                             if let Ok(hwnd) = window.hwnd() {
                                 unsafe {
@@ -1458,7 +1480,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     // Restore always-on-top / focus from user pin (WINDOW_PINNED was never toggled by tuck).
                     let user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
                     let _ = window.set_always_on_top(user_pinned);
-                    let _ = window.set_focusable(!user_pinned);
+                    crate::infrastructure::macos_api::window::set_window_focusable(&window, !user_pinned);
                     #[cfg(windows)]
                     if let Ok(hwnd) = window.hwnd() {
                         unsafe {
@@ -1536,7 +1558,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
                     IS_HIDDEN.store(false, Ordering::Relaxed);
                     CURRENT_DOCK.store(0, Ordering::Relaxed);
                     #[cfg(not(target_os = "windows"))]
-                    let _ = window.set_focusable(true);
+                    crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
                     let _ = window.show();
                     let _ = window.set_focus();
                     maybe_open_devtools(&window);
@@ -1555,7 +1577,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
                     IS_HIDDEN.store(false, Ordering::Relaxed);
                     CURRENT_DOCK.store(0, Ordering::Relaxed);
                     #[cfg(not(target_os = "windows"))]
-                    let _ = window.set_focusable(true);
+                    crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
                     let _ = window.show();
                     let _ = window.set_focus();
                     maybe_open_devtools(&window);

@@ -70,7 +70,8 @@ dotenvy = "0.15"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.3"
 objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDictionary", "NSObject", "NSString", "NSArray", "NSURL"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSBitmapImageRep", "NSImage", "NSImageRep", "NSWorkspace", "NSPasteboard", "NSRunningApplication", "NSWindow", "NSSound"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSBitmapImageRep", "NSImage", "NSImageRep", "NSWorkspace", "NSPasteboard", "NSRunningApplication", "NSWindow", "NSPanel", "NSApplication", "NSSound"] }
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 hound = { version = "3.5", default-features = false }

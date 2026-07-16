@@ -10,6 +10,7 @@ import {
     EyeOff,
     ExternalLink,
     Tag,
+    StickyNote,
     X,
     FileText,
     Image as ImageIcon,
@@ -683,6 +684,7 @@ const ClipboardItem = ({
     isSensitiveHidden,
     isRevealed,
     isEditingTags,
+    isEditingNote,
     tagInput,
     tagSuggestions = [],
     theme,
@@ -696,6 +698,9 @@ const ClipboardItem = ({
     onTogglePin,
     onDelete,
     onToggleTagEditor,
+    onToggleNoteEditor,
+    onNoteSave,
+    onNoteEditCancel,
     onTagInput,
     onTagAdd,
     onTagPick,
@@ -721,7 +726,10 @@ const ClipboardItem = ({
 }: ClipboardItemProps & { compactMode?: boolean, className?: string }) => {
     const itemRef = useRef<HTMLDivElement | null>(null);
     const tagInputRef = useRef<HTMLInputElement>(null);
+    const noteInputRef = useRef<HTMLTextAreaElement>(null);
+    const ignoreNoteBlurRef = useRef(false);
     const [localTagInput, setLocalTagInput] = useState(tagInput);
+    const [localNoteInput, setLocalNoteInput] = useState(item.note || "");
     const [localAiOptionsOpen, setLocalAiOptionsOpen] = useState(!!aiOptionsOpen);
     const [snapshotFailed, setSnapshotFailed] = useState(false);
     const [richImageFallbackFailed, setRichImageFallbackFailed] = useState(false);
@@ -884,7 +892,13 @@ const ClipboardItem = ({
     const useRichImageFallback = !!richTextPreviewSrc && richTextPreviewSrc === effectiveRichImageFallbackSrc;
     const visibleTagCount = item.tags?.length || 0;
     const hasTagsSection = visibleTagCount > 0 || isEditingTags;
-    const overlayTagsInPreview = !compactMode && !isEditingTags && visibleTagCount > 0;
+    const hasNoteSection = isEditingNote || (!!item.note && !compactMode);
+    const hasMetaFooter = hasTagsSection || hasNoteSection;
+    // Overlay tags only when there is no note. Notes need document flow so the
+    // item grows taller instead of covering the clipboard content.
+    const overlayMetaInPreview =
+        !compactMode && !isEditingTags && !isEditingNote && visibleTagCount > 0 && !item.note;
+    const showFlowMetaFooter = !compactMode && hasMetaFooter && !overlayMetaInPreview;
     const standaloneColorValue = useMemo(
         () => getStandaloneColorValue(item.content_type, item.content),
         [item.content, item.content_type]
@@ -1220,6 +1234,31 @@ const ClipboardItem = ({
     }, [isEditingTags]);
 
     useEffect(() => {
+        if (!isEditingNote) {
+            ignoreNoteBlurRef.current = false;
+            return;
+        }
+        // Opening the editor remounts the footer and may briefly steal focus on
+        // the macOS NSPanel — ignore that spurious blur so the editor stays open.
+        ignoreNoteBlurRef.current = true;
+        setLocalNoteInput(item.note || "");
+        const focusTimer = window.setTimeout(() => {
+            noteInputRef.current?.focus();
+            const el = noteInputRef.current;
+            if (el) {
+                const len = el.value.length;
+                el.setSelectionRange(len, len);
+            }
+            window.setTimeout(() => {
+                ignoreNoteBlurRef.current = false;
+            }, 200);
+        }, 0);
+        return () => {
+            window.clearTimeout(focusTimer);
+        };
+    }, [isEditingNote, item.note]);
+
+    useEffect(() => {
         if (!compactPreviewEnabled) {
             void hideCompactPreview();
         }
@@ -1301,9 +1340,9 @@ const ClipboardItem = ({
         );
     };
 
-    const renderTagsContainer = (overlay = false) => (
+    const renderTagsContainer = () => (
         <div
-            className={`item-tags-container${overlay ? ' overlay' : ''}${isEditingTags ? ' tag-edit-active' : ''}`}
+            className={`item-tags-container${isEditingTags ? ' tag-edit-active' : ''}`}
         >
             {item.tags?.map((tag) => {
                 const tagBackground = tagColors?.[tag] || getTagColor(tag, theme);
@@ -1350,9 +1389,6 @@ const ClipboardItem = ({
                                 onTagInput(val);
                             }}
                             onMouseDown={() => {
-                                invoke('activate_window_focus').catch(console.error);
-                            }}
-                            onFocus={() => {
                                 invoke('activate_window_focus').catch(console.error);
                             }}
                             onChange={(e) => {
@@ -1484,6 +1520,81 @@ const ClipboardItem = ({
         </div>
     );
 
+    const renderNoteBlock = () => (
+        <div
+            className={`item-note${isEditingNote ? " item-note-editor" : ""}`}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+        >
+            {isEditingNote ? (
+                <textarea
+                    ref={noteInputRef}
+                    className="item-note-input"
+                    value={localNoteInput}
+                    placeholder={t('note_placeholder') || 'Add a note…'}
+                    rows={2}
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        invoke('activate_window_focus').catch(console.error);
+                    }}
+                    onChange={(e) => setLocalNoteInput(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onNoteEditCancel?.();
+                            return;
+                        }
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onNoteSave(localNoteInput);
+                        }
+                    }}
+                    onBlur={() => {
+                        if (ignoreNoteBlurRef.current) return;
+                        // Defer so focus moves within the note block don't save/close.
+                        window.setTimeout(() => {
+                            if (ignoreNoteBlurRef.current) return;
+                            const active = document.activeElement;
+                            if (active && noteInputRef.current?.closest(".item-note")?.contains(active)) {
+                                return;
+                            }
+                            onNoteSave(noteInputRef.current?.value ?? localNoteInput);
+                        }, 0);
+                    }}
+                />
+            ) : (
+                <button
+                    type="button"
+                    className="item-note-text"
+                    title={item.note}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleNoteEditor(e);
+                    }}
+                >
+                    <StickyNote size={12} className="item-note-icon" aria-hidden />
+                    <span>{item.note}</span>
+                </button>
+            )}
+        </div>
+    );
+
+    const renderMetaFooter = (overlay = false) => (
+        <div
+            className={`item-meta-footer${overlay ? " overlay" : ""}${isEditingNote ? " editing-note" : ""}${isEditingTags ? " editing-tags" : ""}`}
+            onMouseDown={(e) => {
+                if ((e.target as HTMLElement).closest("button, input, textarea, .tag-chip, .tag-edit-anchor")) {
+                    e.stopPropagation();
+                }
+            }}
+        >
+            {hasNoteSection && renderNoteBlock()}
+            {hasTagsSection && renderTagsContainer()}
+        </div>
+    );
+
     return (
         <motion.div
             ref={itemRef}
@@ -1500,6 +1611,10 @@ const ClipboardItem = ({
                 const target = e.target as HTMLElement;
                 if (e.button !== 0) return;
 
+                if (typeof document !== "undefined" && document.querySelector(".modal-overlay")) {
+                    return;
+                }
+
                 if (isEditingTags) {
                     if (target.closest(".tag-edit-anchor")) return;
                     if (target.closest(".item-tags-container .tag-chip")) return;
@@ -1510,6 +1625,19 @@ const ClipboardItem = ({
                     e.preventDefault();
                     e.stopPropagation();
                     onTagEditCancel?.();
+                    return;
+                }
+
+                if (isEditingNote) {
+                    if (target.closest(".item-note-editor") || target.closest(".item-note")) {
+                        return;
+                    }
+                    if (target.closest('button, input, textarea, [role="button"], .drag-handle')) {
+                        return;
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onNoteSave(localNoteInput);
                     return;
                 }
 
@@ -1527,7 +1655,7 @@ const ClipboardItem = ({
                 onSelect();
             }}
             onClick={(e) => {
-                if (isEditingTags) return;
+                if (isEditingTags || isEditingNote) return;
                 const target = e.target as HTMLElement;
                 if (target.closest('button') || target.closest('input') || target.closest('textarea')) {
                     return;
@@ -1660,9 +1788,24 @@ const ClipboardItem = ({
                         <button
                             className={`btn-icon ${item.tags && item.tags.length > 0 ? "active" : ""}`}
                             onClick={onToggleTagEditor}
-                            title="Tags"
+                            title={t('edit_tags') || 'Tags'}
                         >
                             <Tag size={12} />
+                        </button>
+                        <button
+                            className={`btn-icon ${item.note ? "active" : ""} ${isEditingNote ? "active" : ""}`}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (isEditingNote) {
+                                    onNoteSave(localNoteInput);
+                                } else {
+                                    onToggleNoteEditor(e);
+                                }
+                            }}
+                            title={t('edit_note') || 'Note'}
+                        >
+                            <StickyNote size={12} />
                         </button>
                         {(item.content_type === 'text' || item.content_type === 'rich_text') && aiEnabled && (
                             <button
@@ -1708,7 +1851,7 @@ const ClipboardItem = ({
                     </div>
                 )
             }
-            <div className={`content-preview-shell${overlayTagsInPreview ? ' has-overlay-tags' : ''}`}>
+            <div className={`content-preview-shell${overlayMetaInPreview ? ' has-overlay-meta' : ''}`}>
                 <div data-content-type={item.content_type} className={`content-preview ${item.content_type === 'rich_text' ? 'rich-text' : ''} ${item.content_type === 'file' ? 'file-preview' : ''} ${isSensitiveHidden ? 'sensitive-blur' : ''}`}>
                 {item.content_type === "image" ? (
                     <div style={{ position: 'relative' }}>
@@ -1784,7 +1927,6 @@ const ClipboardItem = ({
                             autoFocus
                             className="search-input"
                             onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
-                            onFocus={() => invoke('activate_window_focus').catch(console.error)}
                             style={{ width: '100%', fontSize: '12px', padding: '8px', border: '1px solid var(--accent-color)' }}
                             placeholder={item.content}
                             onKeyDown={(e) => {
@@ -1891,8 +2033,27 @@ const ClipboardItem = ({
                         : item.preview
                 )}
                 </div>
-                {overlayTagsInPreview && renderTagsContainer(true)}
+                {overlayMetaInPreview && renderMetaFooter(true)}
             </div>
+
+            {showFlowMetaFooter && renderMetaFooter(false)}
+
+            {compactMode && !!item.note && !isEditingNote && (
+                <button
+                    type="button"
+                    className="compact-note-indicator"
+                    title={item.note}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleNoteEditor(e);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                >
+                    <StickyNote size={10} />
+                </button>
+            )}
+
+            {compactMode && isEditingNote && renderNoteBlock()}
 
             {/* AI Options - Compact Mode: Dropdown Panel, Normal Mode: Inline */}
             <AnimatePresence>
@@ -1970,7 +2131,6 @@ const ClipboardItem = ({
                 )}
             </AnimatePresence>
 
-            {!overlayTagsInPreview && hasTagsSection && renderTagsContainer()}
         </motion.div >
     );
 };
@@ -1989,8 +2149,10 @@ export default memo(ClipboardItem, (prevProps, nextProps) => {
         prevProps.item.is_external === nextProps.item.is_external &&
         prevProps.item.file_preview_exists === nextProps.item.file_preview_exists &&
         prevProps.item.tags === nextProps.item.tags &&
+        prevProps.item.note === nextProps.item.note &&
         prevProps.isRevealed === nextProps.isRevealed &&
         prevProps.isEditingTags === nextProps.isEditingTags &&
+        prevProps.isEditingNote === nextProps.isEditingNote &&
         prevProps.isAIProcessing === nextProps.isAIProcessing &&
         prevProps.aiOptionsOpen === nextProps.aiOptionsOpen &&
         prevProps.aiEnabled === nextProps.aiEnabled &&

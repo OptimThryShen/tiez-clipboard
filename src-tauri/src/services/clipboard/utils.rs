@@ -1196,6 +1196,10 @@ pub fn entry_matches_search(entry: &ClipboardEntry, term: &str, tag_only: bool) 
         return true;
     }
 
+    if entry.note.to_lowercase().contains(&term) {
+        return true;
+    }
+
     entry_searchable_text(entry)
         .to_lowercase()
         .contains(&term)
@@ -1653,6 +1657,7 @@ mod tests {
             preview: preview.to_string(),
             is_pinned: false,
             tags: vec![],
+            note: String::new(),
             use_count: 0,
             is_external: false,
             pinned_order: 0,
@@ -1718,6 +1723,16 @@ mod tests {
 
         assert!(entry_matches_search(&entry, "work", false));
         assert!(entry_matches_search(&entry, "notes", false));
+    }
+
+    #[test]
+    fn entry_matches_search_matches_note() {
+        let mut entry = sample_entry("image", "/tmp/a.png", "[Image Content]");
+        entry.source_app = "Finder".to_string();
+        entry.note = "客户跟进纪要".to_string();
+
+        assert!(entry_matches_search(&entry, "跟进", false));
+        assert!(!entry_matches_search(&entry, "无关词", false));
     }
 
     #[test]

@@ -234,7 +234,7 @@ pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinne
         #[cfg(target_os = "windows")]
         let _ = window.set_focusable(!pinned);
         #[cfg(target_os = "macos")]
-        let _ = window.set_focusable(!pinned);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, !pinned);
         #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         let _ = window.set_focusable(false);
         #[cfg(windows)]

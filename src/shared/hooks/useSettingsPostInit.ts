@@ -5,7 +5,6 @@ import type { AiProfile, AppCleanupPolicy } from "../../features/settings/types"
 import type { QuickPasteModifier, CloudSyncContentPrefs } from "../../features/app/types";
 import { DEFAULT_CLOUD_SYNC_CONTENT_PREFS } from "../../features/app/types";
 
-const DEFAULT_AI_KEY = import.meta.env.VITE_AI_DEFAULT_API_KEY ?? "";
 const QUICK_PASTE_MODIFIERS = new Set<QuickPasteModifier>([
   "disabled",
   "ctrl",
@@ -406,27 +405,33 @@ export const useSettingsPostInit = ({
     // 1. DEFINE PRESETS
     const recommended: AiProfile[] = [
       {
-        id: "lc_flash_v1",
-        baseUrl: "https://api.longcat.chat/openai/v1",
-        apiKey: DEFAULT_AI_KEY,
-        model: "LongCat-Flash-Chat",
+        id: "ds_v4_pro_v1",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "",
+        model: "deepseek-v4-pro",
+        enableThinking: true
+      },
+      {
+        id: "ds_flash_v1",
+        baseUrl: "https://api.deepseek.com/v1",
+        apiKey: "",
+        model: "deepseek-flash",
         enableThinking: false
-      },
-      {
-        id: "lc_think_v1",
-        baseUrl: "https://api.longcat.chat/openai/v1",
-        apiKey: DEFAULT_AI_KEY,
-        model: "LongCat-Flash-Thinking",
-        enableThinking: true
-      },
-      {
-        id: "lc_think_2601_v1",
-        baseUrl: "https://api.longcat.chat/openai/v1",
-        apiKey: DEFAULT_AI_KEY,
-        model: "LongCat-Flash-Thinking-2601",
-        enableThinking: true
       }
     ];
+    const legacyPresetIds = new Set(["lc_flash_v1", "lc_think_v1", "lc_think_2601_v1"]);
+    const legacyModelToPreset: Record<string, string> = {
+      "LongCat-Flash-Chat": "ds_flash_v1",
+      "LongCat-Flash-Thinking": "ds_v4_pro_v1",
+      "LongCat-Flash-Thinking-2601": "ds_v4_pro_v1"
+    };
+    const migrateAssignedProfile = (value: string | undefined, fallback: string) => {
+      if (!value) return fallback;
+      if (legacyPresetIds.has(value)) {
+        return value === "lc_flash_v1" ? "ds_flash_v1" : "ds_v4_pro_v1";
+      }
+      return value;
+    };
 
     // 2. LOAD OR INIT
     let finalProfiles: AiProfile[] = recommended;
@@ -434,7 +439,7 @@ export const useSettingsPostInit = ({
       try {
         const parsed = JSON.parse(settings["ai_profiles"]);
         if (Array.isArray(parsed)) {
-          finalProfiles = parsed.filter(
+          const customProfiles = parsed.filter(
             (p): p is AiProfile =>
               !!p &&
               typeof p === "object" &&
@@ -443,7 +448,14 @@ export const useSettingsPostInit = ({
               typeof p.apiKey === "string" &&
               typeof p.model === "string" &&
               typeof p.enableThinking === "boolean"
+          ).filter((p) => !legacyPresetIds.has(p.id) && !(p.model in legacyModelToPreset));
+          const customById = customProfiles.filter(
+            (profile, index, arr) => arr.findIndex((p) => p.id === profile.id) === index
           );
+          finalProfiles = [
+            ...recommended,
+            ...customById.filter((profile) => !recommended.some((preset) => preset.id === profile.id))
+          ];
         }
       } catch (e) {
         console.error(e);
@@ -455,19 +467,39 @@ export const useSettingsPostInit = ({
         value: JSON.stringify(recommended)
       }).catch(console.error);
     }
+    if (settings["ai_profiles"]) {
+      invoke("save_setting", {
+        key: "ai_profiles",
+        value: JSON.stringify(finalProfiles)
+      }).catch(console.error);
+    }
     setAiProfiles(finalProfiles);
 
     // 3. ASSIGNMENTS
     const getP = (m: string) =>
       finalProfiles.find((p) => p.model === m)?.id || finalProfiles[0]?.id || "default";
 
-    setAiAssignedProfileTask(settings["ai_assigned_profile_task"] || getP("LongCat-Flash-Chat"));
-    setAiAssignedProfileMouthpiece(
-      settings["ai_assigned_profile_mouthpiece"] || getP("LongCat-Flash-Thinking-2601")
+    const taskProfile = migrateAssignedProfile(settings["ai_assigned_profile_task"], getP("deepseek-flash"));
+    const mouthpieceProfile = migrateAssignedProfile(
+      settings["ai_assigned_profile_mouthpiece"],
+      getP("deepseek-v4-pro")
     );
-    setAiAssignedProfileTranslate(
-      settings["ai_assigned_profile_translate"] || getP("LongCat-Flash-Chat")
+    const translateProfile = migrateAssignedProfile(
+      settings["ai_assigned_profile_translate"],
+      getP("deepseek-flash")
     );
+    setAiAssignedProfileTask(taskProfile);
+    setAiAssignedProfileMouthpiece(mouthpieceProfile);
+    setAiAssignedProfileTranslate(translateProfile);
+    if (taskProfile !== settings["ai_assigned_profile_task"]) {
+      invoke("save_setting", { key: "ai_assigned_profile_task", value: taskProfile }).catch(console.error);
+    }
+    if (mouthpieceProfile !== settings["ai_assigned_profile_mouthpiece"]) {
+      invoke("save_setting", { key: "ai_assigned_profile_mouthpiece", value: mouthpieceProfile }).catch(console.error);
+    }
+    if (translateProfile !== settings["ai_assigned_profile_translate"]) {
+      invoke("save_setting", { key: "ai_assigned_profile_translate", value: translateProfile }).catch(console.error);
+    }
 
     setSettingsLoaded(true);
   }, [

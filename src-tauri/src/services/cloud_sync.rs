@@ -1542,6 +1542,7 @@ fn apply_remote_changes(
             preview,
             is_pinned: item.is_pinned,
             tags: item.tags.clone(),
+            note: String::new(),
             use_count: item.use_count,
             is_external: item.content_type == "image"
                 || item.content_type == "file"

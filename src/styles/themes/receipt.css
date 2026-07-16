@@ -5,13 +5,9 @@
 
 :root.theme-receipt,
 body.theme-receipt {
-  background-color: #f6f4ef !important;
-
   --font-main: "Courier New", Courier, "SF Mono", ui-monospace, monospace;
   --font-mono: var(--font-main);
   --font-size-md: 12px;
-  --clipboard-item-font-size: 12px;
-  --clipboard-tag-font-size: 9px;
 
   --radius-window: 4px;
   --radius-panel: 2px;
@@ -208,7 +204,7 @@ body.theme-receipt #root::after {
 
 html.theme-receipt,
 body.theme-receipt {
-  background-color: var(--rc-bg) !important;
+  background-color: transparent !important;
 }
 
 body.theme-receipt .app-container {
@@ -218,8 +214,6 @@ body.theme-receipt .app-container {
 
 :root.dark-mode.theme-receipt,
 body.dark-mode.theme-receipt {
-  background-color: #1c1c1c !important;
-
   --rc-bg: #1c1c1c;
   --rc-paper: #242424;
   --rc-ink: #e8e8e8;

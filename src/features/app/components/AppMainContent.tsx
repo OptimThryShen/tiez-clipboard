@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentProps, RefObject, ReactNode } from "react";
 import { motion, Reorder, useDragControls } from "framer-motion";
 import type { DragControls } from "framer-motion";
@@ -43,7 +42,11 @@ interface AppMainContentProps {
   selectedIndex: number;
   isKeyboardMode: boolean;
   virtualListRef: RefObject<VirtualClipboardListHandle | null>;
-  handlePinnedReorder: (newOrderIds: number[]) => void;
+  pinnedOrderIds: number[];
+  isDraggingPinned: boolean;
+  handlePinnedIdsReorder: (newOrderIds: number[]) => void;
+  handlePinnedDragStart: () => void;
+  handlePinnedDragEnd: () => void;
   renderItemContent: RenderItem;
   loadMoreHistory: () => void;
   handleListScroll: (offset: number) => void;
@@ -116,7 +119,11 @@ const AppMainContent = ({
   selectedIndex,
   isKeyboardMode,
   virtualListRef,
-  handlePinnedReorder,
+  pinnedOrderIds,
+  isDraggingPinned,
+  handlePinnedIdsReorder,
+  handlePinnedDragStart,
+  handlePinnedDragEnd,
   renderItemContent,
   loadMoreHistory,
   handleListScroll,
@@ -125,76 +132,14 @@ const AppMainContent = ({
   showScrollTop,
   onScrollTop
 }: AppMainContentProps) => {
-  const [pinnedOrderIds, setPinnedOrderIds] = useState<number[]>(
-    () => pinnedItems.map((item) => item.id)
-  );
-  const pinnedOrderRef = useRef<number[]>(pinnedItems.map((item) => item.id));
-  const [isDraggingPinned, setIsDraggingPinned] = useState(false);
-
-  useEffect(() => {
-    if (isDraggingPinned) return;
-    const next = pinnedItems.map((item) => item.id);
-    setPinnedOrderIds(next);
-    pinnedOrderRef.current = next;
-  }, [pinnedItems, isDraggingPinned]);
-
-  const orderedPinnedItems = useMemo(() => {
-    if (pinnedItems.length === 0) return [];
-    const map = new Map<number, ClipboardEntry>();
-    pinnedItems.forEach((item) => map.set(item.id, item));
-
-    const ordered: ClipboardEntry[] = [];
-    const seen = new Set<number>();
-
-    pinnedOrderIds.forEach((id) => {
-      const item = map.get(id);
-      if (!item) return;
-      ordered.push(item);
-      seen.add(id);
-    });
-
-    pinnedItems.forEach((item) => {
-      if (!seen.has(item.id)) {
-        ordered.push(item);
-      }
-    });
-
-    return ordered;
-  }, [pinnedItems, pinnedOrderIds]);
-
-  const orderedPinnedIds = useMemo(
-    () => orderedPinnedItems.map((item) => item.id),
-    [orderedPinnedItems]
-  );
-
-  const handlePinnedIdsReorder = useCallback((nextIds: number[]) => {
-    setPinnedOrderIds(nextIds);
-    pinnedOrderRef.current = nextIds;
-  }, []);
-
-  const handlePinnedDragStart = useCallback(() => {
-    setIsDraggingPinned(true);
-  }, []);
-
-  const handlePinnedDragEnd = useCallback(() => {
-    setIsDraggingPinned(false);
-    const finalIds = pinnedOrderRef.current;
-    const currentIds = pinnedItems.map((item) => item.id);
-    if (
-      finalIds.length === currentIds.length &&
-      finalIds.every((id, idx) => id === currentIds[idx])
-    ) {
-      return;
-    }
-    handlePinnedReorder(finalIds);
-  }, [handlePinnedReorder, pinnedItems]);
+  const orderedPinnedIds = pinnedOrderIds;
 
   if (showTagManager && tagManagerEnabled) {
     return (
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
-        style={{ height: "100%", overflow: "hidden", paddingBottom: "12px", boxSizing: "border-box" }}
+        style={{ height: "100%", overflow: "hidden", boxSizing: "border-box" }}
       >
         <TagManager t={t} theme={theme} />
       </motion.div>
@@ -292,7 +237,7 @@ const AppMainContent = ({
                   className={isDraggingPinned ? "pinned-reorder dragging" : "pinned-reorder"}
                   style={{ listStyle: "none", padding: 0 }}
                 >
-                  {orderedPinnedItems.map((item, index) => (
+                  {pinnedItems.map((item, index) => (
                     <SortableItem
                       key={item.id}
                       item={item}

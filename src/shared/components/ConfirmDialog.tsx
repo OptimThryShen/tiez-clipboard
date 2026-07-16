@@ -1,3 +1,5 @@
+import AppModal from "./AppModal";
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
@@ -18,25 +20,19 @@ const ConfirmDialog = ({
   cancelLabel,
   onConfirm,
   onClose
-}: ConfirmDialogProps) => {
-  if (!open) return null;
-
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className={`confirm-dialog theme-${theme}`} onClick={(e) => e.stopPropagation()}>
-        <div className="confirm-dialog-title">{title}</div>
-        <div className="confirm-dialog-message">{message}</div>
-        <div className="confirm-dialog-buttons">
-          <button className="confirm-dialog-button" onClick={onClose}>
-            {cancelLabel}
-          </button>
-          <button className="confirm-dialog-button primary" onClick={onConfirm}>
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
+}: ConfirmDialogProps) => (
+  <AppModal open={open} onClose={onClose} theme={theme} panelClassName="modal-panel confirm-dialog">
+    <h3 className="confirm-dialog-title">{title}</h3>
+    <p className="confirm-dialog-message">{message}</p>
+    <div className="confirm-dialog-buttons">
+      <button type="button" className="modal-button" onClick={onClose}>
+        {cancelLabel}
+      </button>
+      <button type="button" className="modal-button primary" onClick={onConfirm}>
+        {confirmLabel}
+      </button>
     </div>
-  );
-};
+  </AppModal>
+);
 
 export default ConfirmDialog;

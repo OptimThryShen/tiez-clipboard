@@ -87,7 +87,7 @@ const AiSettingsGroup = ({
                             <button
                                 className="btn-icon"
                                 style={{ padding: '4px 12px', fontSize: '11px', marginLeft: 'auto', height: '24px' }}
-                                onClick={() => setEditingProfile({ isNew: true, baseUrl: 'https://api.longcat.chat/openai/v1', apiKey: '', model: '', enableThinking: false })}
+                                onClick={() => setEditingProfile({ isNew: true, baseUrl: 'https://api.deepseek.com/v1', apiKey: '', model: '', enableThinking: false })}
                             >
                                 {t('ai_add_model')}
                             </button>
@@ -129,7 +129,7 @@ const AiSettingsGroup = ({
                                             <RotateCcw size={12} className={profileStatuses[profile.id] === 'loading' ? 'animate-spin' : ''} />
                                         </button>
                                         <button className="btn-icon" onClick={() => setEditingProfile(profile)}><Edit2 size={12} /></button>
-                                        {!['lc_flash_v1', 'lc_think_v1', 'lc_think_2601_v1'].includes(profile.id) && (
+                                        {!['ds_v4_pro_v1', 'ds_flash_v1'].includes(profile.id) && (
                                             <button className="btn-icon" onClick={() => handleDeleteProfile(profile.id)} style={{ color: '#f44336' }}><Trash2 size={12} /></button>
                                         )}
                                     </div>

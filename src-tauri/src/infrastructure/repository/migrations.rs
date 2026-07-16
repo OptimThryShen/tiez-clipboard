@@ -207,6 +207,32 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (10)", [])?;
     }
 
+    // Migration 11: Per-entry free-text note (separate from category tags)
+    if current_version < 11 {
+        if !has_column(conn, "clipboard_history", "note")? {
+            conn.execute(
+                "ALTER TABLE clipboard_history ADD COLUMN note TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+            eprintln!("[migrations] added clipboard_history.note column");
+        }
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (11)", [])?;
+    }
+
+    // Safety net: older builds may have queried `note` before migration 11 ran,
+    // or schema_migrations can drift. Always ensure the column exists.
+    if !has_column(conn, "clipboard_history", "note")? {
+        conn.execute(
+            "ALTER TABLE clipboard_history ADD COLUMN note TEXT NOT NULL DEFAULT ''",
+            [],
+        )?;
+        eprintln!("[migrations] repaired missing clipboard_history.note column");
+        conn.execute(
+            "INSERT OR IGNORE INTO schema_migrations (version) VALUES (11)",
+            [],
+        )?;
+    }
+
     Ok(())
 }
 

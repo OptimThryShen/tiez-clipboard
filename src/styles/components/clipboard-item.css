@@ -67,31 +67,143 @@
   min-width: 0;
 }
 
-.history-item:not(.compact) .content-preview-shell.has-overlay-tags .content-preview:not(.rich-text):not(.file-preview):not(:has(.image-preview)):not(:has(.video-thumbnail-card)) {
+.history-item:not(.compact) .content-preview-shell.has-overlay-meta .content-preview:not(.rich-text):not(.file-preview):not(:has(.image-preview)):not(:has(.video-thumbnail-card)) {
   padding-bottom: var(--layout-overlay-tag-reserve);
   box-sizing: border-box;
 }
 
-.history-item:not(.compact) .content-preview-shell .item-tags-container.overlay {
+/* Note + tags share one row in document flow; long notes grow the item height */
+.item-meta-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  margin-top: 4px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.item-meta-footer .item-note {
+  flex: 1 1 8em;
+  min-width: 0;
+  margin: 0;
+  order: 1;
+}
+
+.item-meta-footer .item-tags-container {
+  flex: 0 1 auto;
+  margin: 0;
+  order: 2;
+  max-width: 100%;
+}
+
+.item-meta-footer.editing-note .item-note {
+  flex: 1 1 100%;
+  order: 2;
+}
+
+.item-meta-footer.editing-note .item-tags-container {
+  order: 1;
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.history-item:not(.compact) .content-preview-shell .item-meta-footer.overlay {
   position: absolute;
+  left: 0;
   right: 0;
   bottom: 0;
   z-index: 12;
   margin: 0;
-  max-width: min(72%, 420px);
+  padding: 2px 0 0;
   align-items: flex-end;
   pointer-events: none;
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--bg-element, var(--bg-content)) 88%, transparent) 35%,
+    transparent
+  );
 }
 
-.history-item:not(.compact) .content-preview-shell .item-tags-container.overlay .tag-chip {
+.history-item:not(.compact) .content-preview-shell .item-meta-footer.overlay .item-note,
+.history-item:not(.compact) .content-preview-shell .item-meta-footer.overlay .tag-chip,
+.history-item:not(.compact) .content-preview-shell .item-meta-footer.overlay .tag-edit-anchor {
   pointer-events: auto;
 }
 
-.history-item:not(.compact) .content-preview-shell .item-tags-container.overlay .tag-chip {
+.history-item:not(.compact) .content-preview-shell .item-meta-footer.overlay .tag-chip {
   padding: var(--layout-overlay-tag-padding);
   min-height: var(--layout-overlay-tag-min-height);
   line-height: var(--layout-overlay-tag-line-height);
   font-size: var(--layout-overlay-tag-font-size);
+}
+
+/* Per-entry note (shares a row with tags) */
+.item-note {
+  min-width: 0;
+}
+
+.item-note-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.item-note-text span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
+  line-height: inherit;
+}
+
+.item-note-icon {
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  opacity: 0.7;
+  /* Keep icon optically locked to the first text line when note wraps */
+  align-self: flex-start;
+  margin-top: calc((1.25em - 12px) / 2);
+}
+
+.item-note-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 44px;
+  max-height: 120px;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  background: var(--bg-input, var(--bg-element));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+}
+
+.item-note-input:focus {
+  border-color: var(--input-focus-border-color, var(--accent-color));
+  box-shadow: var(--input-focus-shadow, 0 0 0 2px color-mix(in srgb, var(--accent-color) 18%, transparent));
 }
 
 .content-preview.rich-text {

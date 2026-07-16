@@ -213,7 +213,7 @@ body.has-custom-bg.theme-sakura #root::after {
 }
 
 /* --- Decorative: sakura accent line on panels --- */
-.theme-sakura .themed-tag-manager .tag-sidebar {
+.theme-sakura .tag-manager-sidebar {
   border-top: 2px solid transparent;
   border-image: linear-gradient(90deg, transparent, rgba(212, 96, 122, 0.3), rgba(240, 160, 180, 0.2), transparent) 1;
 }

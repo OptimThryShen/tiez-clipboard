@@ -133,11 +133,6 @@
   width: 6px;
 }
 
-.wt-chat-box::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb-color, rgba(0, 0, 0, 0.1));
-  border-radius: 10px;
-}
-
 .wt-message {
   display: flex;
   align-items: flex-end;

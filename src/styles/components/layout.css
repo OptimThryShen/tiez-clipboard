@@ -9,6 +9,13 @@ header {
   flex-direction: column;
   gap: var(--layout-header-inner-gap);
   flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  /* Keep visible so .tags-dropdown can paint over the list.
+     overflow-x:hidden here would force overflow-y to auto and clip it. */
+  overflow: visible;
   user-select: none;
   cursor: default;
 }
@@ -20,6 +27,10 @@ header {
   padding: 0 var(--layout-header-inner-x);
   gap: var(--layout-header-inner-gap);
   min-height: 20px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .header-leading {
@@ -147,6 +158,8 @@ header {
   display: flex;
   align-items: center;
   gap: var(--layout-header-actions-gap);
+  flex: 0 0 auto;
+  max-width: calc(100% - 28px);
 }
 
 .header-actions .btn-icon,
@@ -176,40 +189,45 @@ header {
   display: grid;
   grid-template-rows: 0fr;
   flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   opacity: 0;
   pointer-events: none;
+  contain: layout style;
   transition:
-    grid-template-rows 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    grid-template-rows 0.2s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.16s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .search-reveal.is-open {
   grid-template-rows: 1fr;
   opacity: 1;
   pointer-events: auto;
+  /* Allow absolute tag dropdown to escape the reveal box */
+  contain: none;
+}
+
+.search-reveal:not(.is-open) {
+  transition:
+    grid-template-rows 0.14s cubic-bezier(0.4, 0, 0.8, 0.2),
+    opacity 0.12s cubic-bezier(0.4, 0, 0.8, 0.2);
 }
 
 .search-reveal-inner {
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .search-reveal.is-open .search-reveal-inner {
   overflow: visible;
 }
 
-.search-reveal .search-container {
-  opacity: 0;
-  transition: opacity 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.search-reveal.is-open .search-container {
-  opacity: 1;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .search-reveal,
-  .search-reveal .search-container {
+  .search-reveal {
     transition-duration: 0.01ms;
   }
 }
@@ -217,18 +235,40 @@ header {
 .search-container {
   position: relative;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   margin-top: var(--layout-search-margin-top);
-  overflow: visible !important;
+  box-sizing: border-box;
+  overflow: visible;
   padding: 0 var(--layout-search-padding-x);
+}
+
+.search-type-filters {
+  display: flex;
+  gap: 6px;
+  padding: 8px 0 0 0;
+  overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.search-type-filters::-webkit-scrollbar {
+  display: none;
 }
 
 .search-input-wrap {
   position: relative;
   z-index: 2;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .search-input-row {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .search-prompt {
@@ -293,6 +333,17 @@ select.search-input option {
 .main-content.settings-mode .settings-view {
   flex: 1;
   min-height: 0;
+}
+
+.main-content.settings-mode:has(.advanced-workbench),
+.main-content.tag-manager-mode {
+  padding-bottom: 0;
+}
+
+.main-content.tag-manager-mode .tag-manager-page {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
 }
 
 .main-content.file-transfer-mode {

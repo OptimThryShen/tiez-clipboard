@@ -584,6 +584,7 @@ mod tests {
             preview: "Hello...".to_string(),
             is_pinned: false,
             tags: vec![],
+            note: String::new(),
             use_count: 0,
             is_external: false,
             pinned_order: 0,

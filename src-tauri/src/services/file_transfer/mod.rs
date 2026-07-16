@@ -453,6 +453,7 @@ pub async fn register_received_file(
             preview,
             is_pinned: false,
             tags: Vec::new(),
+            note: String::new(),
             use_count: 0,
             is_external: false,
             pinned_order: 0,

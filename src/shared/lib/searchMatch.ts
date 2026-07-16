@@ -24,6 +24,10 @@ export function entryMatchesSearch(
     return true;
   }
 
+  if (item.note?.toLowerCase().includes(term)) {
+    return true;
+  }
+
   if (TEXT_TYPES.has(item.content_type)) {
     const preview = item.preview?.toLowerCase() ?? "";
     if (preview.includes(term)) {

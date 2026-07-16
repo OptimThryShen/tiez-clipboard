@@ -140,6 +140,33 @@ pub fn update_tags(
 }
 
 #[tauri::command]
+pub fn update_entry_note(
+    app_handle: AppHandle,
+    state: State<'_, DbState>,
+    session: State<'_, SessionHistory>,
+    id: i64,
+    note: String,
+) -> AppResult<()> {
+    let cleaned = note.trim().to_string();
+    if id < 0 {
+        let mut session_items = session.inner().0.lock().unwrap();
+        if let Some(item) = session_items.iter_mut().find(|item| item.id == id) {
+            item.note = cleaned;
+            return Ok(());
+        }
+        return Err(AppError::Validation("Item not found".to_string()));
+    }
+
+    state
+        .repo
+        .update_entry_note(id, &cleaned)
+        .map_err(AppError::from)?;
+    let _ = app_handle.emit("clipboard-changed", ());
+    crate::services::cloud_sync::request_cloud_sync(app_handle);
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn add_manual_item(
     app_handle: AppHandle,
     state: State<'_, DbState>,
@@ -156,6 +183,7 @@ pub async fn add_manual_item(
         html_content: None,
         source_app: "Manual".to_string(),
         source_app_path: None,
+        note: String::new(),
         timestamp: chrono::Utc::now().timestamp_millis(),
         preview,
         is_pinned: false,

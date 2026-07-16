@@ -398,7 +398,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
 
     const handleDeleteProfile = (id: string) => {
         // Prevent deleting presets
-        if (['lc_flash_v1', 'lc_think_v1', 'lc_think_2601_v1'].includes(id)) return;
+        if (['ds_v4_pro_v1', 'ds_flash_v1'].includes(id)) return;
 
         const newProfiles = aiProfiles.filter(p => p.id !== id);
         setAiProfiles(newProfiles);

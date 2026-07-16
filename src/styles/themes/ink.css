@@ -5,13 +5,9 @@
 
 :root.theme-ink,
 body.theme-ink {
-  background-color: #f0ebe3 !important;
-
   --font-main: "Songti SC", "STSong", "Noto Serif SC", "Georgia", "SimSun", serif;
   --font-mono: "Courier New", Courier, monospace;
   --font-size-md: 14px;
-  --clipboard-item-font-size: 14px;
-  --clipboard-tag-font-size: 10px;
 
   --radius-window: 2px;
   --radius-panel: 2px;
@@ -193,7 +189,7 @@ body.theme-ink #root {
 
 html.theme-ink,
 body.theme-ink {
-  background-color: var(--ink-wash) !important;
+  background-color: transparent !important;
 }
 
 body.theme-ink .app-container {
@@ -208,8 +204,6 @@ body.theme-ink::after {
 
 :root.dark-mode.theme-ink,
 body.dark-mode.theme-ink {
-  background-color: #121411 !important;
-
   /* Night scroll — warm xuan paper, not cold gray */
   --ink-paper: #1c1f1d;
   --ink-wash: #121411;

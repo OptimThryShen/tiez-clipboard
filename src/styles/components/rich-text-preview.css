@@ -1,16 +1,28 @@
 /* Rich Text Preview Specific Styles */
 .rich-text-preview {
   font-family: var(--font-main);
+  font-size: var(--clipboard-item-font-size);
+  line-height: 1.4;
   color: var(--text-primary);
   margin-top: 4px;
   color-scheme: light dark;
+}
+
+/*
+ * Source HTML (Word/web) often ships 9–10pt inline fonts that are hard to read
+ * in the clipboard list. Force preview text to follow the app item font size.
+ * Paste still uses the original HTML — this only affects display.
+ */
+.rich-text-preview *:not(style):not(script) {
+  font-size: inherit !important;
+  line-height: inherit;
 }
 
 .rich-text-preview table {
   border-collapse: collapse;
   width: 100%;
   margin: 4px 0;
-  font-size: 10px;
+  font-size: inherit;
 }
 
 .rich-text-preview td,

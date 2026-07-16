@@ -12,10 +12,10 @@ interface UseClipboardItemRendererOptions {
   privacyProtection: boolean;
   revealedIds: Set<number>;
   isKeyboardMode: boolean;
-  selectedIndex: number;
   selectedItemId: number | null;
   isWindowPinned: boolean;
   editingTagsId: number | null;
+  editingNoteId: number | null;
   tagInput: string;
   allTags: string[];
   tagColors: Record<string, string>;
@@ -41,14 +41,16 @@ interface UseClipboardItemRendererOptions {
     isPinned?: boolean,
     tags?: string[]
   ) => Promise<void>;
-  setSelectedIndex: Dispatch<SetStateAction<number>>;
+  selectItemByIndex: (index: number) => void;
   setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
   openContent: (item: ClipboardEntry) => void;
   togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
   deleteEntry: (event: MouseEvent, id: number) => void;
   setEditingTagsId: Dispatch<SetStateAction<number | null>>;
+  setEditingNoteId: Dispatch<SetStateAction<number | null>>;
   setTagInput: Dispatch<SetStateAction<string>>;
   handleUpdateTags: (id: number, tags: string[]) => void;
+  handleUpdateNote: (id: number, note: string) => void;
   handleAIAction: (id: number, content: string, actionType: string) => void;
 }
 
@@ -63,10 +65,10 @@ export const useClipboardItemRenderer = ({
   privacyProtection,
   revealedIds,
   isKeyboardMode,
-  selectedIndex,
   selectedItemId,
   isWindowPinned,
   editingTagsId,
+  editingNoteId,
   tagInput,
   allTags,
   tagColors,
@@ -85,14 +87,16 @@ export const useClipboardItemRenderer = ({
   aiOptionsOpenId,
   setAiOptionsOpenId,
   copyToClipboard,
-  setSelectedIndex,
+  selectItemByIndex,
   setRevealedIds,
   openContent,
   togglePin,
   deleteEntry,
   setEditingTagsId,
+  setEditingNoteId,
   setTagInput,
   handleUpdateTags,
+  handleUpdateNote,
   handleAIAction
 }: UseClipboardItemRendererOptions): { renderItemContent: RenderItemContent } => {
   const renderItemContent = useCallback(
@@ -104,17 +108,19 @@ export const useClipboardItemRenderer = ({
           item.tags?.includes("password")) &&
         !revealedIds.has(item.id);
       const isEditingTags = editingTagsId === item.id;
+      const isEditingNote = editingNoteId === item.id;
 
       return (
         <ClipboardItem
           id={`clipboard-item-${item.id}`}
           key={item.id}
           item={item}
-          isSelected={isKeyboardMode && (selectedItemId !== null ? item.id === selectedItemId : index === selectedIndex)}
+          isSelected={isKeyboardMode && selectedItemId !== null && item.id === selectedItemId}
           windowPinned={isWindowPinned}
           isSensitiveHidden={!!isSensitiveHidden}
           isRevealed={revealedIds.has(item.id)}
           isEditingTags={isEditingTags}
+          isEditingNote={isEditingNote}
           tagInput={isEditingTags ? tagInput : ""}
           tagSuggestions={isEditingTags ? allTags : EMPTY_TAG_SUGGESTIONS}
           tagColors={tagColors}
@@ -128,7 +134,7 @@ export const useClipboardItemRenderer = ({
           sensitiveMaskSuffixVisible={sensitiveMaskSuffixVisible}
           sensitiveMaskEmailDomain={sensitiveMaskEmailDomain}
           quickPasteHint={quickPasteHintsById[item.id]}
-          onSelect={() => setSelectedIndex(index)}
+          onSelect={() => selectItemByIndex(index)}
           onCopy={(withFormat) =>
             copyToClipboard(item.id, item.content, item.content_type, withFormat, item.is_pinned, item.tags || [])
           }
@@ -149,6 +155,7 @@ export const useClipboardItemRenderer = ({
           onDelete={(e) => deleteEntry(e, item.id)}
           onToggleTagEditor={(e) => {
             e.stopPropagation();
+            setEditingNoteId(null);
             if (editingTagsId === item.id) {
               setEditingTagsId(null);
             } else {
@@ -156,6 +163,21 @@ export const useClipboardItemRenderer = ({
               setTagInput("");
             }
           }}
+          onToggleNoteEditor={(e) => {
+            e.stopPropagation();
+            setEditingTagsId(null);
+            setTagInput("");
+            if (editingNoteId === item.id) {
+              setEditingNoteId(null);
+            } else {
+              setEditingNoteId(item.id);
+            }
+          }}
+          onNoteSave={(note) => {
+            handleUpdateNote(item.id, note);
+            setEditingNoteId(null);
+          }}
+          onNoteEditCancel={() => setEditingNoteId(null)}
           onTagInput={setTagInput}
           onTagAdd={() => {
             const newTag = tagInput.trim();
@@ -202,10 +224,10 @@ export const useClipboardItemRenderer = ({
       privacyProtection,
       revealedIds,
       isKeyboardMode,
-      selectedIndex,
       selectedItemId,
       isWindowPinned,
       editingTagsId,
+      editingNoteId,
       tagInput,
       allTags,
       tagColors,
@@ -224,14 +246,16 @@ export const useClipboardItemRenderer = ({
       aiOptionsOpenId,
       setAiOptionsOpenId,
       copyToClipboard,
-      setSelectedIndex,
+      selectItemByIndex,
       setRevealedIds,
       openContent,
       togglePin,
       deleteEntry,
       setEditingTagsId,
+      setEditingNoteId,
       setTagInput,
       handleUpdateTags,
+      handleUpdateNote,
       handleAIAction
     ]
   );

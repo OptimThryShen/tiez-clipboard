@@ -223,12 +223,12 @@ pub async fn call_ai(
                 clean_url(
                     p["baseUrl"]
                         .as_str()
-                        .unwrap_or("https://api.longcat.chat/openai/v1"),
+                        .unwrap_or("https://api.deepseek.com/v1"),
                 ),
                 p["model"]
                     .as_str()
                     .map(|s| s.to_string())
-                    .unwrap_or_else(|| "LongCat-Flash-Chat".to_string()),
+                    .unwrap_or_else(|| "deepseek-flash".to_string()),
                 p["enableThinking"].as_bool().unwrap_or(false),
             )
         } else {
@@ -242,18 +242,18 @@ pub async fn call_ai(
                     clean_url(
                         p["baseUrl"]
                             .as_str()
-                            .unwrap_or("https://api.longcat.chat/openai/v1"),
+                            .unwrap_or("https://api.deepseek.com/v1"),
                     ),
                     p["model"]
                         .as_str()
                         .map(|s| s.to_string())
-                        .unwrap_or_else(|| "LongCat-Flash-Chat".to_string()),
+                        .unwrap_or_else(|| "deepseek-flash".to_string()),
                     p["enableThinking"].as_bool().unwrap_or(false),
                 )
             } else {
                 (
                     "".to_string(),
-                    "https://api.longcat.chat/openai/v1".to_string(),
+                    "https://api.deepseek.com/v1".to_string(),
                     "".to_string(),
                     false,
                 )

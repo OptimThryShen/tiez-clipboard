@@ -82,12 +82,6 @@
   width: 4px;
 }
 
-.emoji-content::-webkit-scrollbar-thumb,
-.emoji-fav-container::-webkit-scrollbar-thumb {
-  background: var(--line-soft);
-  border-radius: 10px;
-}
-
 /* Emoji Grid */
 .emoji-group {
   display: flex;

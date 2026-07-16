@@ -37,6 +37,9 @@ fn main() -> AppResult<()> {
 
     let builder = builder.plugin(tauri_plugin_window_state::Builder::default().build());
 
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+
     let app = builder
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_autostart::init(
@@ -150,6 +153,7 @@ fn main() -> AppResult<()> {
             app::commands::download_and_install_update,
             app::commands::toggle_clipboard_pin,
             app::commands::update_tags,
+            app::commands::update_entry_note,
             app::commands::add_manual_item,
             app::commands::update_item_content,
             app::commands::save_emoji_favorite,

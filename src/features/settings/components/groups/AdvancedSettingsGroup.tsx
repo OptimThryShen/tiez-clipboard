@@ -89,9 +89,13 @@ const serializeRules = (rules: EditableRule[]): string =>
         .join("\n\n");
 
 const focusEditorWindow = () => {
-    getCurrentWindow()
-        .setFocus()
-        .catch(() => invoke("focus_clipboard_window").catch(console.error));
+    // Prefer gentle key-window activation so focused fields keep the caret.
+    invoke("activate_window_focus")
+        .catch(() =>
+            getCurrentWindow()
+                .setFocus()
+                .catch(() => invoke("focus_clipboard_window").catch(console.error))
+        );
 };
 
 const AdvancedSettingsGroup = ({
@@ -106,7 +110,7 @@ const AdvancedSettingsGroup = ({
     const [selectedSourceId, setSelectedSourceId] = useState("global");
     const [expandedRuleIndex, setExpandedRuleIndex] = useState<number | null>(0);
     const [draftRules, setDraftRules] = useState<EditableRule[]>(parseRules(cleanupRules));
-    const [sidebarWidth, setSidebarWidth] = useState(120);
+    const [sidebarWidth, setSidebarWidth] = useState(168);
     const [sidebarHeight, setSidebarHeight] = useState(180);
     const [isResizing, setIsResizing] = useState(false);
     const [isStacked, setIsStacked] = useState(false);
@@ -444,20 +448,26 @@ const AdvancedSettingsGroup = ({
 
                 <div className="advanced-editor">
                     <div className="advanced-editor-toolbar">
-                        <div style={{ flex: 1 }}>
-                            <div className="advanced-editor-title" style={{ fontSize: "16px", fontWeight: 700 }}>
+                        <div className="advanced-editor-heading">
+                            <div className="advanced-editor-title">
                                 {selectedTarget?.kind === "global" ? t("advanced_target_global") : (t("app_cleanup_policy_record_title") || "记录此应用的内容？")}
                             </div>
-                            <div className="advanced-editor-subtitle" style={{ marginTop: "4px", opacity: 0.7 }}>
+                            <div className="advanced-editor-subtitle">
                                 {selectedTarget?.action !== "ignore"
-                                    ? (t("app_cleanup_policy_record_on_hint") || "当前已开启记录，您可以点击上方按钮添加清洗或拦截规则")
+                                    ? (t("app_cleanup_policy_record_on_hint") || "当前已开启记录，可点击右侧「添加规则」配置清洗或拦截")
                                     : (t("app_cleanup_policy_record_off_hint") || "当前已暂停记录来自此应用的内容")}
                             </div>
                         </div>
 
-                        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                        <div className="advanced-editor-actions">
+                            {selectedTarget && selectedTarget.action !== "ignore" && (
+                                <button type="button" className="btn-icon advanced-add-rule-btn" onClick={addRule}>
+                                    <Plus size={14} />
+                                    <span>{t("advanced_add_rule")}</span>
+                                </button>
+                            )}
                             {selectedTarget?.kind === "app" && (
-                                <div className="advanced-record-toggle" style={{ background: "transparent", padding: 0 }}>
+                                <div className="advanced-record-toggle">
                                     <label className="switch">
                                         <input
                                             className="cb"
@@ -475,16 +485,11 @@ const AdvancedSettingsGroup = ({
                         </div>
                     </div>
 
-                    <div style={{ padding: "0 24px", display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
-                        {selectedTarget && selectedTarget.action !== "ignore" && (
-                            <button type="button" className="btn-icon advanced-add-rule-btn" onClick={addRule}>
-                                <Plus size={14} />
-                                <span>{t("advanced_add_rule")}</span>
-                            </button>
-                        )}
-                    </div>
-
-                    <div className="advanced-rule-list">
+                    <div
+                        className={`advanced-rule-list${
+                            selectedTarget?.action === "ignore" || draftRules.length === 0 ? " is-empty" : ""
+                        }`}
+                    >
                         {selectedTarget?.action === "ignore" ? (
                             <div className="advanced-empty-state">
                                 <div className="advanced-empty-title">{t("app_cleanup_policy_ignore")}</div>

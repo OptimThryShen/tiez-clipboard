@@ -14,6 +14,7 @@ export interface ClipboardItemProps {
   isSensitiveHidden: boolean;
   isRevealed: boolean;
   isEditingTags: boolean;
+  isEditingNote: boolean;
   tagInput: string;
   /** Tags used elsewhere in history; shown as quick-pick when editing tags */
   tagSuggestions?: string[];
@@ -38,6 +39,9 @@ export interface ClipboardItemProps {
   onTogglePin: (e: MouseEvent) => void;
   onDelete: (e: MouseEvent) => void;
   onToggleTagEditor: (e: MouseEvent) => void;
+  onToggleNoteEditor: (e: MouseEvent) => void;
+  onNoteSave: (note: string) => void;
+  onNoteEditCancel?: () => void;
   onTagInput: (val: string) => void;
   onTagAdd: () => void;
   /** Pick an existing tag from the suggestion list (typically closes editor after add) */

@@ -151,11 +151,25 @@ const handleMacosNonactivatingClick = (
 
   const target = stack[0];
 
+  const modalOverlay = stack
+    .map((node) => node.closest(".modal-overlay") as HTMLElement | null)
+    .find(Boolean);
+  if (modalOverlay) {
+    const interactive = target.closest(
+      'button, input, textarea, select, label.switch, a, [role="button"], [role="switch"], [role="tab"]'
+    ) as HTMLElement | null;
+    if (interactive && modalOverlay.contains(interactive)) {
+      invoke("activate_window_focus").catch(console.error);
+      setTimeout(() => interactive.click(), 0);
+    }
+    return;
+  }
+
   const overlayRoot = stack
     .map(
       (node) =>
         node.closest(
-          ".settings-panel-root, .settings-view, .themed-tag-manager, .emoji-panel, .file-transfer-panel"
+          ".settings-panel-root, .settings-view, .tag-manager-page, .emoji-panel, .file-transfer-panel"
         ) as HTMLElement | null
     )
     .find(Boolean);
@@ -169,12 +183,12 @@ const handleMacosNonactivatingClick = (
       return;
     }
 
-    if (overlayRoot.classList.contains("themed-tag-manager")) {
+    if (overlayRoot.classList.contains("tag-manager-page")) {
       const card = stack
-        .map((node) => node.closest(".themed-card") as HTMLElement | null)
+        .map((node) => node.closest(".tag-manager-card, .themed-card") as HTMLElement | null)
         .find((node) => node && overlayRoot.contains(node));
       if (card) {
-        if (target.closest('button, input, textarea, [role="button"]')) {
+        if (target.closest('button, input, textarea, [role="button"], .card-note')) {
           return;
         }
         const itemId = Number(card.dataset.tagItemId);
@@ -299,6 +313,8 @@ const App = () => {
     setAiOptionsOpenId,
     editingTagsId,
     setEditingTagsId,
+    editingNoteId,
+    setEditingNoteId,
     revealedIds,
     setRevealedIds,
     setAutoStart,
@@ -406,6 +422,8 @@ const App = () => {
     setSurfaceOpacity,
     selectedIndex,
     setSelectedIndex,
+    selectedItemId,
+    setSelectedItemId,
     isKeyboardMode,
     setIsKeyboardMode,
     isLoadingMore,
@@ -494,6 +512,8 @@ const App = () => {
 
   const debouncedSearch = useDebounce(search, 400);
   const searchInputRef = useInputFocus<HTMLInputElement>();
+  const showTagFilterRef = useRef(showTagFilter);
+  showTagFilterRef.current = showTagFilter;
 
   const dismissSearchTagFilter = useCallback(() => {
     setShowTagFilter(false);
@@ -510,6 +530,7 @@ const App = () => {
   }, [showSearchBox, dismissSearchTagFilter]);
   const tagColors = useTagColors();
   const virtualListRef = useRef<VirtualClipboardListHandle | null>(null);
+  const appContainerRef = useRef<HTMLDivElement | null>(null);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [quickPasteHintsById, setQuickPasteHintsById] = useState<Record<number, QuickPasteHint>>(
     {}
@@ -536,7 +557,8 @@ const App = () => {
     return translations[language][k] || translations['en'][k] || key;
   }, [language]);
 
-  const { handleListScroll: handleSearchScroll, handleMainWheel } = useSearchScroll({
+  const { handleListScroll: handleSearchScroll } = useSearchScroll({
+    containerRef: appContainerRef,
     showSearchBox,
     setShowSearchBox,
     search,
@@ -621,10 +643,13 @@ const App = () => {
 
   const handleListScroll = useCallback((offset: number) => {
     handleSearchScroll(offset);
-    if (offset > 0) {
+    if (offset > 0 && showTagFilterRef.current) {
       dismissSearchTagFilter();
     }
-    setShowScrollTop(offset > 200);
+    setShowScrollTop((prev) => {
+      const next = offset > 200;
+      return prev === next ? prev : next;
+    });
   }, [handleSearchScroll, dismissSearchTagFilter]);
 
   const handleScrollTop = useCallback(() => {
@@ -1064,7 +1089,7 @@ const App = () => {
 
   useNavigationSync({ showSettings, showTagManager: effectiveShowTagManager, chatMode, showEmojiPanel: effectiveShowEmojiPanel });
 
-  const { copyToClipboard, openContent, deleteEntry, togglePin, handleUpdateTags } =
+  const { copyToClipboard, openContent, deleteEntry, togglePin, handleUpdateTags, handleUpdateNote } =
     useClipboardActions({
       t,
       pushToast,
@@ -1171,19 +1196,27 @@ const App = () => {
 
   const effectiveHasMore = hasMore && filteredHistory.length >= PAGE_SIZE;
 
-  const { pinnedItems, unpinnedItems, handlePinnedReorder } = usePinnedSort({
+  const {
+    pinnedItems,
+    unpinnedItems,
+    navigableHistory,
+    pinnedOrderIds,
+    isDraggingPinned,
+    handlePinnedIdsReorder,
+    handlePinnedDragStart,
+    handlePinnedDragEnd
+  } = usePinnedSort({
     filteredHistory,
     history,
     setHistory
   });
 
-  const navigableHistory = useMemo(
-    () => [...pinnedItems, ...unpinnedItems],
-    [pinnedItems, unpinnedItems]
-  );
-  const selectedItemId = navigableHistory[selectedIndex]?.id ?? null;
-
-  useListSelectionReset({ filteredHistory: navigableHistory, setSelectedIndex });
+  useListSelectionReset({
+    filteredHistory: navigableHistory,
+    selectedItemId,
+    setSelectedIndex,
+    setSelectedItemId
+  });
 
   useSearchFetchTrigger({ debouncedSearch, isComposing, typeFilter, fetchHistory });
 
@@ -1195,16 +1228,19 @@ const App = () => {
     virtualListRef
   });
 
-  useKeyboardNavigation({
+  const { selectItemByIndex } = useKeyboardNavigation({
     filteredHistory: navigableHistory,
     selectedIndex,
+    selectedItemId,
     setSelectedIndex,
+    setSelectedItemId,
     isKeyboardMode,
     setIsKeyboardMode,
     showSettings,
     showTagManager: effectiveShowTagManager,
     chatMode,
     editingTagsId,
+    editingNoteId,
     arrowKeySelection,
     richPasteHotkey,
     searchInputRef,
@@ -1217,10 +1253,10 @@ const App = () => {
     privacyProtection,
     revealedIds,
     isKeyboardMode,
-    selectedIndex,
     selectedItemId,
     isWindowPinned,
     editingTagsId,
+    editingNoteId,
     tagInput,
     allTags,
     tagColors,
@@ -1239,14 +1275,16 @@ const App = () => {
     aiOptionsOpenId,
     setAiOptionsOpenId,
     copyToClipboard,
-    setSelectedIndex,
+    selectItemByIndex,
     setRevealedIds,
     openContent,
     togglePin,
     deleteEntry,
     setEditingTagsId,
+    setEditingNoteId,
     setTagInput,
     handleUpdateTags,
+    handleUpdateNote,
     handleAIAction
   });
 
@@ -1274,6 +1312,7 @@ const App = () => {
 
   return (
     <div
+      ref={appContainerRef}
       className="app-container"
     >
       <AppHeader
@@ -1321,7 +1360,6 @@ const App = () => {
         style={{
           padding: effectiveShowTagManager ? "0" : undefined
         }}
-        onWheel={handleMainWheel}
       >
         <AppMainContent
           t={t}
@@ -1347,7 +1385,11 @@ const App = () => {
           selectedIndex={selectedIndex}
           isKeyboardMode={isKeyboardMode}
           virtualListRef={virtualListRef}
-          handlePinnedReorder={handlePinnedReorder}
+          pinnedOrderIds={pinnedOrderIds}
+          isDraggingPinned={isDraggingPinned}
+          handlePinnedIdsReorder={handlePinnedIdsReorder}
+          handlePinnedDragStart={handlePinnedDragStart}
+          handlePinnedDragEnd={handlePinnedDragEnd}
           renderItemContent={renderItemContent}
           loadMoreHistory={loadMoreHistory}
           handleListScroll={handleListScroll}

@@ -17,6 +17,15 @@ const pickFirstSrcFromSrcset = (srcset?: string | null): string | null => {
   return url || null;
 };
 
+/** Drop authoring font sizes so list/hover preview follows app typography. */
+const stripFontSizeFromCssText = (cssText: string): string => {
+  return cssText
+    .replace(/font-size\s*:\s*[^;]+;?/gi, "")
+    .replace(/;\s*;/g, ";")
+    .replace(/^;+|;+$/g, "")
+    .trim();
+};
+
 const resolveImgSource = (el: Element): string | null => {
   const src = el.getAttribute("src")?.trim() || "";
   const lazyAttrs = [
@@ -95,6 +104,10 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
   doc.querySelectorAll("style").forEach((style) => {
     if (isOfficeStyleDefinitionText(style.textContent || "")) {
       style.remove();
+      return;
+    }
+    if (preview && style.textContent) {
+      style.textContent = stripFontSizeFromCssText(style.textContent);
     }
   });
   doc.querySelectorAll("meta, link, xml").forEach((el) => el.remove());
@@ -141,15 +154,22 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
         el.removeAttribute(attr.name);
       }
       if (name === "style") {
-        const cleanedStyle = attr.value
+        let cleanedStyle = attr.value
           .replace(/(?:^|;)\s*(?:transform|writing-mode|rotate|scale)\s*:[^;]*/gi, "")
           .trim()
           .replace(/^;+|;+$/g, "");
+        if (preview) {
+          cleanedStyle = stripFontSizeFromCssText(cleanedStyle);
+        }
         if (cleanedStyle) {
           el.setAttribute("style", cleanedStyle);
         } else {
           el.removeAttribute("style");
         }
+      }
+      // Presentational <font size="..."> from older HTML / Office paste
+      if (preview && el.tagName.toLowerCase() === "font" && name === "size") {
+        el.removeAttribute(attr.name);
       }
     });
 

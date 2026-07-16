@@ -7,7 +7,7 @@ import {
 } from "./repairHtmlFragment";
 
 const SNAPSHOT_CACHE_LIMIT = 240;
-const SNAPSHOT_CACHE_VERSION = "v5";
+const SNAPSHOT_CACHE_VERSION = "v6";
 const snapshotCache = new Map<string, string>();
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
@@ -350,8 +350,9 @@ export const getRichTextSnapshotDataUrl = (
       "overflow:hidden",
       "background:transparent",
       "font-family:'Segoe UI','Microsoft YaHei',sans-serif",
+      "font-size:13px",
       "color:#111",
-      "line-height:1.35"
+      "line-height:1.4"
     ].join(";");
 
     const xhtmlBodyHtml = toXhtmlCompatibleFragment(normalized.bodyHtml);
@@ -364,7 +365,7 @@ export const getRichTextSnapshotDataUrl = (
       snapshotStyle,
       '">',
       `<style>
-      * { box-sizing: border-box; }
+      * { box-sizing: border-box; font-size: inherit !important; line-height: inherit; }
       table { border-collapse: collapse; border-spacing: 0; }
       img, video { max-width: 100%; height: auto; }
       td, th { vertical-align: top; }

@@ -15,6 +15,9 @@ pub struct ClipboardEntry {
     pub is_pinned: bool,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Free-text remark on this entry (not a category tag).
+    #[serde(default)]
+    pub note: String,
     #[serde(default)]
     pub use_count: i32,
     #[serde(default)]

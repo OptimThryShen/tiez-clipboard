@@ -9,6 +9,8 @@ export interface ClipboardEntry {
   preview: string;
   is_pinned: boolean;
   tags: string[];
+  /** Free-text remark (not a category tag) */
+  note?: string;
   isInputting?: boolean;
   questionCount?: number;
   use_count?: number;

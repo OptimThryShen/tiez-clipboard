@@ -231,11 +231,13 @@ const AppHeader = ({
                       setSearch(e.target.value);
                     }}
                     onMouseDown={() => {
+                      // Ensure NSPanel is key before the input focuses.
                       invoke("activate_window_focus").catch(console.error);
                     }}
                     onClick={() => { setShowTagFilter(true); setEditingTagsId(null); }}
                     onFocus={() => {
-                      invoke("activate_window_focus").catch(console.error);
+                      // Do not re-invoke activate here: a second focus bounce can
+                      // blur the caret right after the user clicks the field.
                       setShowTagFilter(true);
                       setSearchIsFocused(true);
                       setEditingTagsId(null);
@@ -275,15 +277,7 @@ const AppHeader = ({
                   )}
                 </div>
                 <div
-                  className="hide-scrollbar"
-                  style={{
-                    display: 'flex',
-                    gap: '6px',
-                    padding: '8px 0 0 0',
-                    overflowX: 'auto',
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none'
-                  }}
+                  className="search-type-filters hide-scrollbar"
                   onWheel={(e) => {
                     if (e.deltaY !== 0) {
                       e.currentTarget.scrollLeft += e.deltaY;

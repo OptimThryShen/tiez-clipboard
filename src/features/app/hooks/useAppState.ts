@@ -12,8 +12,6 @@ import type {
 import { DEFAULT_CLOUD_SYNC_CONTENT_PREFS } from "../types";
 import type { AiProfile, AppCleanupPolicy } from "../../settings/types";
 
-const DEFAULT_AI_KEY = import.meta.env.VITE_AI_DEFAULT_API_KEY ?? "";
-
 export const useAppState = (): AppState => {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsSubpage, setSettingsSubpage] = useState<SettingsSubpage>("home");
@@ -41,6 +39,7 @@ export const useAppState = (): AppState => {
   const [emojiFavorites, setEmojiFavorites] = useState<string[]>([]);
   const [aiOptionsOpenId, setAiOptionsOpenId] = useState<number | null>(null);
   const [editingTagsId, setEditingTagsId] = useState<number | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set());
   const [autoStart, setAutoStart] = useState(true);
   const [deduplicate, setDeduplicate] = useState(true);
@@ -112,6 +111,7 @@ export const useAppState = (): AppState => {
   const [customBackgroundOpacity, setCustomBackgroundOpacity] = useState(45);
   const [surfaceOpacity, setSurfaceOpacity] = useState(50);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [isKeyboardMode, setIsKeyboardMode] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -155,25 +155,18 @@ export const useAppState = (): AppState => {
   const [aiThinkingBudget, setAiThinkingBudget] = useState("1024");
   const [aiProfiles, setAiProfiles] = useState<AiProfile[]>([
     {
-      id: "lc_flash_v1",
-      baseUrl: "https://api.longcat.chat/openai/v1",
-      apiKey: DEFAULT_AI_KEY,
-      model: "LongCat-Flash-Chat",
+      id: "ds_v4_pro_v1",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "",
+      model: "deepseek-v4-pro",
+      enableThinking: true
+    },
+    {
+      id: "ds_flash_v1",
+      baseUrl: "https://api.deepseek.com/v1",
+      apiKey: "",
+      model: "deepseek-flash",
       enableThinking: false
-    },
-    {
-      id: "lc_think_v1",
-      baseUrl: "https://api.longcat.chat/openai/v1",
-      apiKey: DEFAULT_AI_KEY,
-      model: "LongCat-Flash-Thinking",
-      enableThinking: true
-    },
-    {
-      id: "lc_think_2601_v1",
-      baseUrl: "https://api.longcat.chat/openai/v1",
-      apiKey: DEFAULT_AI_KEY,
-      model: "LongCat-Flash-Thinking-2601",
-      enableThinking: true
     }
   ]);
   const [aiAssignedProfileTask, setAiAssignedProfileTask] = useState("default");
@@ -213,6 +206,8 @@ export const useAppState = (): AppState => {
     setAiOptionsOpenId,
     editingTagsId,
     setEditingTagsId,
+    editingNoteId,
+    setEditingNoteId,
     revealedIds,
     setRevealedIds,
     autoStart,
@@ -343,6 +338,8 @@ export const useAppState = (): AppState => {
     setSurfaceOpacity,
     selectedIndex,
     setSelectedIndex,
+    selectedItemId,
+    setSelectedItemId,
     isKeyboardMode,
     setIsKeyboardMode,
     isLoadingMore,

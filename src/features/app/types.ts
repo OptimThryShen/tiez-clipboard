@@ -54,6 +54,8 @@ export interface AppState {
   setAiOptionsOpenId: StateSetter<number | null>;
   editingTagsId: number | null;
   setEditingTagsId: StateSetter<number | null>;
+  editingNoteId: number | null;
+  setEditingNoteId: StateSetter<number | null>;
   revealedIds: Set<number>;
   setRevealedIds: StateSetter<Set<number>>;
   autoStart: boolean;
@@ -183,6 +185,8 @@ export interface AppState {
   setSurfaceOpacity: StateSetter<number>;
   selectedIndex: number;
   setSelectedIndex: StateSetter<number>;
+  selectedItemId: number | null;
+  setSelectedItemId: StateSetter<number | null>;
   isKeyboardMode: boolean;
   setIsKeyboardMode: StateSetter<boolean>;
   isLoadingMore: boolean;

@@ -537,16 +537,26 @@ fn toggle_window_windows(app: &AppHandle) {
 #[cfg(target_os = "macos")]
 fn toggle_window_macos(app_handle: &AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
-        let is_visible = window.is_visible().unwrap_or(false);
+        let is_visible_anywhere = window.is_visible().unwrap_or(false);
+        let is_visible =
+            crate::infrastructure::macos_api::window::is_visible_on_active_space(&window);
         let is_tucked = crate::app::setup::is_window_edge_tucked(&window);
 
+        eprintln!(
+            "[macos-toggle] anywhere={} active_space={} tucked={}",
+            is_visible_anywhere, is_visible, is_tucked
+        );
+
         if is_visible && !is_tucked {
+            eprintln!("[macos-toggle] hide on active space");
             let _ = app_handle.emit("force-hide-compact-preview", ());
             let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
             let _ = window.set_always_on_top(pinned);
-            let _ = window.set_focusable(false);
+            crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
             clear_window_vibrancy(&window);
-            let _ = window.hide();
+            if !crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle) {
+                let _ = window.hide();
+            }
             let _ = restore_previous_app_focus(app_handle.clone());
 
             IS_HIDDEN.store(false, Ordering::Relaxed);
@@ -554,6 +564,17 @@ fn toggle_window_macos(app_handle: &AppHandle) {
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
             return;
+        }
+
+        // A visible window can still belong to a different Space. Updating or
+        // showing it in that state makes macOS switch back to the old Space.
+        // Order it out first, then attach the hidden window to all Spaces before
+        // bringing it forward on the current (including fullscreen) Space.
+        if is_visible_anywhere && !is_visible {
+            eprintln!("[macos-toggle] hide on other space before show");
+            if !crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle) {
+                let _ = window.hide();
+            }
         }
 
         let (prev_app_name, prev_app_pid) =
@@ -578,7 +599,7 @@ fn toggle_window_macos(app_handle: &AppHandle) {
 
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(true);
-        let _ = window.set_focusable(!pinned);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, !pinned);
         let _ = app_handle.emit("window-pinned-changed", pinned);
 
         let now = std::time::SystemTime::now()
@@ -591,7 +612,14 @@ fn toggle_window_macos(app_handle: &AppHandle) {
         }
 
         apply_window_vibrancy(app_handle, &window);
-        let _ = window.show();
+        eprintln!("[macos-toggle] show + present overlay");
+        if !crate::infrastructure::macos_api::window::show_clipboard_panel(app_handle) {
+            let _ = window.show();
+            crate::infrastructure::macos_api::window::present_overlay_above_fullscreen_async(
+                &window,
+            );
+        }
+        crate::infrastructure::macos_api::window::reinforce_overlay_above_fullscreen(&window);
         maybe_open_devtools(&window);
     }
 }
@@ -622,7 +650,7 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
-        let _ = window.set_focusable(true);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
 
         #[cfg(windows)]
         {
@@ -637,6 +665,19 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
                 return Ok(());
             }
         }
+
+        // Nonactivating NSPanel: Tauri `set_focus()` often fails to make the panel
+        // key (or blurs the focused input). Use AppKit makeKeyWindow instead so
+        // search/note/tag fields can receive typed characters.
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_nspanel::ManagerExt;
+            if let Ok(panel) = app_handle.get_webview_panel("main") {
+                panel.make_key_window();
+                return Ok(());
+            }
+        }
+
         let _ = window.set_focus();
     }
     Ok(())
@@ -655,8 +696,15 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
-        let _ = window.set_focusable(false);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         clear_window_vibrancy(&window);
+        #[cfg(target_os = "macos")]
+        {
+            if !crate::infrastructure::macos_api::window::hide_clipboard_panel(&app_handle) {
+                let _ = window.hide();
+            }
+        }
+        #[cfg(not(target_os = "macos"))]
         let _ = window.hide();
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
@@ -678,7 +726,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
         IS_HIDDEN.store(false, Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         crate::app::setup::persist_edge_dock(&app_handle, 0);
-        let _ = window.set_focusable(true);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
 
         #[cfg(windows)]
         {
@@ -696,10 +744,38 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
             }
         }
 
-        let _ = window.show();
-        let _ = window.set_focus();
-        maybe_open_devtools(&window);
-        Ok(())
+        #[cfg(target_os = "macos")]
+        {
+            use tauri_nspanel::ManagerExt;
+            // Settings / chat inputs call this on every focus. If the panel is
+            // already up, only makeKeyWindow — repeated show_and_make_key +
+            // set_focus steals the caret and blocks typing.
+            if let Ok(panel) = app_handle.get_webview_panel("main") {
+                let already_visible = window.is_visible().unwrap_or(false);
+                if already_visible {
+                    panel.make_key_window();
+                    maybe_open_devtools(&window);
+                    return Ok(());
+                }
+            }
+            if !crate::infrastructure::macos_api::window::show_clipboard_panel(&app_handle) {
+                let _ = window.show();
+            }
+            crate::infrastructure::macos_api::window::present_overlay_above_fullscreen_async(
+                &window,
+            );
+            crate::infrastructure::macos_api::window::reinforce_overlay_above_fullscreen(&window);
+            // show_clipboard_panel already make_key; skip Tauri set_focus.
+            maybe_open_devtools(&window);
+            return Ok(());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = window.show();
+            let _ = window.set_focus();
+            maybe_open_devtools(&window);
+            Ok(())
+        }
     } else {
         Err("Main window not found".to_string())
     }
