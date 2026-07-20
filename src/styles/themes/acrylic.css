@@ -2,10 +2,10 @@
 :root.theme-acrylic,
 body.theme-acrylic {
   background-color: transparent !important;
-  --bg-window: rgba(252, 252, 252, calc(0.5 * var(--surface-opacity-scale, 1)));
+  --bg-window: rgba(252, 252, 252, calc(0.64 * var(--surface-opacity-scale, 1)));
   --bg-content: transparent;
   --bg-toolbar: transparent;
-  --bg-panel: rgba(255, 255, 255, 0.34);
+  --bg-panel: rgba(255, 255, 255, 0.46);
   --bg-input: rgba(255, 255, 255, 0.52);
   --bg-element: rgba(255, 255, 255, 0.26);
   --bg-button: rgba(255, 255, 255, 0.2);
@@ -26,13 +26,13 @@ body.theme-acrylic {
   --shadow-lg: 0 24px 54px rgba(15, 23, 42, 0.16);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.36);
 
-  --shell-background: rgba(252, 252, 252, calc(0.5 * var(--surface-opacity-scale, 1)));
+  --shell-background: rgba(252, 252, 252, calc(0.64 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.32);
   --shell-shadow: 0 10px 38px rgba(0, 0, 0, 0.16);
   --shell-radius: 10px;
   /* Acrylic = deep translucent glass: stronger blur + saturation and more
      see-through than Mica's matte frost. */
-  --shell-backdrop-filter: blur(40px) saturate(200%);
+  --shell-backdrop-filter: blur(22px) saturate(140%);
 
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.24);
 
@@ -131,7 +131,7 @@ body.theme-acrylic:not(.has-custom-bg)::before {
   background-image:
     radial-gradient(120% 120% at 8% 8%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.08) 52%, rgba(255, 255, 255, 0.02) 100%),
     linear-gradient(160deg, rgba(170, 190, 220, 0.12) 0%, rgba(210, 220, 236, 0.06) 45%, rgba(180, 195, 215, 0.11) 100%);
-  opacity: 0.42;
+  opacity: 0.22;
 }
 
 body.theme-acrylic #root {
@@ -149,8 +149,8 @@ body.theme-acrylic #root::before {
   pointer-events: none;
   border-radius: inherit;
   background:
-    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.03) 60%, transparent 100%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 100%);
+    radial-gradient(140% 110% at 0% 0%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 60%, transparent 100%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.015) 100%);
 }
 
 body.theme-acrylic #root > * {
@@ -161,8 +161,8 @@ body.theme-acrylic #root > * {
 @media (prefers-color-scheme: dark) {
   :root.theme-acrylic:not(.light-mode),
   body.theme-acrylic:not(.light-mode) {
-    --bg-window: rgba(20, 20, 20, calc(0.52 * var(--surface-opacity-scale, 1)));
-    --bg-panel: rgba(28, 28, 28, 0.38);
+    --bg-window: rgba(20, 20, 20, calc(0.62 * var(--surface-opacity-scale, 1)));
+    --bg-panel: rgba(28, 28, 28, 0.5);
     --bg-input: rgba(255, 255, 255, 0.12);
     --bg-element: rgba(45, 45, 45, 0.42);
     --bg-button: rgba(255, 255, 255, 0.06);
@@ -179,9 +179,9 @@ body.theme-acrylic #root > * {
     --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.32);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
-    --shell-background: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
+    --shell-background: rgba(20, 20, 20, calc(0.62 * var(--surface-opacity-scale, 1)));
     --shell-border: 1px solid rgba(255, 255, 255, 0.12);
-    --shell-backdrop-filter: blur(42px) saturate(170%);
+    --shell-backdrop-filter: blur(24px) saturate(135%);
     --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
     --panel-border: 1px solid rgba(255, 255, 255, 0.1);
     --menu-border: 1px solid rgba(255, 255, 255, 0.1);
@@ -197,14 +197,14 @@ body.theme-acrylic #root > * {
     background-image:
       radial-gradient(120% 120% at 10% 8%, rgba(120, 138, 164, 0.2) 0%, rgba(74, 86, 108, 0.08) 48%, rgba(48, 56, 72, 0.18) 100%),
       linear-gradient(150deg, rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0.07) 100%);
-    opacity: 0.5;
+    opacity: 0.28;
   }
 }
 
 :root.dark-mode.theme-acrylic,
 body.dark-mode.theme-acrylic {
-  --bg-window: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
-  --bg-panel: rgba(28, 28, 28, 0.38);
+  --bg-window: rgba(20, 20, 20, calc(0.62 * var(--surface-opacity-scale, 1)));
+  --bg-panel: rgba(28, 28, 28, 0.5);
   --bg-input: rgba(255, 255, 255, 0.12);
   --bg-element: rgba(45, 45, 45, 0.42);
   --bg-button: rgba(255, 255, 255, 0.06);
@@ -221,9 +221,9 @@ body.dark-mode.theme-acrylic {
   --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.32);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 
-  --shell-background: rgba(20, 20, 20, calc(0.48 * var(--surface-opacity-scale, 1)));
+  --shell-background: rgba(20, 20, 20, calc(0.62 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.12);
-  --shell-backdrop-filter: blur(42px) saturate(170%);
+  --shell-backdrop-filter: blur(24px) saturate(135%);
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
   --panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --menu-border: 1px solid rgba(255, 255, 255, 0.1);

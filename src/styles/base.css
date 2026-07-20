@@ -351,25 +351,6 @@ body {
   overflow: hidden;
 }
 
-/* Fix react-select accessibility nodes becoming visible in production builds */
-div[id^="react-select-"][id$="-live-region"],
-.app-selector [class*='a11yText'],
-.app-selector span[aria-live],
-.app-selector span[role='log'],
-.app-selector [id='aria-selection'],
-.app-selector [id='aria-focused'],
-.app-selector [id='aria-results'],
-.app-selector [id='aria-guidance'] {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  padding: 0 !important;
-  margin: -1px !important;
-  overflow: hidden !important;
-  clip: rect(0, 0, 0, 0) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
-}
 
 html,
 body {

@@ -96,13 +96,17 @@ pub fn search_clipboard_history(
     search_term: String,
     limit: i32,
     tag_only: Option<bool>,
+    note_only: Option<bool>,
 ) -> AppResult<Vec<ClipboardEntry>> {
     let is_tag_only = tag_only.unwrap_or(false);
-    let mut history = state.repo.search(&search_term, limit, is_tag_only)?;
+    let is_note_only = note_only.unwrap_or(false);
+    let mut history = state
+        .repo
+        .search(&search_term, limit, is_tag_only, is_note_only)?;
 
     let session_items = session.inner().0.lock().unwrap();
     for item in session_items.iter().rev() {
-        if entry_matches_search(item, &search_term, is_tag_only) {
+        if entry_matches_search(item, &search_term, is_tag_only, is_note_only) {
             if !history.iter().any(|h| h.id == item.id && item.id != 0) {
                 history.push(item.clone());
             }

@@ -1,5 +1,4 @@
 use crate::app_state::AppDataDir;
-use crate::database::ENCRYPT_PREFIX;
 use crate::error::{AppError, AppResult};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json;
@@ -998,7 +997,7 @@ fn rewrite_content_path(
         None
     };
 
-    if value.starts_with(ENCRYPT_PREFIX) {
+    if crate::infrastructure::encryption::is_encrypted_value(value) {
         #[cfg(not(feature = "portable"))]
         {
             let plain = crate::database::encryption::decrypt_value(value)
@@ -1032,7 +1031,7 @@ fn rewrite_html_paths(
         }
     };
 
-    if value.starts_with(ENCRYPT_PREFIX) {
+    if crate::infrastructure::encryption::is_encrypted_value(value) {
         #[cfg(not(feature = "portable"))]
         {
             let plain = crate::database::encryption::decrypt_value(value)
@@ -1092,6 +1091,21 @@ pub fn request_macos_permissions() -> bool {
 }
 
 #[tauri::command]
+pub fn get_macos_accessibility_binary_path() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return std::env::current_exe()
+            .ok()
+            .and_then(|path| path.into_os_string().into_string().ok())
+            .unwrap_or_else(|| "tiez-app".to_string());
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        String::new()
+    }
+}
+
+#[tauri::command]
 pub fn open_macos_accessibility_settings() -> AppResult<()> {
     #[cfg(target_os = "macos")]
     {
@@ -1099,6 +1113,7 @@ pub fn open_macos_accessibility_settings() -> AppResult<()> {
         const URLS: &[&str] = &[
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility",
             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+            "x-apple.systempreferences:com.apple.preference.security",
         ];
         for url in URLS {
             if Command::new("open")
@@ -1109,6 +1124,14 @@ pub fn open_macos_accessibility_settings() -> AppResult<()> {
             {
                 return Ok(());
             }
+        }
+        if Command::new("open")
+            .args(["-b", "com.apple.systempreferences"])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return Ok(());
         }
         return Err(AppError::Internal(
             "无法打开系统「辅助功能」设置页".to_string(),

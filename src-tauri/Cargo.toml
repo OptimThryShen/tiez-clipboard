@@ -28,7 +28,6 @@ tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
-tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = "0.4"
@@ -41,7 +40,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 tokio = { version = "1", features = ["time"] }
 tauri-plugin-dialog = "2.6"
 tauri-plugin-global-shortcut = "2.3.1"
-window-vibrancy = "0.7.1"
+window-vibrancy = "0.6"
 rumqttc = { version = "0.25.1", default-features = false, features = ["websocket", "use-rustls-no-provider", "url"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "0.26"
@@ -66,12 +65,15 @@ sha2 = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "stream"] }
 windows-version = "0.1.1"
 dotenvy = "0.15"
+aes-gcm = "0.10"
+rand = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.3"
-objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDictionary", "NSObject", "NSString", "NSArray", "NSURL"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSBitmapImageRep", "NSImage", "NSImageRep", "NSWorkspace", "NSPasteboard", "NSRunningApplication", "NSWindow", "NSPanel", "NSApplication", "NSSound"] }
+objc2-foundation = { version = "0.3.2", features = ["NSData", "NSDictionary", "NSObject", "NSString", "NSArray", "NSURL", "NSGeometry"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSBitmapImageRep", "NSImage", "NSImageRep", "NSWorkspace", "NSPasteboard", "NSRunningApplication", "NSWindow", "NSPanel", "NSApplication", "NSSound", "NSEvent"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+security-framework = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 hound = { version = "3.5", default-features = false }

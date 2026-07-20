@@ -33,6 +33,8 @@ export interface ClipboardItemProps {
   quickPasteHint?: QuickPasteHint;
 
   onSelect: () => void;
+  /** Mouse-hover highlight without enabling keyboard navigation mode. */
+  onHover?: () => void;
   onCopy: (withFormat?: boolean) => void;
   onToggleReveal: (e: MouseEvent) => void;
   onOpen: (e: MouseEvent) => void;

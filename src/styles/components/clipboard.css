@@ -12,3 +12,16 @@
   color: inherit;
   transform: none !important;
 }
+
+/* Mouse hover uses the same selected treatment so non-key panels still show a
+   clear "active item" affordance while the previous app keeps keyboard focus. */
+.history-item:hover {
+  outline: var(--card-selected-outline) !important;
+  outline-offset: var(--card-selected-outline-offset) !important;
+  border-color: var(--card-selected-border-color) !important;
+  box-shadow: var(--card-selected-shadow) !important;
+  background: var(--card-selected-background);
+  color: inherit;
+  transform: none !important;
+  z-index: 10;
+}

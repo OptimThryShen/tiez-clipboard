@@ -1,35 +1,35 @@
 /*
- * Terminal Theme — macOS Terminal.app "Pro" + zsh
- * Dense scrollback layout, Menlo, bracket tags, square chrome, prompt search.
+ * Terminal Theme — zsh / iTerm-style session
+ * Near-black scrollback, ANSI accents, prompt chrome, no soft “app” chrome.
  */
 
 :root.theme-terminal,
 body.theme-terminal {
-  --font-main: Menlo, "SF Mono", ui-monospace, Monaco, Consolas, monospace;
+  --font-main: "SF Mono", Menlo, Monaco, "Cascadia Mono", "JetBrains Mono", Consolas, ui-monospace, monospace;
   --font-mono: var(--font-main);
   --font-size-md: 13px;
 
-  --radius-window: 8px;
-  --radius-panel: 6px;
+  --radius-window: 10px;
+  --radius-panel: 0;
   --radius-card: 0;
-  --radius-control: 4px;
-  --radius-pill: 4px;
+  --radius-control: 0;
+  --radius-pill: 0;
 
   --spacing-md: 12px;
   --spacing-sm: 6px;
 
   --shell-backdrop-filter: none;
-  --shell-radius: 8px;
+  --shell-radius: 10px;
 
   --content-font-family: var(--font-main);
-  --content-line-height: 1.45;
+  --content-line-height: 1.5;
   --empty-state-font-family: var(--font-main);
   --empty-state-text-transform: none;
 
   --title-font-family: var(--font-main);
   --title-font-weight: 500;
-  --title-font-size: 12px;
-  --title-letter-spacing: 0;
+  --title-font-size: 11px;
+  --title-letter-spacing: 0.02em;
   --title-transform: none;
   --title-color: var(--term-fg-dim);
   --title-background: transparent;
@@ -37,17 +37,17 @@ body.theme-terminal {
   --meta-text-transform: none;
   --meta-letter-spacing: 0;
 
-  /* Layout: tight scrollback, no card gutters */
-  --layout-header-padding-y: 4px;
-  --layout-header-inner-x: 12px;
-  --layout-header-inner-gap: 6px;
-  --layout-header-actions-gap: 3px;
+  /* Dense scrollback */
+  --layout-header-padding-y: 3px;
+  --layout-header-inner-x: 10px;
+  --layout-header-inner-gap: 4px;
+  --layout-header-actions-gap: 2px;
   --layout-header-btn-shadow: none;
   --layout-header-btn-shadow-hover: none;
   --layout-header-btn-shadow-active: none;
   --layout-search-margin-top: 0;
-  --layout-search-padding-x: 12px;
-  --layout-search-input-padding: 6px 10px 6px 28px;
+  --layout-search-padding-x: 10px;
+  --layout-search-input-padding: 4px 8px 4px 36px;
   --layout-search-input-font-size: 13px;
   --layout-search-icon-left: 10px;
   --layout-main-padding-y: 0;
@@ -56,93 +56,98 @@ body.theme-terminal {
   --layout-list-padding-x: 0;
   --layout-item-margin-x: 0;
   --layout-item-margin-bottom: 0;
-  --layout-item-padding: 7px 14px 6px 14px;
-  --layout-item-padding-compact: 5px 12px 4px 12px;
+  --layout-item-padding: 6px 12px 5px 12px;
+  --layout-item-padding-compact: 4px 10px 3px 10px;
   --layout-item-background: transparent;
-  --layout-item-hover-background: rgba(255, 255, 255, 0.04);
-  --layout-item-divider: 1px solid rgba(255, 255, 255, 0.04);
-  --layout-drag-handle-radius: 4px;
-  --layout-btn-icon-padding: 5px;
-  --layout-meta-font-size: 10px;
+  --layout-item-hover-background: rgba(63, 185, 80, 0.06);
+  --layout-item-divider: 1px solid rgba(255, 255, 255, 0.035);
+  --layout-drag-handle-radius: 0;
+  --layout-btn-icon-padding: 4px;
+  --layout-meta-font-size: 11px;
   --layout-meta-font-weight: 500;
   --layout-meta-border-bottom: none;
-  --layout-meta-padding-bottom: 2px;
-  --layout-tag-list-gap: 5px;
-  --layout-tag-chip-padding: 2px 9px;
-  --layout-overlay-tag-padding: 1px 10px;
-  --layout-overlay-tag-min-height: 20px;
+  --layout-meta-padding-bottom: 1px;
+  --layout-tag-list-gap: 4px;
+  --layout-tag-chip-padding: 1px 7px;
+  --layout-overlay-tag-padding: 1px 8px;
+  --layout-overlay-tag-min-height: 18px;
   --layout-overlay-tag-font-size: 10px;
-  --layout-overlay-tag-line-height: 1;
-  --layout-overlay-tag-reserve: 24px;
+  --layout-overlay-tag-line-height: 1.1;
+  --layout-overlay-tag-reserve: 22px;
   --tag-chip-font-weight: 600;
   --tag-chip-font-family: var(--font-main);
   --tag-chip-text-transform: lowercase;
-  --tag-chip-letter-spacing: 0.03em;
+  --tag-chip-letter-spacing: 0.02em;
 
-  /* Pro (dark) */
-  --term-bg: #1e1e1e;
-  --term-bg-elevated: #252525;
-  --term-bg-input: #2a2a2a;
-  --term-fg: #ececec;
-  --term-fg-dim: #a1a1a1;
-  --term-fg-muted: #6e6e6e;
-  --term-green: #32d74b;
-  --term-blue: #0a84ff;
-  --term-border: #3a3a3c;
-  --term-border-subtle: #2c2c2e;
-  --term-selection: rgba(10, 132, 255, 0.28);
+  /* zsh / GitHub Dark–leaning ANSI */
+  --term-bg: #0d1117;
+  --term-bg-elevated: #010409;
+  --term-bg-input: #0d1117;
+  --term-fg: #e6edf3;
+  --term-fg-dim: #8b949e;
+  --term-fg-muted: #6e7681;
+  --term-green: #3fb950;
+  --term-cyan: #39d353;
+  --term-blue: #58a6ff;
+  --term-yellow: #d29922;
+  --term-magenta: #d2a8ff;
+  --term-red: #ff7b72;
+  --term-border: #30363d;
+  --term-border-subtle: #21262d;
+  --term-selection: rgba(56, 139, 253, 0.22);
+  --term-prompt: #3fb950;
 
   --bg-body: var(--term-bg);
   --bg-window: var(--term-bg);
   --bg-content: var(--term-bg);
-  --bg-toolbar: var(--term-bg);
+  --bg-toolbar: var(--term-bg-elevated);
   --bg-panel: var(--term-bg-elevated);
   --bg-input: var(--term-bg-input);
   --bg-element: transparent;
-  --bg-button: var(--term-bg-elevated);
+  --bg-button: transparent;
 
   --text-primary: var(--term-fg);
   --text-secondary: var(--term-fg-dim);
   --text-muted: var(--term-fg-muted);
 
   --accent-color: var(--term-green);
-  --accent-color-rgb: 50, 215, 75;
-  --accent-hover: #28c840;
-  --accent-soft: rgba(50, 215, 75, 0.14);
+  --accent-color-rgb: 63, 185, 80;
+  --accent-hover: #56d364;
+  --accent-soft: rgba(63, 185, 80, 0.14);
 
   --line-soft: var(--term-border-subtle);
   --line-strong: var(--term-border);
 
   --shadow-xs: none;
   --shadow-sm: none;
-  --shadow-md: 0 10px 32px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.4);
-  --shadow-inset: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-md: 0 12px 36px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+  --shadow-inset: none;
 
   --shell-background: var(--term-bg);
-  --shell-border: 1px solid #333336;
-  --shell-shadow: 0 12px 36px rgba(0, 0, 0, 0.42);
+  --shell-border: 1px solid #30363d;
+  --shell-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
 
   --toolbar-border: 1px solid var(--term-border-subtle);
   --toolbar-shadow: none;
 
-  --input-border: 1px solid var(--term-border);
-  --input-radius: 4px;
+  --input-border: none;
+  --input-radius: 0;
   --input-shadow: none;
-  --input-focus-border-color: var(--term-green);
-  --input-focus-shadow: 0 0 0 2px rgba(50, 215, 75, 0.18);
+  --input-focus-border-color: transparent;
+  --input-focus-shadow: none;
   --input-font-weight: 400;
 
   --button-border: 1px solid var(--term-border);
-  --button-radius: 4px;
+  --button-radius: 0;
   --button-shadow: none;
   --button-hover-shadow: none;
   --button-hover-transform: none;
   --button-active-shadow: none;
   --button-active-transform: none;
-  --button-active-filled-background: rgba(50, 215, 75, 0.14);
+  --button-active-filled-background: rgba(63, 185, 80, 0.12);
   --button-active-filled-color: var(--term-green);
-  --button-active-filled-border-color: rgba(50, 215, 75, 0.45);
+  --button-active-filled-border-color: rgba(63, 185, 80, 0.4);
   --button-active-filled-shadow: none;
   --button-text-transform: none;
   --button-font-weight: 500;
@@ -162,35 +167,35 @@ body.theme-terminal {
   --card-selected-outline: none;
 
   --panel-border: 1px solid var(--term-border);
-  --panel-radius: 6px;
+  --panel-radius: 0;
   --panel-shadow: none;
   --panel-header-background: var(--term-bg-elevated);
   --panel-divider-color: var(--term-border-subtle);
 
   --data-panel-border: 1px solid var(--term-border);
-  --data-panel-radius: 4px;
+  --data-panel-radius: 0;
   --data-panel-shadow: none;
-  --data-panel-hover-background: var(--term-bg-input);
+  --data-panel-hover-background: rgba(255, 255, 255, 0.03);
 
   --segmented-border: 1px solid var(--term-border);
-  --segmented-radius: 4px;
+  --segmented-radius: 0;
   --segmented-shadow: none;
-  --segment-radius: 3px;
+  --segment-radius: 0;
   --segment-font-weight: 500;
   --segment-text-transform: none;
-  --segment-active-background: var(--term-bg-input);
+  --segment-active-background: rgba(63, 185, 80, 0.12);
   --segment-active-color: var(--term-green);
-  --segment-active-shadow: inset 0 0 0 1px var(--term-border);
+  --segment-active-shadow: none;
 
   --keycap-border: 1px solid var(--term-border);
-  --keycap-radius: 4px;
+  --keycap-radius: 0;
   --keycap-shadow: none;
 
   --tags-border: 1px solid var(--term-border);
-  --tags-radius: 4px;
+  --tags-radius: 0;
   --tags-shadow: none;
-  --tag-chip-border: 1px solid rgba(255, 255, 255, 0.1);
-  --tag-chip-radius: 4px;
+  --tag-chip-border: 1px solid transparent;
+  --tag-chip-radius: 0;
   --tag-chip-shadow: none;
   --tag-chip-hover-shadow: none;
   --tag-chip-hover-transform: none;
@@ -198,37 +203,37 @@ body.theme-terminal {
   --tag-chip-active-transform: none;
 
   --menu-border: 1px solid var(--term-border);
-  --menu-radius: 4px;
-  --menu-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --menu-radius: 0;
+  --menu-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   --menu-item-hover-background: var(--term-green);
-  --menu-item-hover-color: #0d1a0f;
+  --menu-item-hover-color: #0d1117;
 
   --modal-border: 1px solid var(--term-border);
-  --modal-radius: 6px;
-  --modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  --modal-radius: 0;
+  --modal-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
   --dialog-button-border: 1px solid var(--term-border);
-  --dialog-button-radius: 4px;
+  --dialog-button-radius: 0;
   --dialog-button-shadow: none;
   --dialog-button-hover-shadow: none;
   --dialog-button-hover-transform: none;
   --dialog-button-active-shadow: none;
   --dialog-button-active-transform: none;
 
-  --scrollbar-size: 8px;
-  --scrollbar-size-thin: 4px;
-  --scrollbar-radius: 4px;
+  --scrollbar-size: 6px;
+  --scrollbar-size-thin: 3px;
+  --scrollbar-radius: 0;
   --scrollbar-track-background: var(--term-bg);
-  --scrollbar-thumb-color: #5a5a5c;
+  --scrollbar-thumb-color: #484f58;
   --scrollbar-thumb-hover-color: var(--term-green);
 
   --queue-border: 1px solid var(--term-border);
-  --queue-radius: 4px;
-  --queue-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --queue-radius: 0;
+  --queue-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
   --queue-count-rotate: 0deg;
   --queue-button-text-transform: none;
 
-  --reset-button-border: 1px solid rgba(255, 95, 86, 0.35);
-  --reset-button-radius: 4px;
+  --reset-button-border: 1px solid rgba(255, 123, 114, 0.4);
+  --reset-button-radius: 0;
   --reset-button-shadow: none;
 }
 
@@ -258,25 +263,32 @@ body.theme-terminal::after {
   display: none !important;
 }
 
-/* Basic (light) */
+/* Light “Basic” terminal */
 :root.light-mode.theme-terminal,
 body.light-mode.theme-terminal {
   --term-bg: #ffffff;
-  --term-bg-elevated: #f5f5f7;
+  --term-bg-elevated: #f6f8fa;
   --term-bg-input: #ffffff;
-  --term-fg: #1d1d1f;
-  --term-fg-dim: #6e6e73;
-  --term-fg-muted: #86868b;
-  --term-green: #248a3d;
-  --term-border: #d1d1d6;
-  --term-border-subtle: #e5e5ea;
-  --term-selection: rgba(0, 122, 255, 0.18);
+  --term-fg: #1f2328;
+  --term-fg-dim: #656d76;
+  --term-fg-muted: #8c959f;
+  --term-green: #1a7f37;
+  --term-cyan: #0550ae;
+  --term-blue: #0969da;
+  --term-yellow: #9a6700;
+  --term-magenta: #8250df;
+  --term-red: #cf222e;
+  --term-border: #d0d7de;
+  --term-border-subtle: #eaeef2;
+  --term-selection: rgba(9, 105, 218, 0.14);
+  --term-prompt: #1a7f37;
 
-  --layout-item-hover-background: rgba(0, 0, 0, 0.04);
+  --layout-item-hover-background: rgba(26, 127, 55, 0.06);
   --layout-item-divider: 1px solid rgba(0, 0, 0, 0.05);
 
-  --shell-border: 1px solid #d1d1d6;
+  --shell-border: 1px solid #d0d7de;
   --shell-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --menu-item-hover-color: #ffffff;
 }
 
 body.theme-terminal,
@@ -286,37 +298,140 @@ body.theme-terminal .item-content,
 body.theme-terminal .item-meta,
 body.theme-terminal .preview-text,
 body.theme-terminal .settings-group,
-body.theme-terminal .theme-choice-title {
+body.theme-terminal .theme-choice-title,
+body.theme-terminal .header-title,
+body.theme-terminal .item-note,
+body.theme-terminal .tag-manager-page {
   font-family: var(--font-main);
   font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+}
+
+/* Title */
+.theme-terminal .header-title {
+  color: var(--term-fg-dim);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* Command-line search */
+.theme-terminal .search-reveal {
+  border-bottom: 1px solid var(--term-border-subtle);
+  background: var(--term-bg);
 }
 
 .theme-terminal .search-input {
-  caret-color: var(--term-green);
+  caret-color: var(--term-prompt);
   font-family: var(--font-main);
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  color: var(--term-fg);
+  padding-left: 36px;
+}
+
+.theme-terminal .search-input:focus {
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .theme-terminal .search-input::placeholder {
   color: var(--term-fg-muted);
   opacity: 1;
+  font-style: italic;
+}
+
+.theme-terminal .search-prompt {
+  color: var(--term-prompt);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+/* Scrollback rows */
+.theme-terminal .history-item {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border-left: 2px solid transparent;
+}
+
+.theme-terminal .history-item:hover {
+  background: var(--layout-item-hover-background) !important;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .theme-terminal .history-item.selected {
   transform: none !important;
+  background: var(--term-selection) !important;
+  border-left-color: var(--term-prompt);
+  box-shadow: none !important;
 }
 
-.theme-terminal .history-item.selected .item-meta::before {
-  content: "% ";
-  color: var(--term-green);
+/* Prompt before source app: ➜ Chrome */
+.theme-terminal .history-item .app-info::before {
+  content: "➜ ";
+  color: var(--term-fg-muted);
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.theme-terminal .history-item:hover .app-info::before,
+.theme-terminal .history-item.selected .app-info::before {
+  color: var(--term-prompt);
+}
+
+.theme-terminal .history-item .app-info span {
+  color: var(--term-blue);
   font-weight: 600;
+}
+
+.theme-terminal .history-item.selected .app-info span {
+  color: var(--term-cyan);
+}
+
+.theme-terminal .item-meta-right-info,
+.theme-terminal .item-time,
+.theme-terminal .meta-time {
+  color: var(--term-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-terminal .content-preview,
+.theme-terminal .preview-text,
+.theme-terminal .card-body-text {
+  color: var(--term-fg);
+}
+
+.theme-terminal .item-note-text,
+.theme-terminal .card-note-text {
+  color: var(--term-fg-muted);
+  font-style: italic;
+}
+
+.theme-terminal .item-note-text::before,
+.theme-terminal .card-note-text::before {
+  content: "# ";
+  color: var(--term-fg-muted);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.theme-terminal .item-note-icon,
+.theme-terminal .card-note-icon {
+  display: none;
 }
 
 .theme-terminal .btn-icon {
   color: var(--term-fg-dim);
+  border-radius: 0;
 }
 
-.theme-terminal .btn-icon:hover {
-  color: var(--term-fg);
+.theme-terminal .btn-icon:hover,
+.theme-terminal .btn-icon.active {
+  color: var(--term-green);
+  background: rgba(63, 185, 80, 0.1);
 }
 
 .theme-terminal .segment-btn.active {
@@ -324,11 +439,41 @@ body.theme-terminal .theme-choice-title {
 }
 
 .theme-terminal .settings-choice-grid {
-  gap: 6px;
+  gap: 4px;
 }
 
 .theme-terminal .theme-choice-btn {
-  border-radius: 4px;
+  border-radius: 0;
   font-family: var(--font-main);
   font-size: 12px;
+}
+
+/* Empty / status copy like shell messages */
+.theme-terminal .empty-state,
+.theme-terminal .advanced-empty-title {
+  color: var(--term-fg-dim);
+  font-family: var(--font-main);
+}
+
+.theme-terminal .advanced-empty-text::before {
+  content: "# ";
+  color: var(--term-prompt);
+}
+
+/* Settings panels: hard edges */
+.theme-terminal .settings-group,
+.theme-terminal .modal-panel,
+.theme-terminal .tags-dropdown {
+  border-radius: 0 !important;
+}
+
+.theme-terminal .tag-manager-card {
+  border-radius: 0;
+  background: transparent;
+  border-color: var(--term-border-subtle);
+}
+
+.theme-terminal .tag-manager-card:hover {
+  border-color: rgba(63, 185, 80, 0.35);
+  box-shadow: none;
 }

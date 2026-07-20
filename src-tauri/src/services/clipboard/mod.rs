@@ -11,22 +11,28 @@ use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "macos")]
 const MAX_MACOS_TEXT_BYTES: usize = 128 * 1024;
-#[cfg(target_os = "macos")]
-const MIN_CLIPBOARD_EVENT_INTERVAL_MS: u64 = 40;
-
 fn build_rich_image_fallback_data_url(
     width: usize,
     height: usize,
     rgba_bytes: &[u8],
 ) -> Option<String> {
+    let png_bytes = encode_clipboard_image_to_png(width, height, rgba_bytes)?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(png_bytes);
+    Some(format!("data:image/png;base64,{}", b64))
+}
+
+fn encode_clipboard_image_to_png(
+    width: usize,
+    height: usize,
+    rgba_bytes: &[u8],
+) -> Option<Vec<u8>> {
     let img_buf = image::RgbaImage::from_raw(width as u32, height as u32, rgba_bytes.to_vec())?;
     let mut bytes: Vec<u8> = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut bytes);
     img_buf
         .write_to(&mut cursor, image::ImageFormat::Png)
         .ok()?;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
-    Some(format!("data:image/png;base64,{}", b64))
+    Some(bytes)
 }
 
 pub fn start_clipboard_monitor(app_handle: AppHandle) {
@@ -47,13 +53,11 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
     struct MonitorState {
         last_image_hash: u64,
         last_content_hash: u64,
-        last_process_time: u64,
     }
 
     let state = Arc::new(Mutex::new(MonitorState {
         last_image_hash,
         last_content_hash: 0,
-        last_process_time: 0,
     }));
 
     let app_clone = app_handle.clone();
@@ -71,9 +75,19 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
         // 2. We don't use sequence check on macOS as we rely on polling/listener triggering.
 
-        // Give source app (especially Excel) a brief moment to finish writing.
+        // Snapshot file URLs immediately. Finder can replace the pasteboard
+        // again while we wait for richer text formats, making an earlier file
+        // event otherwise observe a later file and lose the intermediate one.
         #[cfg(target_os = "macos")]
-        std::thread::sleep(std::time::Duration::from_millis(8));
+        let clipboard_files_snapshot =
+            crate::infrastructure::macos_api::clipboard::get_clipboard_files();
+
+        // Give source apps (especially Excel) a brief moment to finish writing
+        // non-file payloads. File URLs are already complete in the event snapshot.
+        #[cfg(target_os = "macos")]
+        if clipboard_files_snapshot.is_none() {
+            std::thread::sleep(std::time::Duration::from_millis(8));
+        }
         #[cfg(not(target_os = "macos"))]
         std::thread::sleep(std::time::Duration::from_millis(20));
 
@@ -88,19 +102,12 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         #[cfg(target_os = "macos")]
         let text_from_clipboard = crate::infrastructure::macos_api::clipboard::get_clipboard_text();
 
-        // 3. Content-based deduplication with time window (for Chrome address bar, etc.)
-        // Some apps trigger multiple clipboard updates with different sequence numbers
-        // but identical content within a short time window
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
-        // Storm guard: drop extremely dense events to avoid UI stalls and memory spikes.
         #[cfg(target_os = "macos")]
-        if now.saturating_sub(monitor_state.last_process_time) < MIN_CLIPBOARD_EVENT_INTERVAL_MS {
-            return;
-        }
+        let clipboard_image = clipboard
+            .as_mut()
+            .and_then(|cb| cb.get_image().ok());
+        #[cfg(not(target_os = "macos"))]
+        let clipboard_image = clipboard.get_image().ok();
 
         // Calculate hash of current clipboard content
         let current_content_hash = {
@@ -110,6 +117,9 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             // Hash text content if available
             #[cfg(target_os = "macos")]
             {
+                if let Some(file_paths) = clipboard_files_snapshot.as_ref() {
+                    file_paths.hash(&mut hasher);
+                }
                 if let Some(text) = &text_from_clipboard {
                     if text.len() > MAX_MACOS_TEXT_BYTES {
                         "__TEXT_TOO_LARGE__".hash(&mut hasher);
@@ -132,15 +142,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                 text.hash(&mut hasher);
             }
 
-            // Also consider image hash if present
-            #[cfg(target_os = "macos")]
-            if let Some(cb) = clipboard.as_mut() {
-                if let Ok(image) = cb.get_image() {
-                    image.bytes.hash(&mut hasher);
-                }
-            }
-            #[cfg(not(target_os = "macos"))]
-            if let Ok(image) = clipboard.get_image() {
+            if let Some(image) = &clipboard_image {
                 image.bytes.hash(&mut hasher);
             }
 
@@ -153,7 +155,6 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         }
 
         monitor_state.last_content_hash = current_content_hash;
-        monitor_state.last_process_time = now;
 
         let mut handled = false;
 
@@ -162,9 +163,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         // 1. Check Files (macOS)
         #[cfg(target_os = "macos")]
         {
-            if let Some(file_paths) =
-                crate::infrastructure::macos_api::clipboard::get_clipboard_files()
-            {
+            if let Some(file_paths) = clipboard_files_snapshot {
                 let settings = app.state::<SettingsState>();
                 if settings.capture_files.load(Ordering::Relaxed) {
                     process_new_entry(&app, ClipboardData::Files(file_paths), None);
@@ -225,12 +224,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             // Rich text wins over image when rich HTML exists; image remains fallback for pure image content.
             if !has_rich_html {
                 if !handled {
-                    #[cfg(target_os = "macos")]
-                    let image_result = clipboard.as_mut().and_then(|cb| cb.get_image().ok());
-                    #[cfg(not(target_os = "macos"))]
-                    let image_result = clipboard.get_image().ok();
-
-                    if let Some(image) = image_result {
+                    if let Some(image) = clipboard_image.as_ref() {
                         let mut hasher = std::collections::hash_map::DefaultHasher::new();
                         use std::hash::{Hash, Hasher};
                         image.bytes.hash(&mut hasher);
@@ -253,28 +247,17 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                             {
                                 crate::LAST_APP_SET_HASH.store(0, Ordering::SeqCst);
                                 crate::LAST_APP_SET_HASH_ALT.store(0, Ordering::SeqCst);
-                            } else if let Some(img_buf) = image::RgbaImage::from_raw(
-                                image.width as u32,
-                                image.height as u32,
-                                image.bytes.to_vec(),
+                            } else if let Some(png_bytes) = encode_clipboard_image_to_png(
+                                image.width,
+                                image.height,
+                                &image.bytes,
                             ) {
-                                let mut bytes: Vec<u8> = Vec::new();
-                                let mut cursor = std::io::Cursor::new(&mut bytes);
-                                if img_buf
-                                    .write_to(&mut cursor, image::ImageFormat::Png)
-                                    .is_ok()
-                                {
-                                    let b64 =
-                                        base64::engine::general_purpose::STANDARD.encode(bytes);
-                                    process_new_entry(
-                                        &app,
-                                        ClipboardData::Image {
-                                            data_url: format!("data:image/png;base64,{}", b64),
-                                        },
-                                        None,
-                                    );
-                                    handled = true;
-                                }
+                                process_new_entry(
+                                    &app,
+                                    ClipboardData::Image { png_bytes },
+                                    None,
+                                );
+                                handled = true;
                             }
                             monitor_state.last_image_hash = hash;
                         }
@@ -335,8 +318,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                     if rich_text_enabled {
                         if let Some(mut html) = payload.html {
                             if !html.trim().is_empty() {
-                                let image_opt =
-                                    clipboard.as_mut().and_then(|cb| cb.get_image().ok());
+                                let image_opt = clipboard_image.as_ref();
                                 if let Some(image) = image_opt {
                                     if utils::should_attach_rich_image_fallback_on_capture(
                                         &active_app.app_name,
@@ -416,7 +398,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                             crate::infrastructure::macos_api::clipboard::get_clipboard_html()
                         {
                             if !html.trim().is_empty() {
-                                if let Ok(image) = clipboard.get_image() {
+                                if let Some(image) = clipboard_image.as_ref() {
                                     #[cfg(target_os = "windows")]
                                     let capture_source = {
                                         let info = crate::infrastructure::windows_api::window_tracker::get_clipboard_source_app_info();

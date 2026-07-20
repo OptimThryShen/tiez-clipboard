@@ -607,6 +607,9 @@ async fn handle_window_focus_for_paste(app_handle: &tauri::AppHandle) -> AppResu
         crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         if !window_pinned {
             let _ = window.set_always_on_top(false);
+            #[cfg(target_os = "macos")]
+            let _ = crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
+            #[cfg(not(target_os = "macos"))]
             let _ = window.hide();
             crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
             crate::app::window_manager::release_modifier_keys();
@@ -1012,10 +1015,14 @@ fn copy_image_bytes_to_clipboard(
 
 async fn copy_text_with_retry(content: &str) -> AppResult<()> {
     println!("[DEBUG] Copying text to clipboard: {} chars", content.len());
+    // Use the platform line-ending conversion without trimming. In particular,
+    // trailing spaces and tabs are part of the clipboard payload and must survive
+    // a history-item click exactly as captured.
+    let paste_text = normalize_plain_text_for_clipboard_paste(content);
 
     #[cfg(target_os = "macos")]
     {
-        crate::infrastructure::macos_api::clipboard::set_clipboard_text_and_html(content, "")
+        crate::infrastructure::macos_api::clipboard::set_clipboard_text_and_html(&paste_text, "")
             .map_err(AppError::Internal)?;
         return Ok(());
     }
@@ -1026,7 +1033,7 @@ async fn copy_text_with_retry(content: &str) -> AppResult<()> {
         while retries > 0 {
             let res = {
                 let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-                clipboard.set_text(content.to_string())
+                clipboard.set_text(paste_text.clone())
             };
 
             match res {
@@ -1091,6 +1098,10 @@ async fn perform_paste_action(
             if let Some(window) = app_handle.get_webview_window("main") {
                 #[cfg(not(target_os = "windows"))]
                 crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
+                #[cfg(target_os = "macos")]
+                let _ =
+                    crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
+                #[cfg(not(target_os = "macos"))]
                 let _ = window.hide();
                 crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
                 crate::app::window_manager::release_modifier_keys();
@@ -1130,14 +1141,17 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
         return;
     }
 
-    if let Some(window) = app_handle.get_webview_window("main") {
+    if let Some(_window) = app_handle.get_webview_window("main") {
         let _ = app_handle.emit("force-hide-compact-preview", ());
         if let Some(compact_preview) = app_handle.get_webview_window("compact-preview") {
             let _ = compact_preview.hide();
         }
         #[cfg(target_os = "windows")]
-        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
-        let _ = window.hide();
+        crate::infrastructure::macos_api::window::set_window_focusable(&_window, false);
+        #[cfg(target_os = "macos")]
+        let _ = crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
+        #[cfg(not(target_os = "macos"))]
+        let _ = _window.hide();
         crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
         crate::NAVIGATION_ENABLED.store(false, Ordering::Relaxed); // Disable navigation like hide_window_cmd does
         crate::app::window_manager::release_modifier_keys();
@@ -1646,9 +1660,7 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
         }
 
         if !crate::infrastructure::macos_api::permissions::has_accessibility_permission() {
-            println!("[WARN] Accessibility permission missing; requesting permission prompt");
-            let _ =
-                crate::infrastructure::macos_api::permissions::request_accessibility_permission();
+            println!("[WARN] Accessibility permission missing; open Settings → Privacy → Accessibility");
             return;
         }
 

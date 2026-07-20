@@ -42,6 +42,7 @@ interface UseClipboardItemRendererOptions {
     tags?: string[]
   ) => Promise<void>;
   selectItemByIndex: (index: number) => void;
+  highlightItemByIndex: (index: number) => void;
   setRevealedIds: Dispatch<SetStateAction<Set<number>>>;
   openContent: (item: ClipboardEntry) => void;
   togglePin: (event: MouseEvent, id: number, isPinned: boolean) => void;
@@ -64,7 +65,7 @@ type RenderItemContent = (
 export const useClipboardItemRenderer = ({
   privacyProtection,
   revealedIds,
-  isKeyboardMode,
+  isKeyboardMode: _isKeyboardMode,
   selectedItemId,
   isWindowPinned,
   editingTagsId,
@@ -88,6 +89,7 @@ export const useClipboardItemRenderer = ({
   setAiOptionsOpenId,
   copyToClipboard,
   selectItemByIndex,
+  highlightItemByIndex,
   setRevealedIds,
   openContent,
   togglePin,
@@ -115,7 +117,7 @@ export const useClipboardItemRenderer = ({
           id={`clipboard-item-${item.id}`}
           key={item.id}
           item={item}
-          isSelected={isKeyboardMode && selectedItemId !== null && item.id === selectedItemId}
+          isSelected={selectedItemId !== null && item.id === selectedItemId}
           windowPinned={isWindowPinned}
           isSensitiveHidden={!!isSensitiveHidden}
           isRevealed={revealedIds.has(item.id)}
@@ -135,6 +137,7 @@ export const useClipboardItemRenderer = ({
           sensitiveMaskEmailDomain={sensitiveMaskEmailDomain}
           quickPasteHint={quickPasteHintsById[item.id]}
           onSelect={() => selectItemByIndex(index)}
+          onHover={() => highlightItemByIndex(index)}
           onCopy={(withFormat) =>
             copyToClipboard(item.id, item.content, item.content_type, withFormat, item.is_pinned, item.tags || [])
           }
@@ -223,7 +226,6 @@ export const useClipboardItemRenderer = ({
     [
       privacyProtection,
       revealedIds,
-      isKeyboardMode,
       selectedItemId,
       isWindowPinned,
       editingTagsId,
@@ -247,6 +249,7 @@ export const useClipboardItemRenderer = ({
       setAiOptionsOpenId,
       copyToClipboard,
       selectItemByIndex,
+      highlightItemByIndex,
       setRevealedIds,
       openContent,
       togglePin,

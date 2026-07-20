@@ -115,8 +115,31 @@ pub fn init_db(path: &str) -> Result<Connection> {
 
 // save_entry removed (migrated to repository)
 
-pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<String> {
+pub fn save_image_bytes_to_file(png_bytes: &[u8], data_dir: &std::path::Path) -> Option<String> {
     use std::io::Write;
+
+    let attachments_dir = data_dir.join("attachments");
+    if !attachments_dir.exists() {
+        let _ = std::fs::create_dir_all(&attachments_dir);
+    }
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::hash::{Hash, Hasher};
+    png_bytes.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    let file_name = format!("img_{:x}.png", hash);
+    let file_path = attachments_dir.join(&file_name);
+
+    if !file_path.exists() {
+        let mut file = std::fs::File::create(&file_path).ok()?;
+        file.write_all(png_bytes).ok()?;
+    }
+
+    Some(file_path.to_string_lossy().to_string())
+}
+
+pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<String> {
     let parts: Vec<&str> = data_url.splitn(2, ',').collect();
     if parts.len() < 2 {
         return None;
@@ -126,25 +149,20 @@ pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<
         .decode(parts[1])
         .ok()?;
 
-    let attachments_dir = data_dir.join("attachments");
-    if !attachments_dir.exists() {
-        let _ = std::fs::create_dir_all(&attachments_dir);
+    save_image_bytes_to_file(&decoded, data_dir)
+}
+
+pub fn calc_image_hash_from_bytes(bytes: &[u8]) -> Option<i64> {
+    if let Ok(img) = image::load_from_memory(bytes) {
+        let thumb = img.resize_exact(32, 32, image::imageops::FilterType::Nearest);
+        return Some(calc_visual_hash(&thumb));
     }
 
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    decoded.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    let file_name = format!("img_{:x}.png", hash);
-    let file_path = attachments_dir.join(&file_name);
-
-    if !file_path.exists() {
-        let mut file = std::fs::File::create(&file_path).ok()?;
-        file.write_all(&decoded).ok()?;
-    }
-
-    Some(file_path.to_string_lossy().to_string())
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Some(hasher.finish() as i64)
 }
 
 // get_history removed (migrated to repository)

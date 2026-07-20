@@ -1,6 +1,5 @@
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
-use crate::database::is_text_type;
-use crate::database::DbState;
+use crate::database::{is_text_type, save_image_bytes_to_file, calc_image_hash_from_bytes, DbState};
 use crate::domain::models::ClipboardEntry;
 #[cfg(target_os = "macos")]
 use crate::infrastructure::macos_api::window::get_active_app_snapshot;
@@ -16,7 +15,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub enum ClipboardData {
     Text(String),
     RichText { text: String, html: String },
-    Image { data_url: String },
+    Image { png_bytes: Vec<u8> },
     Files(Vec<String>),
 }
 
@@ -30,6 +29,8 @@ pub struct PipelineContext {
     pub should_stop: bool,
     pub pending_removals: Vec<i64>,
     pub reuse_session_id: Option<i64>,
+    pub image_png_bytes: Option<Vec<u8>>,
+    pub image_content_hash: Option<i64>,
 }
 
 impl PipelineContext {
@@ -66,6 +67,8 @@ impl PipelineContext {
             should_stop: false,
             pending_removals: Vec::new(),
             reuse_session_id: None,
+            image_png_bytes: None,
+            image_content_hash: None,
         }
     }
 }
@@ -121,7 +124,10 @@ impl PipelineStage for DiscoveryStage {
                 };
                 ("rich_text".to_string(), content, Some(html.clone()))
             }
-            ClipboardData::Image { data_url } => ("image".to_string(), data_url.clone(), None),
+            ClipboardData::Image { png_bytes } => {
+                ctx.image_png_bytes = Some(png_bytes.clone());
+                ("image".to_string(), String::new(), None)
+            }
             ClipboardData::Files(f) => {
                 let content = f.join("\n");
                 if f.len() == 1 {
@@ -209,6 +215,16 @@ impl PipelineStage for TransformationStage {
 
         // Normalize line endings only; preserve leading/trailing whitespace (#97).
         entry.content = entry.content.replace("\r\n", "\n");
+
+        if let Some(png_bytes) = ctx.image_png_bytes.take() {
+            ctx.image_content_hash = calc_image_hash_from_bytes(&png_bytes);
+            let app_data_dir = ctx.app_handle.state::<AppDataDir>();
+            let data_dir = app_data_dir.0.lock().unwrap().clone();
+            if let Some(path) = save_image_bytes_to_file(&png_bytes, &data_dir) {
+                entry.content = path;
+                entry.is_external = true;
+            }
+        }
 
         let app_cleanup_policies_raw = settings.app_cleanup_policies.lock().unwrap().clone();
         if !app_cleanup_policies_raw.trim().is_empty() {
@@ -487,7 +503,12 @@ impl PipelineStage for PersistenceStage {
             let data_dir = app_data_dir.0.lock().unwrap().clone();
             let conn = db_state.conn.lock().unwrap();
 
-            if let Ok(id) = db_state.repo.save_with_conn(&conn, entry, Some(&data_dir)) {
+            if let Ok(id) = db_state.repo.save_with_conn(
+                &conn,
+                entry,
+                Some(&data_dir),
+                ctx.image_content_hash,
+            ) {
                 entry.id = id;
                 if let Ok(deleted_ids) = db_state
                     .repo

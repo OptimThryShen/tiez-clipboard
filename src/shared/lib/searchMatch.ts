@@ -1,19 +1,28 @@
 import type { ClipboardEntry } from "../types";
+import type { ParsedSearchQuery } from "./searchQuery";
 
 const TEXT_TYPES = new Set(["text", "code", "url", "rich_text"]);
 
 export function entryMatchesSearch(
   item: ClipboardEntry,
-  search: string,
-  tagOnly: boolean
+  parsed: ParsedSearchQuery
 ): boolean {
-  const term = search.trim().toLowerCase();
-  if (!term) {
-    return true;
-  }
+  const { term, tagOnly, noteOnly } = parsed;
 
   if (tagOnly) {
+    if (!term) return false;
     return item.tags?.some((tag) => tag.toLowerCase() === term) ?? false;
+  }
+
+  if (noteOnly) {
+    const note = item.note?.trim() ?? "";
+    if (!note) return false;
+    if (!term) return true;
+    return note.toLowerCase().includes(term);
+  }
+
+  if (!term) {
+    return true;
   }
 
   if (item.tags?.some((tag) => tag.toLowerCase().includes(term))) {

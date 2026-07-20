@@ -47,6 +47,7 @@ body.theme-ink {
   --layout-search-padding-x: 20px;
   --layout-search-input-padding: 10px 14px 10px 36px;
   --layout-search-input-font-size: 14px;
+  --layout-tags-dropdown-font-size: 14px;
   --layout-search-icon-left: 14px;
   --layout-main-padding-y: 12px;
   --layout-main-padding-bottom: 16px;
@@ -322,6 +323,15 @@ body.theme-ink .header-title {
   color: var(--ink-muted);
   font-style: italic;
   opacity: 1;
+}
+
+.theme-ink .search-container:has(.search-input.dropdown-open) {
+  background: var(--ink-paper);
+  box-shadow: 0 8px 20px rgba(26, 26, 26, 0.05);
+}
+
+body.dark-mode.theme-ink .search-container:has(.search-input.dropdown-open) {
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
 }
 
 .theme-ink .history-item {

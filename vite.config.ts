@@ -30,6 +30,14 @@ export default defineConfig(async () => ({
   },
   build: {
     outDir: "dist/web",
-    emptyOutDir: true
+    emptyOutDir: true,
+    // Smaller production assets for embedding into the Tauri binary
+    target: "es2021",
+    minify: "esbuild",
+    cssMinify: true,
+    sourcemap: false,
+    reportCompressedSize: false,
+    // Keep one main chunk; Tauri loads from disk, not network
+    assetsInlineLimit: 4096,
   }
 }));

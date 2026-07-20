@@ -69,9 +69,7 @@ pub fn apply_window_vibrancy(app: &AppHandle, window: &WebviewWindow) {
 
     #[cfg(target_os = "macos")]
     {
-        use window_vibrancy::{
-            apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState,
-        };
+        use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
         let material = match theme.as_str() {
             "mica" => Some(NSVisualEffectMaterial::Sidebar),
@@ -217,11 +215,7 @@ fn position_window_follow_mouse(
             let my = m_pos.y;
             let mw = m_size.width as i32;
             let mh = m_size.height as i32;
-            if cursor_x >= mx
-                && cursor_x < mx + mw
-                && cursor_y >= my
-                && cursor_y < my + mh
-            {
+            if cursor_x >= mx && cursor_x < mx + mw && cursor_y >= my && cursor_y < my + mh {
                 target_monitor = Some(m.clone());
                 break;
             }
@@ -531,24 +525,30 @@ fn toggle_window_windows(app: &AppHandle) {
                 let _ = window.show();
             }
         }
+
+        let _ = app.emit("clipboard-shown", ());
     }
 }
 
 #[cfg(target_os = "macos")]
 fn toggle_window_macos(app_handle: &AppHandle) {
     if let Some(window) = app_handle.get_webview_window("main") {
-        let is_visible_anywhere = window.is_visible().unwrap_or(false);
-        let is_visible =
-            crate::infrastructure::macos_api::window::is_visible_on_active_space(&window);
+        let panel_available =
+            crate::infrastructure::macos_api::window::is_clipboard_panel_available(app_handle);
+        let is_visible = if panel_available {
+            crate::infrastructure::macos_api::window::is_clipboard_panel_visible()
+        } else {
+            window.is_visible().unwrap_or(false)
+        };
         let is_tucked = crate::app::setup::is_window_edge_tucked(&window);
 
         eprintln!(
-            "[macos-toggle] anywhere={} active_space={} tucked={}",
-            is_visible_anywhere, is_visible, is_tucked
+            "[macos-toggle] visible={} panel={} tucked={}",
+            is_visible, panel_available, is_tucked
         );
 
         if is_visible && !is_tucked {
-            eprintln!("[macos-toggle] hide on active space");
+            eprintln!("[macos-toggle] hide visible panel");
             let _ = app_handle.emit("force-hide-compact-preview", ());
             let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
             let _ = window.set_always_on_top(pinned);
@@ -564,17 +564,6 @@ fn toggle_window_macos(app_handle: &AppHandle) {
             NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
             NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
             return;
-        }
-
-        // A visible window can still belong to a different Space. Updating or
-        // showing it in that state makes macOS switch back to the old Space.
-        // Order it out first, then attach the hidden window to all Spaces before
-        // bringing it forward on the current (including fullscreen) Space.
-        if is_visible_anywhere && !is_visible {
-            eprintln!("[macos-toggle] hide on other space before show");
-            if !crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle) {
-                let _ = window.hide();
-            }
         }
 
         let (prev_app_name, prev_app_pid) =
@@ -618,6 +607,7 @@ fn toggle_window_macos(app_handle: &AppHandle) {
             crate::infrastructure::macos_api::window::present_overlay_above_fullscreen_async(
                 &window,
             );
+            let _ = app_handle.emit("clipboard-shown", ());
         }
         crate::infrastructure::macos_api::window::reinforce_overlay_above_fullscreen(&window);
         maybe_open_devtools(&window);
@@ -629,14 +619,6 @@ pub fn set_navigation_enabled(enabled: bool) -> Result<(), String> {
     NAVIGATION_ENABLED.store(enabled, Ordering::SeqCst);
     if !enabled {
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
-    }
-    Ok(())
-}
-
-#[tauri::command]
-pub fn set_macos_header_pass_height(height: f64) -> Result<(), String> {
-    if height.is_finite() && height > 0.0 {
-        MACOS_HEADER_PASS_HEIGHT.store(height.ceil() as u32, Ordering::Relaxed);
     }
     Ok(())
 }
@@ -671,9 +653,7 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
         // search/note/tag fields can receive typed characters.
         #[cfg(target_os = "macos")]
         {
-            use tauri_nspanel::ManagerExt;
-            if let Ok(panel) = app_handle.get_webview_panel("main") {
-                panel.make_key_window();
+            if crate::infrastructure::macos_api::window::make_clipboard_panel_key(&app_handle) {
                 return Ok(());
             }
         }
@@ -683,8 +663,7 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
+fn hide_window(app_handle: AppHandle, restore_focus: bool) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
         let _ = app_handle.emit("force-hide-compact-preview", ());
         if let Some(compact_preview) = app_handle.get_webview_window("compact-preview") {
@@ -708,9 +687,20 @@ pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
         let _ = window.hide();
         NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
         NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
-        let _ = restore_previous_app_focus(app_handle.clone());
+        if restore_focus {
+            let _ = restore_previous_app_focus(app_handle.clone());
+        }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn hide_window_cmd(app_handle: AppHandle) -> Result<(), String> {
+    hide_window(app_handle, true)
+}
+
+pub fn hide_window_on_resign(app_handle: AppHandle) -> Result<(), String> {
+    hide_window(app_handle, false)
 }
 
 #[tauri::command]
@@ -746,26 +736,25 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
 
         #[cfg(target_os = "macos")]
         {
-            use tauri_nspanel::ManagerExt;
-            // Settings / chat inputs call this on every focus. If the panel is
-            // already up, only makeKeyWindow — repeated show_and_make_key +
-            // set_focus steals the caret and blocks typing.
-            if let Ok(panel) = app_handle.get_webview_panel("main") {
-                let already_visible = window.is_visible().unwrap_or(false);
-                if already_visible {
-                    panel.make_key_window();
-                    maybe_open_devtools(&window);
-                    return Ok(());
-                }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+
+            if crate::infrastructure::macos_api::window::is_clipboard_panel_visible() {
+                let _ =
+                    crate::infrastructure::macos_api::window::make_clipboard_panel_key(&app_handle);
+                maybe_open_devtools(&window);
+                return Ok(());
             }
+
             if !crate::infrastructure::macos_api::window::show_clipboard_panel(&app_handle) {
                 let _ = window.show();
+                let _ = window.set_focus();
+                let _ = app_handle.emit("clipboard-shown", ());
             }
-            crate::infrastructure::macos_api::window::present_overlay_above_fullscreen_async(
-                &window,
-            );
             crate::infrastructure::macos_api::window::reinforce_overlay_above_fullscreen(&window);
-            // show_clipboard_panel already make_key; skip Tauri set_focus.
             maybe_open_devtools(&window);
             return Ok(());
         }
@@ -773,8 +762,9 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
         {
             let _ = window.show();
             let _ = window.set_focus();
+            let _ = app_handle.emit("clipboard-shown", ());
             maybe_open_devtools(&window);
-            Ok(())
+            return Ok(());
         }
     } else {
         Err("Main window not found".to_string())

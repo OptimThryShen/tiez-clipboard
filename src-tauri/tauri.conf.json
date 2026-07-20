@@ -32,11 +32,12 @@
         "backgroundColor": "#00000000",
         "alwaysOnTop": false,
         "decorations": false,
-        "devtools": true,
+        "devtools": false,
         "skipTaskbar": true,
         "visible": true,
         "visibleOnAllWorkspaces": true,
         "dragDropEnabled": false,
+        "acceptFirstMouse": true,
         "focusable": true
       }
     ],

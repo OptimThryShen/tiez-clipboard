@@ -318,6 +318,26 @@ pub fn activate_app_by_pid(pid: i32) -> bool {
     })
 }
 
+/// Soft activation for overlay show — restores keyboard without yanking windows.
+#[cfg(target_os = "macos")]
+#[allow(deprecated)]
+pub fn activate_app_by_pid_soft(pid: i32) -> bool {
+    use objc2_app_kit::NSApplicationActivationOptions;
+    autoreleasepool(|_| {
+        let workspace = NSWorkspace::sharedWorkspace();
+        let apps = workspace.runningApplications();
+        for i in 0..apps.count() {
+            let app = apps.objectAtIndex(i);
+            if app.processIdentifier() == pid {
+                // Empty options: prefer keyboard restore without forcing our
+                // panel under other apps or stealing the next click.
+                return app.activateWithOptions(NSApplicationActivationOptions::empty());
+            }
+        }
+        false
+    })
+}
+
 #[cfg(target_os = "macos")]
 #[allow(deprecated)]
 pub fn activate_app_by_name(name: &str) -> bool {

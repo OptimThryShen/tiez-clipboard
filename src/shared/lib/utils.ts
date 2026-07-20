@@ -163,13 +163,35 @@ export const getTagColor = (tag: string, theme: string) => {
   if (theme === "retro") {
     // Retro: Slightly desaturated, lower lightness for mechanical look
     return `hsl(${hue}, 60%, 40%)`;
-  } else {
-    // Modern: Vibrant for Mica/Acrylic
-    return `hsl(${hue}, 80%, 55%)`;
   }
+
+  if (theme === "receipt") {
+    // Thermal ticket: warm gray wash, almost no chroma
+    const lightness = 88 + (hue % 7);
+    const saturation = 3 + (hue % 4);
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  }
+
+  if (theme === "ink") {
+    // Ink wash: barely tinted paper tones
+    const lightness = 90 + (hue % 5);
+    const saturation = 4 + (hue % 5);
+    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  }
+
+  // Modern: Vibrant for Mica/Acrylic
+  return `hsl(${hue}, 80%, 55%)`;
 };
 
-export const getTagTextColor = (backgroundColor: string) => {
+export const getTagTextColor = (backgroundColor: string, theme?: string) => {
+  if (theme === "receipt") {
+    return "var(--rc-ink-fade, #6a6a6a)";
+  }
+
+  if (theme === "ink") {
+    return "var(--ink-dim, var(--text-secondary))";
+  }
+
   const rgb = parseColor(backgroundColor);
   if (!rgb) return "#ffffff";
   return getRelativeLuminance(rgb) > 0.6 ? "#111827" : "#ffffff";

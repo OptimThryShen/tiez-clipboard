@@ -91,29 +91,6 @@ pub fn get_active_app_info() -> (String, String) {
     (info.app_name, pid)
 }
 
-/// `WebviewWindow::is_visible` stays true when a window is visible on another
-/// Space. Use AppKit's active-Space and occlusion state for hotkey toggling.
-#[cfg(target_os = "macos")]
-pub fn is_visible_on_active_space(window: &tauri::WebviewWindow) -> bool {
-    use objc2_app_kit::{NSWindow, NSWindowOcclusionState};
-
-    let Ok(ns_window_ptr) = window.ns_window() else {
-        return window.is_visible().unwrap_or(false);
-    };
-    let ns_window = ns_window_ptr as *const NSWindow;
-    if ns_window.is_null() {
-        return false;
-    }
-
-    unsafe {
-        (*ns_window).isVisible()
-            && (*ns_window).isOnActiveSpace()
-            && (*ns_window)
-                .occlusionState()
-                .contains(NSWindowOcclusionState::Visible)
-    }
-}
-
 #[cfg(target_os = "macos")]
 tauri_nspanel::tauri_panel! {
     panel!(ClipboardPanel {
@@ -122,6 +99,10 @@ tauri_nspanel::tauri_panel! {
             can_become_key_window: true,
             can_become_main_window: false
         }
+    })
+
+    panel_event!(ClipboardPanelEventHandler {
+        window_did_resign_key(notification: &NSNotification) -> (),
     })
 }
 
@@ -159,12 +140,7 @@ pub fn setup_clipboard_panel(window: &tauri::WebviewWindow) -> Result<(), String
     // Keep NonactivatingPanel for fullscreen overlay, but preserve Resizable —
     // StyleMask::empty().nonactivating_panel() alone wiped the resize bit and
     // made the undecorated window edges undraggable.
-    panel.set_style_mask(
-        StyleMask::empty()
-            .nonactivating_panel()
-            .resizable()
-            .into(),
-    );
+    panel.set_style_mask(StyleMask::empty().nonactivating_panel().resizable().into());
     // Idle/hidden: move_to_active_space so the next show lands on the current Space
     // (including another app's fullscreen desktop).
     panel.set_collection_behavior(
@@ -174,13 +150,100 @@ pub fn setup_clipboard_panel(window: &tauri::WebviewWindow) -> Result<(), String
             .stationary()
             .into(),
     );
+    let initially_visible = panel.is_visible();
+    clipboard_panel_visible().store(initially_visible, AtomicOrdering::SeqCst);
+    if initially_visible {
+        let generation = overlay_show_generation().fetch_add(1, AtomicOrdering::SeqCst) + 1;
+        overlay_presented_generation().store(generation, AtomicOrdering::SeqCst);
+    }
+
+    let handler = ClipboardPanelEventHandler::new();
+    let app_handle = window.app_handle().clone();
+    handler.window_did_resign_key(move |_| {
+        if should_keep_clipboard_panel_visible() || !is_clipboard_panel_visible() {
+            return;
+        }
+
+        // AppKit can deliver a stale resign event during show_and_make_key. Check
+        // one run-loop later: a newer show changes the generation, while a real
+        // outside click leaves this panel visible but no longer key.
+        let generation = overlay_show_generation().load(AtomicOrdering::SeqCst);
+        let handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+            if overlay_show_generation().load(AtomicOrdering::SeqCst) != generation
+                || overlay_presented_generation().load(AtomicOrdering::SeqCst) != generation
+                || !is_clipboard_panel_visible()
+                || should_keep_clipboard_panel_visible()
+            {
+                return;
+            }
+
+            let panel_handle = handle.clone();
+            let _ = handle.run_on_main_thread(move || {
+                if overlay_show_generation().load(AtomicOrdering::SeqCst) != generation
+                    || overlay_presented_generation().load(AtomicOrdering::SeqCst) != generation
+                    || !is_clipboard_panel_visible()
+                    || should_keep_clipboard_panel_visible()
+                {
+                    return;
+                }
+
+                use tauri_nspanel::ManagerExt;
+                let Ok(panel) = panel_handle.get_webview_panel("main") else {
+                    clipboard_panel_visible().store(false, AtomicOrdering::SeqCst);
+                    return;
+                };
+
+                if !panel.is_visible() {
+                    return;
+                }
+
+                if panel.as_panel().isKeyWindow() {
+                    return;
+                }
+
+                eprintln!("[macos-overlay] panel resigned key; hide gen={generation}");
+                let hide_handle = panel_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = crate::app::window_manager::hide_window_on_resign(hide_handle);
+                });
+            });
+        });
+    });
+    panel.set_event_handler(Some(handler.as_ref()));
 
     eprintln!("[macos-overlay] main window converted to NSPanel");
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
+
+#[cfg(target_os = "macos")]
+fn clipboard_panel_visible() -> &'static AtomicBool {
+    static VISIBLE: AtomicBool = AtomicBool::new(false);
+    &VISIBLE
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_clipboard_panel_visible() -> bool {
+    clipboard_panel_visible().load(AtomicOrdering::SeqCst)
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_clipboard_panel_available(app: &AppHandle) -> bool {
+    use tauri_nspanel::ManagerExt;
+    app.get_webview_panel("main").is_ok()
+}
+
+#[cfg(target_os = "macos")]
+fn should_keep_clipboard_panel_visible() -> bool {
+    crate::global_state::IGNORE_BLUR.load(AtomicOrdering::Relaxed)
+        || crate::global_state::WINDOW_PINNED.load(AtomicOrdering::Relaxed)
+        || crate::global_state::IS_HIDDEN.load(AtomicOrdering::Relaxed)
+        || crate::global_state::CURRENT_DOCK.load(AtomicOrdering::Relaxed) != 0
+}
 
 /// Bumps on every show/hide so deferred reinforce work can cancel itself.
 #[cfg(target_os = "macos")]
@@ -189,32 +252,109 @@ fn overlay_show_generation() -> &'static AtomicU64 {
     &SHOW_GEN
 }
 
-/// Show the clipboard panel on the current Space / fullscreen desktop.
+#[cfg(target_os = "macos")]
+fn overlay_presented_generation() -> &'static AtomicU64 {
+    static PRESENTED_GEN: AtomicU64 = AtomicU64::new(0);
+    &PRESENTED_GEN
+}
+
+/// Show the non-activating panel and make it key without activating TieZ.
 #[cfg(target_os = "macos")]
 pub fn show_clipboard_panel(app: &AppHandle) -> bool {
+    use std::sync::atomic::Ordering;
     use tauri_nspanel::{CollectionBehavior, ManagerExt, PanelLevel};
 
-    let Ok(panel) = app.get_webview_panel("main") else {
+    if app.get_webview_panel("main").is_err() {
         eprintln!("[macos-overlay] get_webview_panel(main) failed");
         return false;
-    };
+    }
 
     let gen = overlay_show_generation().fetch_add(1, AtomicOrdering::SeqCst) + 1;
+    clipboard_panel_visible().store(true, AtomicOrdering::SeqCst);
 
-    panel.set_level(PanelLevel::Dock.value());
-    // can_join_all_spaces + full_screen_auxiliary: appear on the active fullscreen Space.
-    panel.set_collection_behavior(
-        CollectionBehavior::new()
-            .full_screen_auxiliary()
-            .can_join_all_spaces()
-            .stationary()
-            .into(),
-    );
-    // make_key so the first click reaches the webview (HID no longer synthesizes
-    // inside-panel clicks). nonactivating_panel still avoids activating the app.
-    panel.show_and_make_key();
-    eprintln!("[macos-overlay] panel.show_and_make_key() gen={gen}");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    crate::global_state::LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
+
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Match EcoPaste's one-frame delay so Dock/hotkey processing finishes
+        // before AppKit changes the key panel.
+        tokio::time::sleep(std::time::Duration::from_millis(16)).await;
+        if overlay_show_generation().load(AtomicOrdering::SeqCst) != gen
+            || !is_clipboard_panel_visible()
+        {
+            return;
+        }
+
+        let app_for_panel = handle.clone();
+        if let Err(err) = handle.run_on_main_thread(move || {
+            if overlay_show_generation().load(AtomicOrdering::SeqCst) != gen
+                || !is_clipboard_panel_visible()
+            {
+                return;
+            }
+
+            if let Ok(panel) = app_for_panel.get_webview_panel("main") {
+                panel.set_level(PanelLevel::Dock.value());
+                panel.show_and_make_key();
+                panel.set_collection_behavior(
+                    CollectionBehavior::new()
+                        .full_screen_auxiliary()
+                        .can_join_all_spaces()
+                        .stationary()
+                        .into(),
+                );
+                overlay_presented_generation().store(gen, AtomicOrdering::SeqCst);
+                crate::global_state::NAVIGATION_ENABLED.store(true, Ordering::SeqCst);
+                use tauri::Emitter;
+                let _ = app_for_panel.emit("clipboard-shown", ());
+                eprintln!("[macos-overlay] panel.show_and_make_key() gen={gen}");
+            } else if overlay_show_generation().load(AtomicOrdering::SeqCst) == gen {
+                clipboard_panel_visible().store(false, AtomicOrdering::SeqCst);
+                overlay_presented_generation().store(0, AtomicOrdering::SeqCst);
+            }
+        }) {
+            if overlay_show_generation().load(AtomicOrdering::SeqCst) == gen {
+                clipboard_panel_visible().store(false, AtomicOrdering::SeqCst);
+                overlay_presented_generation().store(0, AtomicOrdering::SeqCst);
+            }
+            eprintln!("[macos-overlay] schedule panel show failed: {err}");
+        }
+    });
     true
+}
+
+#[cfg(target_os = "macos")]
+pub fn make_clipboard_panel_key(app: &AppHandle) -> bool {
+    use tauri_nspanel::ManagerExt;
+
+    let handle = app.clone();
+    let app_for_panel = handle.clone();
+    handle
+        .run_on_main_thread(move || {
+            if let Ok(panel) = app_for_panel.get_webview_panel("main") {
+                panel.make_key_window();
+            }
+        })
+        .is_ok()
+}
+
+#[cfg(target_os = "macos")]
+pub fn resign_clipboard_panel_key(app: &AppHandle) -> bool {
+    use tauri_nspanel::ManagerExt;
+
+    let handle = app.clone();
+    let app_for_panel = handle.clone();
+    handle
+        .run_on_main_thread(move || {
+            if let Ok(panel) = app_for_panel.get_webview_panel("main") {
+                panel.resign_key_window();
+            }
+        })
+        .is_ok()
 }
 
 /// Hide the clipboard panel and re-arm move_to_active_space for the next show.
@@ -223,22 +363,36 @@ pub fn hide_clipboard_panel(app: &AppHandle) -> bool {
     use tauri_nspanel::{CollectionBehavior, ManagerExt};
 
     // Cancel reinforce retries from the previous show.
-    overlay_show_generation().fetch_add(1, AtomicOrdering::SeqCst);
+    let gen = overlay_show_generation().fetch_add(1, AtomicOrdering::SeqCst) + 1;
+    clipboard_panel_visible().store(false, AtomicOrdering::SeqCst);
+    overlay_presented_generation().store(0, AtomicOrdering::SeqCst);
 
-    let Ok(panel) = app.get_webview_panel("main") else {
+    if app.get_webview_panel("main").is_err() {
         return false;
-    };
+    }
 
-    panel.hide();
-    panel.set_collection_behavior(
-        CollectionBehavior::new()
-            .full_screen_auxiliary()
-            .move_to_active_space()
-            .stationary()
-            .into(),
-    );
-    eprintln!("[macos-overlay] panel.hide()");
-    true
+    let handle = app.clone();
+    let app_for_panel = handle.clone();
+    let scheduled = handle
+        .run_on_main_thread(move || {
+            if let Ok(panel) = app_for_panel.get_webview_panel("main") {
+                panel.hide();
+                panel.set_collection_behavior(
+                    CollectionBehavior::new()
+                        .full_screen_auxiliary()
+                        .move_to_active_space()
+                        .stationary()
+                        .into(),
+                );
+                eprintln!("[macos-overlay] panel.hide() gen={gen}");
+            }
+        })
+        .is_ok();
+
+    if !scheduled && overlay_show_generation().load(AtomicOrdering::SeqCst) == gen {
+        clipboard_panel_visible().store(true, AtomicOrdering::SeqCst);
+    }
+    scheduled
 }
 
 /// Kept for startup re-apply paths that still hold a WebviewWindow handle.
@@ -248,13 +402,18 @@ pub fn configure_overlay_space_behavior(window: &tauri::WebviewWindow) {
 
     let app = window.app_handle();
     if let Ok(panel) = app.get_webview_panel("main") {
-        panel.set_collection_behavior(
+        let behavior = if is_clipboard_panel_visible() {
             CollectionBehavior::new()
                 .full_screen_auxiliary()
                 .can_join_all_spaces()
                 .stationary()
-                .into(),
-        );
+        } else {
+            CollectionBehavior::new()
+                .full_screen_auxiliary()
+                .move_to_active_space()
+                .stationary()
+        };
+        panel.set_collection_behavior(behavior.into());
         return;
     }
 

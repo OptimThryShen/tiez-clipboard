@@ -52,5 +52,3 @@ pub static IS_MOUSE_BUTTON_DOWN: AtomicBool = AtomicBool::new(false);
 pub static NAVIGATION_ENABLED: AtomicBool = AtomicBool::new(false);
 pub static NAVIGATION_MODE_ACTIVE: AtomicBool = AtomicBool::new(false);
 pub static IS_MAIN_WINDOW_FOCUSED: AtomicBool = AtomicBool::new(false);
-/// Logical pixels below the window top that should receive native mouse events (header chrome).
-pub static MACOS_HEADER_PASS_HEIGHT: AtomicU32 = AtomicU32::new(88);

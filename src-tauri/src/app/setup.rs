@@ -51,6 +51,9 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     crate::logger::init(app_dir.join("tiez.log"));
     info!(">>> [STARTUP] TieZ starting up...");
 
+    // 2b. Local-at-rest encryption (AES-GCM + OS key store)
+    crate::infrastructure::encryption::init(&app_dir);
+
     // 3. Database Initialization
     let db_path = app_dir.join("clipboard.db");
     let db_path_str = db_path.to_string_lossy();
@@ -59,6 +62,16 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("TieZ Startup Error: {}", err_msg);
         e
     })?;
+
+    #[cfg(not(feature = "portable"))]
+    {
+        match crate::infrastructure::encryption::migrate_legacy_ciphertexts(&conn) {
+            Ok(n) if n > 0 => info!(">>> [STARTUP] Migrated {} legacy plaintext cipher fields", n),
+            Ok(_) => {}
+            Err(e) => eprintln!(">>> [STARTUP] Legacy encryption migration warning: {}", e),
+        }
+    }
+
     let conn_arc = std::sync::Arc::new(std::sync::Mutex::new(conn));
     let settings_repo = SqliteSettingsRepository::new(conn_arc.clone());
 
@@ -1554,15 +1567,7 @@ fn setup_tray(app: &App, hide_tray: bool) {
         .menu(&menu)
         .on_menu_event(|app, event| {
             if event.id.as_ref() == "show" {
-                if let Some(window) = app.get_webview_window("main") {
-                    IS_HIDDEN.store(false, Ordering::Relaxed);
-                    CURRENT_DOCK.store(0, Ordering::Relaxed);
-                    #[cfg(not(target_os = "windows"))]
-                    crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    maybe_open_devtools(&window);
-                }
+                let _ = crate::app::window_manager::focus_clipboard_window(app.clone());
             } else if event.id.as_ref() == "quit" {
                 app.exit(0);
             }
@@ -1573,20 +1578,8 @@ fn setup_tray(app: &App, hide_tray: bool) {
                 ..
             } = event
             {
-                if let Some(window) = tray.app_handle().get_webview_window("main") {
-                    IS_HIDDEN.store(false, Ordering::Relaxed);
-                    CURRENT_DOCK.store(0, Ordering::Relaxed);
-                    #[cfg(not(target_os = "windows"))]
-                    crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    maybe_open_devtools(&window);
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    LAST_SHOW_TIMESTAMP.store(now, Ordering::Relaxed);
-                }
+                // Same intentional-open path as Dock reopen (make-key + LAST_SHOW).
+                let _ = crate::app::window_manager::focus_clipboard_window(tray.app_handle().clone());
             }
         });
 
@@ -1791,6 +1784,13 @@ pub fn handle_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
                 window.app_handle(),
                 window.label(),
             );
+            #[cfg(target_os = "macos")]
+            if !crate::infrastructure::macos_api::window::hide_clipboard_panel(
+                window.app_handle(),
+            ) {
+                let _ = window.hide();
+            }
+            #[cfg(not(target_os = "macos"))]
             let _ = window.hide();
             IS_HIDDEN.store(false, Ordering::Relaxed);
             CURRENT_DOCK.store(0, Ordering::Relaxed);
@@ -1857,44 +1857,13 @@ fn persist_window_size(window: &tauri::Window, width: u32, height: u32) {
 fn handle_blur(_window: &tauri::Window) {}
 
 #[cfg(target_os = "macos")]
-fn handle_blur(window: &tauri::Window) {
+fn handle_blur(_window: &tauri::Window) {
     if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
         return;
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-    // Ignore blur events that fire immediately after the window was shown
-    if now.saturating_sub(LAST_SHOW_TIMESTAMP.load(Ordering::Relaxed)) < 500 {
-        return;
-    }
-
-    if IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst) {
-        return;
-    }
-
-    let w = window.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let down = IS_MOUSE_BUTTON_DOWN.load(Ordering::SeqCst);
-
-        let tucked_by_edge = IS_HIDDEN.load(Ordering::Relaxed)
-            || CURRENT_DOCK.load(Ordering::Relaxed) != 0;
-        if !down && !tucked_by_edge && matches!(w.is_focused(), Ok(false)) {
-            if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
-                let _ = w.app_handle().emit("force-hide-compact-preview", ());
-                crate::app::window_manager::clear_window_vibrancy_for_label(
-                    w.app_handle(),
-                    w.label(),
-                );
-                let _ = w.hide();
-                NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-                crate::app::window_manager::release_modifier_keys();
-            }
-        }
-    });
+    // The NSPanel resign-key delegate owns macOS auto-hide. Keep Tauri's
+    // duplicate focus event passive so it cannot race the panel lifecycle.
 }
 
 #[cfg(target_os = "windows")]

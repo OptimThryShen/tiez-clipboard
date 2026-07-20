@@ -1,5 +1,8 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { focusClipboardWindow, restoreLastFocus } from "../lib/focus";
+import { invoke } from "@tauri-apps/api/core";
+import { restoreLastFocus } from "../lib/focus";
+import { isMacPlatform } from "../lib/platform";
+import { isTauriRuntime } from "../lib/tauriRuntime";
 
 type FocusState = "normal" | "clipboard";
 
@@ -35,10 +38,12 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
   };
 
   const debouncedEnableFocus = () => {
+    if (!isTauriRuntime()) return;
+
     clearTimer(focusTimer);
     focusTimer.current = window.setTimeout(async () => {
       try {
-        await focusClipboardWindow();
+        await invoke("activate_window_focus");
         focusState.current = "clipboard";
       } catch {
         // Ignore focus errors
@@ -48,6 +53,13 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
 
   const debouncedRestoreFocus = () => {
     if (focusState.current === "normal") {
+      return;
+    }
+
+    // macOS NSPanel: search blur often means focus moved to note/tag fields.
+    // Restoring the previous app here steals the keyboard from those inputs.
+    if (isMacPlatform()) {
+      focusState.current = "normal";
       return;
     }
 

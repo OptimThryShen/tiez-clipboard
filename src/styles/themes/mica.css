@@ -2,10 +2,10 @@
 :root.theme-mica,
 body.theme-mica {
   background-color: transparent !important;
-  --bg-window: rgba(248, 248, 248, calc(0.9 * var(--surface-opacity-scale, 1)));
+  --bg-window: rgba(248, 248, 248, calc(0.94 * var(--surface-opacity-scale, 1)));
   --bg-content: transparent;
   --bg-toolbar: transparent;
-  --bg-panel: rgba(255, 255, 255, 0.48);
+  --bg-panel: rgba(255, 255, 255, 0.62);
   --bg-input: rgba(255, 255, 255, 0.74);
   --bg-element: rgba(255, 255, 255, 0.62);
   --bg-button: rgba(255, 255, 255, 0.46);
@@ -26,13 +26,13 @@ body.theme-mica {
   --shadow-lg: 0 20px 48px rgba(15, 23, 42, 0.12);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.52);
 
-  --shell-background: rgba(248, 248, 248, calc(0.9 * var(--surface-opacity-scale, 1)));
-  --shell-border: 1px solid rgba(255, 255, 255, 0.42);
-  --shell-shadow: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --shell-background: rgba(248, 248, 248, calc(0.94 * var(--surface-opacity-scale, 1)));
+  --shell-border: 1px solid rgba(40, 56, 84, 0.14);
+  --shell-shadow: 0 12px 30px rgba(15, 23, 42, 0.1);
   --shell-radius: 10px;
   /* Mica = matte/frosted: near-opaque with only a light blur, vs Acrylic's
      deep see-through glass. The faint grain texture does the rest. */
-  --shell-backdrop-filter: blur(10px) saturate(118%);
+  --shell-backdrop-filter: blur(6px) saturate(108%);
 
   --toolbar-border: 1px solid rgba(128, 128, 128, 0.15);
 
@@ -128,7 +128,7 @@ body.has-custom-bg.theme-mica #root::after {
 
 body.theme-mica:not(.has-custom-bg)::before {
   background-image: linear-gradient(160deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%);
-  opacity: 0.2;
+  opacity: 0.1;
 }
 
 body.theme-mica #root {
@@ -159,8 +159,8 @@ body.theme-mica #root > * {
 @media (prefers-color-scheme: dark) {
   :root.theme-mica:not(.light-mode),
   body.theme-mica:not(.light-mode) {
-    --bg-window: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
-    --bg-panel: rgba(36, 36, 36, 0.52);
+    --bg-window: rgba(24, 24, 24, calc(0.88 * var(--surface-opacity-scale, 1)));
+    --bg-panel: rgba(36, 36, 36, 0.66);
     --bg-input: rgba(255, 255, 255, 0.12);
     --bg-element: rgba(45, 45, 45, 0.65);
     --bg-button: rgba(255, 255, 255, 0.05);
@@ -177,10 +177,10 @@ body.theme-mica #root > * {
     --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.28);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-    --shell-background: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
+    --shell-background: rgba(24, 24, 24, calc(0.88 * var(--surface-opacity-scale, 1)));
     --shell-border: 1px solid rgba(255, 255, 255, 0.08);
     --shell-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-    --shell-backdrop-filter: blur(12px) saturate(122%);
+    --shell-backdrop-filter: blur(7px) saturate(110%);
     --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
     --panel-border: 1px solid rgba(255, 255, 255, 0.08);
     --menu-border: 1px solid rgba(255, 255, 255, 0.08);
@@ -200,8 +200,8 @@ body.theme-mica #root > * {
 
 :root.dark-mode.theme-mica,
 body.dark-mode.theme-mica {
-  --bg-window: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
-  --bg-panel: rgba(36, 36, 36, 0.52);
+  --bg-window: rgba(24, 24, 24, calc(0.88 * var(--surface-opacity-scale, 1)));
+  --bg-panel: rgba(36, 36, 36, 0.66);
   --bg-input: rgba(255, 255, 255, 0.12);
   --bg-element: rgba(45, 45, 45, 0.65);
   --bg-button: rgba(255, 255, 255, 0.05);
@@ -218,10 +218,10 @@ body.dark-mode.theme-mica {
   --shadow-lg: 0 22px 44px rgba(0, 0, 0, 0.28);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  --shell-background: rgba(24, 24, 24, calc(0.82 * var(--surface-opacity-scale, 1)));
+  --shell-background: rgba(24, 24, 24, calc(0.88 * var(--surface-opacity-scale, 1)));
   --shell-border: 1px solid rgba(255, 255, 255, 0.08);
   --shell-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-  --shell-backdrop-filter: blur(12px) saturate(122%);
+  --shell-backdrop-filter: blur(7px) saturate(110%);
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
   --panel-border: 1px solid rgba(255, 255, 255, 0.08);
   --menu-border: 1px solid rgba(255, 255, 255, 0.08);

@@ -1,5 +1,5 @@
 use crate::database::is_sensitive_key;
-use crate::infrastructure::encryption::{self, ENCRYPT_PREFIX};
+use crate::infrastructure::encryption;
 use rusqlite::{params, Connection, Result};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ impl SqliteSettingsRepository {
 
         if let Some(row) = rows.next()? {
             let value: String = row.get(0)?;
-            if is_sensitive_key(key) && value.starts_with(ENCRYPT_PREFIX) {
+            if is_sensitive_key(key) && encryption::is_encrypted_value(&value) {
                 return Ok(Some(encryption::decrypt_value(&value).unwrap_or(value)));
             }
             Ok(Some(value))
@@ -40,15 +40,20 @@ impl SqliteSettingsRepository {
         let _ = key;
         #[cfg(not(feature = "portable"))]
         {
-            if is_sensitive_key(key) && !value.starts_with(ENCRYPT_PREFIX) {
-                return encryption::encrypt_value(value).unwrap_or_else(|| value.to_string());
+            if is_sensitive_key(key) && !encryption::is_modern_ciphertext(value) {
+                let plain = if encryption::is_encrypted_value(value) {
+                    encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
+                } else {
+                    value.to_string()
+                };
+                return encryption::encrypt_value(&plain).unwrap_or(plain);
             }
         }
         value.to_string()
     }
 
     fn maybe_decrypt(&self, key: &str, value: &str) -> String {
-        if is_sensitive_key(key) && value.starts_with(ENCRYPT_PREFIX) {
+        if is_sensitive_key(key) && encryption::is_encrypted_value(value) {
             return encryption::decrypt_value(value).unwrap_or_else(|| value.to_string());
         }
         value.to_string()
@@ -76,10 +81,10 @@ impl SettingsRepository for SqliteSettingsRepository {
             let value: String = row.get(0)?;
             let decrypted = self.maybe_decrypt(key, &value);
 
-            // Auto-migrate to encrypted if it was plaintext and is sensitive
+            // Auto-migrate legacy plain: / plaintext sensitive values to enc1:
             #[cfg(not(feature = "portable"))]
             {
-                if is_sensitive_key(key) && !value.starts_with(ENCRYPT_PREFIX) {
+                if is_sensitive_key(key) && !encryption::is_modern_ciphertext(&value) {
                     let _ = conn.execute(
                         "UPDATE settings SET value = ? WHERE key = ?",
                         params![self.maybe_encrypt(key, &decrypted), key],
@@ -105,10 +110,9 @@ impl SettingsRepository for SqliteSettingsRepository {
             let (key, value) = row?;
             let decrypted = self.maybe_decrypt(&key, &value);
 
-            // Auto-migrate to encrypted if it was plaintext and is sensitive
             #[cfg(not(feature = "portable"))]
             {
-                if is_sensitive_key(&key) && !value.starts_with(ENCRYPT_PREFIX) {
+                if is_sensitive_key(&key) && !encryption::is_modern_ciphertext(&value) {
                     let _ = conn.execute(
                         "UPDATE settings SET value = ? WHERE key = ?",
                         params![self.maybe_encrypt(&key, &decrypted), &key],
@@ -124,7 +128,6 @@ impl SettingsRepository for SqliteSettingsRepository {
     fn clear(&self) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM settings", [])?;
-        // Note: seed_defaults should probably be called by the caller or we move it here
         Ok(())
     }
 }

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
 import { isTauriRuntime } from "../lib/tauriRuntime";
+import { parseSearchQuery } from "../lib/searchQuery";
 
 interface UseHistoryFetchOptions {
   debouncedSearch: string;
@@ -74,18 +75,14 @@ export const useHistoryFetch = ({
         const hasSearch = debouncedSearch && debouncedSearch.trim().length > 0;
 
         if (hasSearch) {
-          let term = debouncedSearch;
-          let tagOnly = false;
-          if (term.startsWith("tag:")) {
-            term = term.slice(4);
-            tagOnly = true;
-          }
+          const parsed = parseSearchQuery(debouncedSearch);
 
           try {
             data = await invoke<ClipboardEntry[]>("search_clipboard_history", {
-              searchTerm: term,
+              searchTerm: parsed.term,
               limit: 200,
-              tagOnly
+              tagOnly: parsed.tagOnly,
+              noteOnly: parsed.noteOnly
             });
           } catch (e) {
             console.error("Search failed, falling back", e);
@@ -102,7 +99,7 @@ export const useHistoryFetch = ({
           const rawData = await invoke<ClipboardEntry[]>("get_clipboard_history", {
             limit: requestedLimit,
             offset: baseOffset,
-            content_type: typeFilter || undefined
+            contentType: typeFilter || undefined
           });
 
           if (seq !== fetchSeqRef.current) return;

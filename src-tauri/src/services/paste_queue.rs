@@ -126,7 +126,7 @@ async fn paste_next_step_inner(app_handle: tauri::AppHandle) {
             }
 
             // 3. Write content to system clipboard using the same payload logic as normal paste.
-            if let Err(err) = crate::services::clipboard_ops::prepare_clipboard_payload(
+            match crate::services::clipboard_ops::prepare_clipboard_payload(
                 &content,
                 &c_type,
                 html_content.as_deref(),
@@ -134,91 +134,98 @@ async fn paste_next_step_inner(app_handle: tauri::AppHandle) {
             )
             .await
             {
-                eprintln!(
-                    "[ERROR] Failed to prepare clipboard payload for sequential paste: {err}"
-                );
-                let _ = app_handle.emit("queue-item-pasted", id);
-                return;
-            }
-
-            // 4. Focus management before paste keystroke.
-            //    - If TieZ window WAS open (user had it open and used it), we need to
-            //      restore focus to the previous app, because clicking in TieZ stole it.
-            //    - If TieZ window was HIDDEN (pure background hotkey press), focus is
-            //      already in the target app. Do NOT restore focus as that would move
-            //      focus to a stale/wrong app and break the paste.
-            if window_was_visible {
-                let mut reactivated = false;
-                let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID
-                    .load(std::sync::atomic::Ordering::Relaxed);
-                if prev_pid != 0 {
-                    reactivated = crate::infrastructure::macos_api::apps::activate_app_by_pid(
-                        prev_pid as i32,
+                Err(err) => {
+                    eprintln!(
+                        "[ERROR] Failed to prepare clipboard payload for sequential paste: {err}"
                     );
+                    // Item already popped; mark progress so the queue can continue on next step.
+                    let _ = app_handle.emit("queue-item-pasted", id);
                 }
-                if !reactivated {
-                    let prev_app = crate::global_state::get_last_active_app_name();
-                    if !prev_app.is_empty() {
-                        crate::infrastructure::macos_api::apps::activate_app_by_name(&prev_app);
+                Ok(()) => {
+                    // 4. Focus management before paste keystroke.
+                    //    - If TieZ window WAS open (user had it open and used it), we need to
+                    //      restore focus to the previous app, because clicking in TieZ stole it.
+                    //    - If TieZ window was HIDDEN (pure background hotkey press), focus is
+                    //      already in the target app. Do NOT restore focus as that would move
+                    //      focus to a stale/wrong app and break the paste.
+                    if window_was_visible {
+                        #[cfg(target_os = "macos")]
+                        {
+                            let mut reactivated = false;
+                            let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            if prev_pid != 0 {
+                                reactivated =
+                                    crate::infrastructure::macos_api::apps::activate_app_by_pid(
+                                        prev_pid as i32,
+                                    );
+                            }
+                            if !reactivated {
+                                let prev_app = crate::global_state::get_last_active_app_name();
+                                if !prev_app.is_empty() {
+                                    crate::infrastructure::macos_api::apps::activate_app_by_name(
+                                        &prev_app,
+                                    );
+                                }
+                            }
+                        }
+                        // Wait for focus transfer to complete before sending keystroke
+                        // Reduced from 150ms to 60ms for native activation.
+                        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+                    } else {
+                        // When triggered via global hotkey with the window hidden,
+                        // the event is now fired on ShortcutState::Released.
+                        // However, the OS shortcut system might still have slight jitter.
+                        // A tiny 20ms settle helps ensure the physical key state is completely cleared.
+                        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
                     }
+
+                    // 6. Send paste keystroke
+                    let paste_method = app_handle
+                        .try_state::<crate::database::DbState>()
+                        .and_then(|db| db.settings_repo.get("app.paste_method").ok().flatten())
+                        .unwrap_or_else(|| "shift_insert".to_string());
+                    crate::services::clipboard_ops::send_paste_keystroke(
+                        &paste_method,
+                        Some(&content),
+                        Some(&c_type),
+                    );
+
+                    // Settle time
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+
+                    // 7. Perform deletion if delete_after_paste is enabled
+                    let delete_after_paste = {
+                        let settings_state = app_handle.state::<crate::app_state::SettingsState>();
+                        settings_state
+                            .delete_after_paste
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                    };
+
+                    if delete_after_paste && !is_pinned && !has_tags {
+                        {
+                            let mut s = session.inner().0.lock().unwrap();
+                            if let Some(pos) = s.iter().position(|i| i.id == id) {
+                                s.remove(pos);
+                            }
+                        }
+
+                        if id > 0 {
+                            let app_data = app_handle.state::<AppDataDir>();
+                            let data_dir = app_data.0.lock().unwrap();
+                            if db_state.repo.delete(id, Some(&data_dir)).is_ok() {
+                                let _ = app_handle.emit("clipboard-removed", id);
+                            }
+                        } else {
+                            let _ = app_handle.emit("clipboard-removed", id);
+                        }
+                    } else if id > 0 {
+                        let _ = db_state.repo.increment_use_count(id);
+                    }
+
+                    let _ = app_handle.emit("queue-item-pasted", id);
                 }
-                // Wait for focus transfer to complete before sending keystroke
-                // Reduced from 150ms to 60ms for native activation.
-                tokio::time::sleep(std::time::Duration::from_millis(60)).await;
-            } else {
-                // When triggered via global hotkey with the window hidden,
-                // the event is now fired on ShortcutState::Released.
-                // However, the OS shortcut system might still have slight jitter.
-                // A tiny 20ms settle helps ensure the physical key state is completely cleared.
-                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             }
-
-            // 6. Send paste keystroke
-            let paste_method = app_handle
-                .try_state::<crate::database::DbState>()
-                .and_then(|db| db.settings_repo.get("app.paste_method").ok().flatten())
-                .unwrap_or_else(|| "shift_insert".to_string());
-            crate::services::clipboard_ops::send_paste_keystroke(
-                &paste_method,
-                Some(&content),
-                Some(&c_type),
-            );
-
-            // Settle time
-            std::thread::sleep(std::time::Duration::from_millis(20));
-
-            // 7. Perform deletion if delete_after_paste is enabled
-            let delete_after_paste = {
-                let settings_state = app_handle.state::<crate::app_state::SettingsState>();
-                settings_state
-                    .delete_after_paste
-                    .load(std::sync::atomic::Ordering::Relaxed)
-            };
-
-            if delete_after_paste && !is_pinned && !has_tags {
-                {
-                    let mut s = session.inner().0.lock().unwrap();
-                    if let Some(pos) = s.iter().position(|i| i.id == id) {
-                        s.remove(pos);
-                    }
-                }
-
-                if id > 0 {
-                    let app_data = app_handle.state::<AppDataDir>();
-                    let data_dir = app_data.0.lock().unwrap();
-                    if db_state.repo.delete(id, Some(&data_dir)).is_ok() {
-                        let _ = app_handle.emit("clipboard-removed", id);
-                    }
-                } else {
-                    let _ = app_handle.emit("clipboard-removed", id);
-                }
-            } else {
-                if id > 0 {
-                    let _ = db_state.repo.increment_use_count(id);
-                }
-            }
-
-            let _ = app_handle.emit("queue-item-pasted", id);
         }
     } else {
         let _ = app_handle.emit("queue-finished", ());

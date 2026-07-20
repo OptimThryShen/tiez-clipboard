@@ -433,6 +433,15 @@ pub fn start_mqtt_client(app: AppHandle) {
                 info!(">>> [MQTT] Subscribed to {}", sub_topic);
 
                 loop {
+                    // Restart/stop requested: drop this connection and let outer loop reconnect.
+                    if !MQTT_RUNNING.load(Ordering::Relaxed) {
+                        info!(">>> [MQTT] Stop/restart requested. Leaving event loop.");
+                        MQTT_CONNECTED.store(false, Ordering::Relaxed);
+                        let _ = app.emit("mqtt-status", "disconnected");
+                        let _ = client.disconnect().await;
+                        break;
+                    }
+
                     match tokio::time::timeout(Duration::from_secs(5), eventloop.poll()).await {
                         Ok(event_result) => match event_result {
                             Ok(Event::Incoming(notification)) => match notification {
@@ -466,7 +475,8 @@ pub fn start_mqtt_client(app: AppHandle) {
                                         let payload_owned = final_content.clone();
                                         let app_handle_for_clipboard = app.clone();
 
-                                        std::thread::spawn(move || {
+                                        // Use blocking pool instead of unbounded OS threads.
+                                        tauri::async_runtime::spawn_blocking(move || {
                                             let normalized =
                                                 payload_owned.trim().replace("\r\n", "\n");
                                             let mut hasher = DefaultHasher::new();
@@ -482,8 +492,9 @@ pub fn start_mqtt_client(app: AppHandle) {
                                                 Ok(mut clipboard) => {
                                                     let mut attempts = 0;
                                                     while attempts < 3 {
-                                                        if let Err(_) = clipboard
+                                                        if clipboard
                                                             .set_text(payload_owned.clone())
+                                                            .is_err()
                                                         {
                                                             std::thread::sleep(
                                                                 std::time::Duration::from_millis(
@@ -525,7 +536,14 @@ pub fn start_mqtt_client(app: AppHandle) {
                             }
                         },
                         Err(_) => {
-                            // Timeout, check if still enabled
+                            // Timeout: check stop/restart flag and whether still enabled
+                            if !MQTT_RUNNING.load(Ordering::Relaxed) {
+                                info!(">>> [MQTT] Stop/restart requested during idle poll.");
+                                MQTT_CONNECTED.store(false, Ordering::Relaxed);
+                                let _ = app.emit("mqtt-status", "disconnected");
+                                let _ = client.disconnect().await;
+                                break;
+                            }
                             if get_mqtt_config(&app).is_none() {
                                 info!(">>> [MQTT] Disabled. Stopping task.");
                                 MQTT_RUNNING.store(false, Ordering::Relaxed);
@@ -536,12 +554,15 @@ pub fn start_mqtt_client(app: AppHandle) {
                         }
                     }
                 }
-            } else {
-                if MQTT_RUNNING.load(Ordering::Relaxed) {
-                    info!(">>> [MQTT] Configuration invalid or disabled.");
-                    MQTT_RUNNING.store(false, Ordering::Relaxed);
-                    let _ = app.emit("mqtt-status", "disconnected");
-                }
+            } else if MQTT_RUNNING.load(Ordering::Relaxed) {
+                info!(">>> [MQTT] Configuration invalid or disabled.");
+                MQTT_RUNNING.store(false, Ordering::Relaxed);
+                let _ = app.emit("mqtt-status", "disconnected");
+            }
+
+            // Reconnect promptly after an explicit stop/restart signal.
+            if !MQTT_RUNNING.load(Ordering::Relaxed) && get_mqtt_config(&app).is_some() {
+                continue;
             }
 
             sleep(Duration::from_secs(5)).await;

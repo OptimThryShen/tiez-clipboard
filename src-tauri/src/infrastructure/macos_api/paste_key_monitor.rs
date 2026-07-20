@@ -1,11 +1,11 @@
 //! Passive global listener for physical ⌘V — plays paste sound without intercepting the shortcut.
 
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::permissions::{
-    has_accessibility_permission, request_accessibility_permission, V_KEY_CODE,
+    has_accessibility_permission, V_KEY_CODE,
 };
 
 type CFMachPortRef = *mut std::ffi::c_void;
@@ -21,15 +21,6 @@ type CGEventTapPlacement = u32;
 type CGEventTapOptions = u32;
 type CGEventField = u32;
 
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct CGPoint {
-    x: f64,
-    y: f64,
-}
-
-const K_CG_EVENT_LEFT_MOUSE_DOWN: CGEventType = 1;
-const K_CG_EVENT_LEFT_MOUSE_UP: CGEventType = 2;
 const K_CG_EVENT_KEY_DOWN: CGEventType = 10;
 const K_CG_EVENT_TAP_DISABLED_BY_TIMEOUT: CGEventType = 0xFFFF_FFFE;
 const K_CG_EVENT_TAP_DISABLED_BY_USER_INPUT: CGEventType = 0xFFFF_FFFF;
@@ -37,23 +28,12 @@ const K_CG_EVENT_TAP_OPTION_EVENT_EDIT: CGEventTapOptions = 0;
 const K_CG_HEAD_INSERT_EVENT_TAP: CGEventTapPlacement = 0;
 const K_CG_HID_EVENT_TAP: CGEventTapLocation = 0;
 const K_CG_EVENT_FLAG_MASK_COMMAND: CGEventFlags = 1 << 20;
-const K_CG_EVENT_FLAG_MASK_SHIFT: CGEventFlags = 1 << 17;
-const K_CG_EVENT_FLAG_MASK_CONTROL: CGEventFlags = 1 << 18;
-const K_CG_EVENT_FLAG_MASK_ALTERNATE: CGEventFlags = 1 << 19;
 const K_CG_KEYBOARD_EVENT_KEYCODE: CGEventField = 9;
 const K_CG_KEYBOARD_EVENT_AUTOREPEAT: CGEventField = 11;
 
-// macOS virtual key codes for clipboard-list navigation.
-const K_VK_UP_ARROW: u16 = 0x7E;
-const K_VK_DOWN_ARROW: u16 = 0x7D;
-const K_VK_RETURN: u16 = 0x24;
-const K_VK_ESCAPE: u16 = 0x35;
-
 static SUPPRESS_CMDV_SOUND_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
 static MONITOR_STARTED: OnceLock<()> = OnceLock::new();
-static ACCESSIBILITY_PROMPTED: OnceLock<()> = OnceLock::new();
 static ACTIVE_EVENT_TAP: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
-static SWALLOW_NEXT_LEFT_MOUSE_UP: AtomicBool = AtomicBool::new(false);
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -91,102 +71,6 @@ unsafe extern "C" {
     fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
     fn CGEventGetFlags(event: CGEventRef) -> CGEventFlags;
     fn CGEventGetIntegerValueField(event: CGEventRef, field: CGEventField) -> i64;
-    fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
-}
-
-fn main_window_click_payload(point: CGPoint) -> Option<serde_json::Value> {
-    use tauri::Manager;
-
-    if crate::global_state::IS_HIDDEN.load(Ordering::Relaxed)
-        || !crate::global_state::NAVIGATION_ENABLED.load(Ordering::SeqCst)
-    {
-        return None;
-    }
-
-    let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() else {
-        return None;
-    };
-    let Some(window) = app.get_webview_window("main") else {
-        return None;
-    };
-    if !window.is_visible().unwrap_or(false) {
-        return None;
-    }
-
-    let (Ok(pos), Ok(size)) = (
-        window.inner_position().or_else(|_| window.outer_position()),
-        window.inner_size().or_else(|_| window.outer_size()),
-    ) else {
-        return None;
-    };
-    let scale = window.scale_factor().unwrap_or(1.0).max(1.0);
-
-    // CGEventGetLocation is in global logical points; Tauri positions are physical pixels.
-    let left = pos.x as f64 / scale;
-    let top = pos.y as f64 / scale;
-    let right = left + size.width as f64 / scale;
-    let bottom = top + size.height as f64 / scale;
-
-    if point.x < left || point.x > right || point.y < top || point.y > bottom {
-        return Some(serde_json::json!({ "outside": true }));
-    }
-
-    let client_x = point.x - left;
-    let client_y = point.y - top;
-
-    // Header chrome (drag region, traffic lights, search box) must keep the native
-    // mouse stream so `startDragging()` and header buttons work on the first click.
-    let header_pass_height =
-        crate::global_state::MACOS_HEADER_PASS_HEIGHT.load(Ordering::Relaxed) as f64;
-    if client_y <= header_pass_height {
-        return Some(serde_json::json!({ "passThrough": true }));
-    }
-
-    Some(serde_json::json!({
-        "clientX": client_x,
-        "clientY": client_y,
-        "screenX": point.x,
-        "screenY": point.y
-    }))
-}
-
-fn clipboard_panel_ready() -> bool {
-    use tauri::Manager;
-    use tauri_nspanel::ManagerExt;
-
-    let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() else {
-        return false;
-    };
-    app.get_webview_panel("main").is_ok()
-}
-
-fn hide_main_window_for_outside_click() {
-    use tauri::{Emitter, Manager};
-
-    if crate::global_state::WINDOW_PINNED.load(Ordering::Relaxed)
-        || crate::global_state::IS_HIDDEN.load(Ordering::Relaxed)
-    {
-        return;
-    }
-
-    let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() else {
-        return;
-    };
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    if !window.is_visible().unwrap_or(false) {
-        return;
-    }
-
-    let _ = app.emit("force-hide-compact-preview", ());
-    if !crate::infrastructure::macos_api::window::hide_clipboard_panel(app) {
-        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
-        crate::app::window_manager::clear_window_vibrancy(&window);
-        let _ = window.hide();
-    }
-    crate::global_state::NAVIGATION_ENABLED.store(false, Ordering::SeqCst);
-    crate::global_state::NAVIGATION_MODE_ACTIVE.store(false, Ordering::SeqCst);
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -222,45 +106,6 @@ unsafe extern "C" fn cmd_v_callback(
         return event;
     }
 
-    if (event_type == K_CG_EVENT_LEFT_MOUSE_DOWN || event_type == K_CG_EVENT_LEFT_MOUSE_UP)
-        && !event.is_null()
-    {
-        if event_type == K_CG_EVENT_LEFT_MOUSE_UP
-            && SWALLOW_NEXT_LEFT_MOUSE_UP.swap(false, Ordering::SeqCst)
-        {
-            return std::ptr::null_mut();
-        }
-
-        if event_type == K_CG_EVENT_LEFT_MOUSE_DOWN {
-            let Some(payload) = main_window_click_payload(CGEventGetLocation(event)) else {
-                return event;
-            };
-            if payload.get("outside").and_then(|v| v.as_bool()).unwrap_or(false) {
-                hide_main_window_for_outside_click();
-                return event;
-            }
-            if payload
-                .get("passThrough")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-            {
-                return event;
-            }
-            // After NSPanel + show_and_make_key, the webview receives real clicks.
-            // Swallowing here forced a synthetic path that often needed a second
-            // click before paste. Let the native mouse stream through.
-            if clipboard_panel_ready() {
-                return event;
-            }
-            SWALLOW_NEXT_LEFT_MOUSE_UP.store(true, Ordering::SeqCst);
-            if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
-                use tauri::Emitter;
-                let _ = app.emit("macos-nonactivating-click", payload);
-            }
-            return std::ptr::null_mut();
-        }
-    }
-
     if event_type == K_CG_EVENT_KEY_DOWN && !event.is_null() {
         let flags = CGEventGetFlags(event);
         let keycode = CGEventGetIntegerValueField(event, K_CG_KEYBOARD_EVENT_KEYCODE) as u16;
@@ -276,79 +121,6 @@ unsafe extern "C" fn cmd_v_callback(
             }
         }
 
-        // After NSPanel + show_and_make_key, the webview is key and receives
-        // real keydowns — let arrows/Enter/Esc through (same as mouse clicks).
-        // HID capture is only for the legacy non-key overlay path.
-        if clipboard_panel_ready() {
-            return event;
-        }
-
-        // Legacy path: window is shown without becoming key, so the webview
-        // cannot receive arrow/Enter/Esc via DOM keydown. Capture system-wide
-        // and route to the `navigation-action` channel (same as Windows).
-        // Swallowing also keeps the previous app from seeing the key.
-        let no_modifiers = (flags
-            & (K_CG_EVENT_FLAG_MASK_COMMAND
-                | K_CG_EVENT_FLAG_MASK_SHIFT
-                | K_CG_EVENT_FLAG_MASK_CONTROL
-                | K_CG_EVENT_FLAG_MASK_ALTERNATE))
-            == 0;
-
-        if autorepeat == 0
-            && no_modifiers
-            && crate::global_state::NAVIGATION_ENABLED.load(Ordering::SeqCst)
-            && !crate::global_state::IS_HIDDEN.load(Ordering::Relaxed)
-        {
-            use tauri::Manager;
-
-            let allow_arrow_nav = if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get()
-            {
-                app.state::<crate::app_state::SettingsState>()
-                    .arrow_key_selection
-                    .load(Ordering::Relaxed)
-            } else {
-                true
-            };
-
-            let nav_action: Option<&'static str> = match keycode {
-                K_VK_UP_ARROW if allow_arrow_nav => Some("up"),
-                K_VK_DOWN_ARROW if allow_arrow_nav => Some("down"),
-                K_VK_RETURN => {
-                    if crate::global_state::NAVIGATION_MODE_ACTIVE.load(Ordering::Relaxed) {
-                        Some("enter")
-                    } else {
-                        None
-                    }
-                }
-                K_VK_ESCAPE => Some("escape"),
-                _ => None,
-            };
-
-            if let Some(action) = nav_action {
-                if let Some(app) = crate::global_state::GLOBAL_APP_HANDLE.get() {
-                    use tauri::Emitter;
-                    match action {
-                        "up" | "down" => {
-                            crate::global_state::NAVIGATION_MODE_ACTIVE
-                                .store(true, Ordering::Relaxed);
-                        }
-                        "escape" => {
-                            crate::global_state::NAVIGATION_MODE_ACTIVE
-                                .store(false, Ordering::Relaxed);
-                        }
-                        _ => {}
-                    }
-                    if action == "escape" {
-                        // Mirror the Windows hook: emit escape, then hide.
-                        let _ = app.emit("navigation-action", "escape");
-                        crate::app::window_manager::toggle_window(app);
-                    } else {
-                        let _ = app.emit("navigation-action", action);
-                    }
-                }
-                return std::ptr::null_mut();
-            }
-        }
     }
     event
 }
@@ -359,9 +131,7 @@ unsafe fn try_start_event_tap() -> bool {
         return false;
     }
 
-    let mask: CGEventMask = (1u64 << K_CG_EVENT_KEY_DOWN)
-        | (1u64 << K_CG_EVENT_LEFT_MOUSE_DOWN)
-        | (1u64 << K_CG_EVENT_LEFT_MOUSE_UP);
+    let mask: CGEventMask = 1u64 << K_CG_EVENT_KEY_DOWN;
     let tap = CGEventTapCreate(
         K_CG_HID_EVENT_TAP,
         K_CG_HEAD_INSERT_EVENT_TAP,
@@ -402,11 +172,7 @@ pub fn start_paste_key_monitor() {
         .name("tiez-paste-key-monitor".into())
         .spawn(|| {
             loop {
-                if !has_accessibility_permission() {
-                    if ACCESSIBILITY_PROMPTED.set(()).is_ok() {
-                        let _ = request_accessibility_permission();
-                    }
-                } else if unsafe { try_start_event_tap() } {
+                if has_accessibility_permission() && unsafe { try_start_event_tap() } {
                     break;
                 }
                 std::thread::sleep(Duration::from_secs(2));

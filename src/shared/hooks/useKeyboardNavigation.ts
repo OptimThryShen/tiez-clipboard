@@ -91,7 +91,7 @@ export const useKeyboardNavigation = ({
       null;
   }, [selectedIndex, selectedItemId]);
 
-  // macOS NSPanel uses show_and_make_key, so the webview receives real keydowns.
+  // macOS NSPanel is non-key on show; arrow DOM navigation works after make_key_window.
   // Native HID navigation is only needed on Windows (and legacy Mac non-key panels).
   const usesNativeNavigation = () =>
     isTauriRuntime() && arrowKeySelectionRef.current && !isMacPlatform();
@@ -106,13 +106,19 @@ export const useKeyboardNavigation = ({
     selectedItemIdRef.current = item?.id ?? null;
     selectedItemSnapshotRef.current = item ?? null;
 
-    flushSync(() => {
-      if (enableKeyboard) {
+    // Keyboard nav needs flushSync so Enter immediately sees the new selection.
+    // Mouse hover should stay cheap — avoid synchronous full-tree flush on every enter.
+    if (enableKeyboard) {
+      flushSync(() => {
         setIsKeyboardMode(true);
-      }
-      setSelectedIndex(nextIndex);
-      setSelectedItemId(item?.id ?? null);
-    });
+        setSelectedIndex(nextIndex);
+        setSelectedItemId(item?.id ?? null);
+      });
+      return;
+    }
+
+    setSelectedIndex(nextIndex);
+    setSelectedItemId(item?.id ?? null);
   };
 
   const resolveSelectedItem = (history: ClipboardEntry[]) => {
@@ -398,12 +404,20 @@ export const useKeyboardNavigation = ({
     return () => { unlisten.then(f => f()); };
   }, [setIsKeyboardMode, setSearch, setSelectedIndex, setSelectedItemId]);
 
+  // Mouse hover / click highlight: update selected item without entering keyboard
+  // navigation mode, so typing in the previous app is undisturbed and Enter paste
+  // still requires an explicit arrow/nav activation.
+  const highlightItemByIndex = (index: number) => {
+    applySelection(index, false);
+  };
+
   const selectItemByIndex = (index: number) => {
-    isKeyboardModeRef.current = true;
-    applySelection(index);
+    // Clicks also only highlight; keyboard mode is reserved for arrow/nav keys.
+    applySelection(index, false);
   };
 
   return {
-    selectItemByIndex
+    selectItemByIndex,
+    highlightItemByIndex
   };
 };

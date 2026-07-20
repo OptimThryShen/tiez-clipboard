@@ -58,6 +58,11 @@ export default function TagManager({ t, theme }: TagManagerProps) {
     const [isManageMode, setIsManageMode] = useState(false);
     const [selectedItemIds, setSelectedItemIds] = useState<Set<number>>(new Set());
     const containerRef = useRef<HTMLElement | null>(null);
+    // A collapsed sidebar works as a narrow vertical rail on wide windows, but
+    // in the stacked mobile layout it would hide every tag label and leave only
+    // a column of color dots. Keep the preference for wide layouts while always
+    // presenting the full tag list when the sidebar sits above the editor.
+    const isSidebarCollapsed = isCollapsed && !isStacked;
 
     const selectedTagRef = useRef<string | null>(null);
     useEffect(() => { selectedTagRef.current = selectedTag; }, [selectedTag]);
@@ -310,13 +315,17 @@ export default function TagManager({ t, theme }: TagManagerProps) {
         setEditingNoteId(item.id);
         setNoteDraft(item.note || '');
         requestAnimationFrame(() => {
-            noteInputRef.current?.focus();
-            const el = noteInputRef.current;
-            if (el) {
-                const len = el.value.length;
-                el.setSelectionRange(len, len);
-            }
-            ignoreNoteBlurRef.current = false;
+            invoke("activate_window_focus")
+                .catch(console.error)
+                .finally(() => {
+                    noteInputRef.current?.focus();
+                    const el = noteInputRef.current;
+                    if (el) {
+                        const len = el.value.length;
+                        el.setSelectionRange(len, len);
+                    }
+                    ignoreNoteBlurRef.current = false;
+                });
         });
     };
 
@@ -381,14 +390,14 @@ export default function TagManager({ t, theme }: TagManagerProps) {
         <div className="tag-manager-page">
             <section
                 ref={containerRef}
-                className={`advanced-workbench tag-manager-workbench theme-${theme} ${isCollapsed ? "sidebar-collapsed" : ""} ${isStacked ? "stacked-layout" : ""}${isModalOpen ? " tag-manager-modal-open" : ""}`}
+                className={`advanced-workbench tag-manager-workbench theme-${theme} ${isSidebarCollapsed ? "sidebar-collapsed" : ""} ${isStacked ? "stacked-layout" : ""}${isModalOpen ? " tag-manager-modal-open" : ""}`}
                 style={{
-                    ["--advanced-sidebar-width" as string]: isCollapsed ? "48px" : `${sidebarWidth}px`,
+                    ["--advanced-sidebar-width" as string]: isSidebarCollapsed ? "48px" : `${sidebarWidth}px`,
                     ["--advanced-sidebar-height" as string]: `${sidebarHeight}px`
                 }}
             >
                 <aside className="advanced-sidebar tag-manager-sidebar">
-                    {!isCollapsed ? (
+                    {!isSidebarCollapsed ? (
                         <div className="advanced-sidebar-search tag-manager-sidebar-search">
                             <div className="tag-manager-search-row">
                                 <input
@@ -545,7 +554,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                         {filteredTags.length === 0 && !tagSearch.trim() && (
                             <div className="tag-manager-sidebar-status">{t("no_tags")}</div>
                         )}
-                        {!isCollapsed && canCreateTag && filteredTags.length === 0 && (
+                        {!isSidebarCollapsed && canCreateTag && filteredTags.length === 0 && (
                             <button
                                 type="button"
                                 className="advanced-target-item tag-manager-target-item create-hint"
@@ -563,7 +572,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                     </div>
                 </aside>
 
-                {!isCollapsed && (
+                {!isSidebarCollapsed && (
                     <div
                         className={`advanced-divider ${isResizing ? "active" : ""}`}
                         onMouseDown={(e) => {

@@ -26,7 +26,6 @@ fn main() -> AppResult<()> {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -57,7 +56,6 @@ fn main() -> AppResult<()> {
             app::window_manager::activate_window_focus,
             app::window_manager::focus_clipboard_window,
             app::window_manager::set_navigation_enabled,
-            app::window_manager::set_macos_header_pass_height,
             app::window_manager::set_navigation_mode,
             app::hooks::set_recording_mode,
             services::content_handler::open_content,
@@ -145,6 +143,7 @@ fn main() -> AppResult<()> {
             app::commands::relaunch,
             app::commands::check_macos_permissions,
             app::commands::request_macos_permissions,
+            app::commands::get_macos_accessibility_binary_path,
             app::commands::open_macos_accessibility_settings,
             app::commands::set_theme,
             app::commands::send_system_notification,

@@ -13,6 +13,8 @@ type UseSearchScrollOptions = {
 
 const SHOW_THRESHOLD = 16;
 const WHEEL_DELTA_MIN = 6;
+/** Hide search as soon as the list moves slightly downward. */
+const HIDE_SCROLL_OFFSET = 4;
 /** Treat near-top as top (Virtuoso may report small non-zero offsets). */
 const AT_TOP_EPSILON = 12;
 /** Brief pause after landing at top to avoid momentum overscroll triggering reveal */
@@ -73,6 +75,25 @@ export const useSearchScroll = ({
     }
   }, [containerRef, shouldCaptureWheel]);
 
+  const hideSearchBox = () => {
+    if (
+      searchPinnedRef.current ||
+      showSettingsRef.current ||
+      showTagManagerRef.current ||
+      !showSearchBoxRef.current ||
+      searchRef.current.length > 0
+    ) {
+      return false;
+    }
+
+    dismissRef.current?.();
+    showSearchBoxRef.current = false;
+    setShowSearchBoxRef.current(false);
+    scrollTriggerRef.current = 0;
+    syncWheelListener();
+    return true;
+  };
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -81,8 +102,6 @@ export const useSearchScroll = ({
 
     const onWheel = (e: WheelEvent) => {
       const deltaY = e.deltaY;
-      if (Math.abs(deltaY) <= WHEEL_DELTA_MIN) return;
-
       const atTop = isAtTop();
       const scrollingDown = deltaY > 0;
       const scrollingUp = deltaY < 0;
@@ -90,17 +109,15 @@ export const useSearchScroll = ({
       const searchEmpty = searchRef.current.length === 0;
 
       if (scrollingDown && searchOpen && searchEmpty) {
-        dismissRef.current?.();
-        showSearchBoxRef.current = false;
-        setShowSearchBoxRef.current(false);
-        scrollTriggerRef.current = 0;
-        if (atTop) {
+        const hidden = hideSearchBox();
+        if (hidden && atTop) {
           e.preventDefault();
           e.stopPropagation();
         }
-        syncWheelListener();
         return;
       }
+
+      if (Math.abs(deltaY) <= WHEEL_DELTA_MIN) return;
 
       if (scrollingUp && atTop && !searchOpen) {
         if (Date.now() - topReachedTimeRef.current > TOP_SETTLE_MS) {
@@ -149,6 +166,11 @@ export const useSearchScroll = ({
       if (offset <= AT_TOP_EPSILON && listScrollTopRef.current > AT_TOP_EPSILON) {
         topReachedTimeRef.current = Date.now();
       }
+
+      if (offset > HIDE_SCROLL_OFFSET) {
+        hideSearchBox();
+      }
+
       listScrollTopRef.current = offset;
 
       if (wasAtTop !== offset <= AT_TOP_EPSILON) {

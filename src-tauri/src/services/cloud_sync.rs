@@ -1017,6 +1017,105 @@ fn replace_local_sync_index(
     Ok(())
 }
 
+fn upsert_local_sync_index(app: &AppHandle, changed_items: &[CloudSyncItem]) -> AppResult<()> {
+    if changed_items.is_empty() {
+        return Ok(());
+    }
+
+    let collapsed = collapse_items_by_sync_key(changed_items);
+    let db_state = app
+        .try_state::<DbState>()
+        .ok_or_else(|| AppError::Internal("DB state unavailable".to_string()))?;
+    let conn = db_state
+        .conn
+        .lock()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    for (sync_key, item) in collapsed {
+        let digest = sync_digest_for_item(&item);
+        conn.execute(
+            "INSERT INTO cloud_sync_local_index (sync_key, digest) VALUES (?1, ?2)
+             ON CONFLICT(sync_key) DO UPDATE SET digest = excluded.digest",
+            rusqlite::params![sync_key, digest],
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    }
+    Ok(())
+}
+
+fn entries_to_sync_items(
+    entries: Vec<ClipboardEntry>,
+    prefs: &CloudSyncContentPrefs,
+) -> Vec<CloudSyncItem> {
+    entries
+        .into_iter()
+        .filter(|e| {
+            is_cloud_clipboard_content_type(&e.content_type)
+                && prefs.includes_content_type(&e.content_type)
+        })
+        .filter_map(|e| {
+            let normalized = normalize_item_for_sync(CloudSyncItem {
+                content_type: e.content_type,
+                content: e.content,
+                content_hash: 0,
+                deleted_at: 0,
+                html_content: e.html_content,
+                content_blob_hash: None,
+                html_blob_hash: None,
+                source_app: e.source_app,
+                timestamp: e.timestamp,
+                preview: e.preview,
+                is_pinned: e.is_pinned,
+                tags: e.tags,
+                use_count: e.use_count,
+                pinned_order: e.pinned_order,
+            })?;
+            let mut item = normalized;
+            item.content_hash = compute_sync_content_hash(&item.content_type, &item.content);
+            Some(item)
+        })
+        .collect()
+}
+
+fn fetch_syncable_entries(
+    app: &AppHandle,
+    since_timestamp: Option<i64>,
+) -> AppResult<Vec<ClipboardEntry>> {
+    let db_state = app
+        .try_state::<DbState>()
+        .ok_or_else(|| AppError::Internal("DB state unavailable".to_string()))?;
+
+    let mut entries: Vec<ClipboardEntry> = Vec::new();
+    let mut offset: i32 = 0;
+
+    loop {
+        let batch = if let Some(since) = since_timestamp {
+            db_state
+                .repo
+                .get_history_since(since, SYNC_FETCH_PAGE_SIZE, offset, None)
+                .map_err(AppError::Internal)?
+        } else {
+            db_state
+                .repo
+                .get_history(SYNC_FETCH_PAGE_SIZE, offset, None)
+                .map_err(AppError::Internal)?
+        };
+
+        if batch.is_empty() {
+            break;
+        }
+
+        let fetched = batch.len() as i32;
+        entries.extend(batch);
+        offset = offset.saturating_add(fetched);
+        if fetched < SYNC_FETCH_PAGE_SIZE {
+            break;
+        }
+    }
+
+    Ok(entries)
+}
+
 fn collect_local_incremental_items(
     app: &AppHandle,
     local_items: &[CloudSyncItem],
@@ -1165,60 +1264,9 @@ fn collect_local_syncable_items(
     app: &AppHandle,
     prefs: &CloudSyncContentPrefs,
 ) -> AppResult<Vec<CloudSyncItem>> {
-    let db_state = app
-        .try_state::<DbState>()
-        .ok_or_else(|| AppError::Internal("DB state unavailable".to_string()))?;
-
-    let mut entries: Vec<ClipboardEntry> = Vec::new();
-    let mut offset: i32 = 0;
-
-    loop {
-        let batch = db_state
-            .repo
-            .get_history(SYNC_FETCH_PAGE_SIZE, offset, None)
-            .map_err(AppError::Internal)?;
-
-        if batch.is_empty() {
-            break;
-        }
-
-        let fetched = batch.len() as i32;
-        entries.extend(batch.into_iter().filter(|e| {
-            is_cloud_clipboard_content_type(&e.content_type)
-                && prefs.includes_content_type(&e.content_type)
-        }));
-        offset = offset.saturating_add(fetched);
-        if fetched < SYNC_FETCH_PAGE_SIZE {
-            break;
-        }
-    }
-
-    let mut items: Vec<CloudSyncItem> = entries
-        .into_iter()
-        .filter_map(|e| {
-            let normalized = normalize_item_for_sync(CloudSyncItem {
-                content_type: e.content_type,
-                content: e.content,
-                content_hash: 0,
-                deleted_at: 0,
-                html_content: e.html_content,
-                content_blob_hash: None,
-                html_blob_hash: None,
-                source_app: e.source_app,
-                timestamp: e.timestamp,
-                preview: e.preview,
-                is_pinned: e.is_pinned,
-                tags: e.tags,
-                use_count: e.use_count,
-                pinned_order: e.pinned_order,
-            })?;
-            let mut item = normalized;
-            item.content_hash = compute_sync_content_hash(&item.content_type, &item.content);
-            Some(item)
-        })
-        .collect();
-
-    let mut tombstones = collect_local_tombstones(app, prefs)?;
+    let entries = fetch_syncable_entries(app, None)?;
+    let mut items = entries_to_sync_items(entries, prefs);
+    let mut tombstones = collect_local_tombstones(app, prefs, None)?;
     items.append(&mut tombstones);
     items.sort_by_key(|e| e.timestamp);
     Ok(items)
@@ -1229,14 +1277,37 @@ fn collect_local_changes(
     cursor: i64,
     prefs: &CloudSyncContentPrefs,
 ) -> AppResult<Vec<CloudSyncItem>> {
-    let mut items = collect_local_syncable_items(app, prefs)?;
-    items.retain(|e| e.timestamp > cursor);
+    let entries = fetch_syncable_entries(app, Some(cursor))?;
+    let mut items = entries_to_sync_items(entries, prefs);
+    let mut tombstones = collect_local_tombstones(app, prefs, Some(cursor))?;
+    items.append(&mut tombstones);
+    items.sort_by_key(|e| e.timestamp);
     Ok(items)
+}
+
+fn map_tombstone_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CloudSyncItem> {
+    Ok(CloudSyncItem {
+        content_type: row.get(0)?,
+        content: String::new(),
+        content_hash: row.get(1)?,
+        deleted_at: row.get(2)?,
+        html_content: None,
+        content_blob_hash: None,
+        html_blob_hash: None,
+        source_app: "sync".to_string(),
+        timestamp: row.get(2)?,
+        preview: String::new(),
+        is_pinned: false,
+        tags: Vec::new(),
+        use_count: 0,
+        pinned_order: 0,
+    })
 }
 
 fn collect_local_tombstones(
     app: &AppHandle,
     prefs: &CloudSyncContentPrefs,
+    since_deleted_at: Option<i64>,
 ) -> AppResult<Vec<CloudSyncItem>> {
     let db_state = app
         .try_state::<DbState>()
@@ -1246,37 +1317,36 @@ fn collect_local_tombstones(
         .lock()
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let mut stmt = conn
-        .prepare(
-            "SELECT content_type, content_hash, deleted_at
-             FROM cloud_sync_tombstones
-             ORDER BY deleted_at ASC",
-        )
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok(CloudSyncItem {
-                content_type: row.get(0)?,
-                content: String::new(),
-                content_hash: row.get(1)?,
-                deleted_at: row.get(2)?,
-                html_content: None,
-                content_blob_hash: None,
-                html_blob_hash: None,
-                source_app: "sync".to_string(),
-                timestamp: row.get(2)?,
-                preview: String::new(),
-                is_pinned: false,
-                tags: Vec::new(),
-                use_count: 0,
-                pinned_order: 0,
-            })
-        })
-        .map_err(|e| AppError::Internal(e.to_string()))?;
-
     let mut items = Vec::new();
-    for row in rows {
-        items.push(row.map_err(|e| AppError::Internal(e.to_string()))?);
+    if let Some(since) = since_deleted_at {
+        let mut stmt = conn
+            .prepare(
+                "SELECT content_type, content_hash, deleted_at
+                 FROM cloud_sync_tombstones
+                 WHERE deleted_at > ?
+                 ORDER BY deleted_at ASC",
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let rows = stmt
+            .query_map([since], map_tombstone_row)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        for row in rows {
+            items.push(row.map_err(|e| AppError::Internal(e.to_string()))?);
+        }
+    } else {
+        let mut stmt = conn
+            .prepare(
+                "SELECT content_type, content_hash, deleted_at
+                 FROM cloud_sync_tombstones
+                 ORDER BY deleted_at ASC",
+            )
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        let rows = stmt
+            .query_map([], map_tombstone_row)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        for row in rows {
+            items.push(row.map_err(|e| AppError::Internal(e.to_string()))?);
+        }
     }
     items.retain(|item| {
         is_cloud_clipboard_content_type(&item.content_type)
@@ -1553,7 +1623,7 @@ fn apply_remote_changes(
 
         db_state
             .repo
-            .save_with_conn(&conn, &entry, app_data_dir.as_deref())
+            .save_with_conn(&conn, &entry, app_data_dir.as_deref(), None)
             .map_err(AppError::Internal)?;
         if remote_hash != 0 {
             let _ = conn.execute(
@@ -2941,16 +3011,27 @@ async fn sync_once_webdav(
         return Ok(disabled_status());
     }
     let now = now_ms();
-    let local_items = collect_local_syncable_items(app, &cfg.content_prefs)?;
-    let (delta_items, collapsed_index) = collect_local_incremental_items(app, &local_items)?;
+    let sync_cursor = get_setting_i64(app, "cloud_sync_cursor", 0);
+
+    let candidate_entries = fetch_syncable_entries(app, Some(sync_cursor))?;
+    let candidate_items = entries_to_sync_items(candidate_entries, &cfg.content_prefs);
+    let (delta_items, _) = collect_local_incremental_items(app, &candidate_items)?;
+
+    let should_push_snapshot = force_snapshot
+        || should_push_webdav_snapshot(app, now, cfg.snapshot_interval_secs, !delta_items.is_empty());
+
+    let local_items = if should_push_snapshot {
+        collect_local_syncable_items(app, &cfg.content_prefs)?
+    } else {
+        Vec::new()
+    };
+
     let client = build_http_client()?;
     let paths = ensure_webdav_directories(&client, cfg).await?;
     let mut sync_head = resolve_webdav_sync_head(app, &client, cfg, &paths, now).await?;
     ensure_head_covers_known_devices(&client, cfg, &paths.devices_path, &mut sync_head).await?;
     let mut sync_head_dirty = false;
     let mut webdav_blob_cache = load_webdav_blob_cache(app);
-    let should_push_snapshot = force_snapshot
-        || should_push_webdav_snapshot(app, now, cfg.snapshot_interval_secs, !delta_items.is_empty());
 
     // 1) Pull authoritative per-device snapshots every cycle (bounded devices/ listing).
     let mut received_items = pull_remote_device_snapshots(
@@ -3008,7 +3089,7 @@ async fn sync_once_webdav(
             upload_webdav_ops_batch(&client, cfg, &paths.ops_path, next_seq, chunk).await?;
         }
         set_local_webdav_op_seq(app, next_seq);
-        replace_local_sync_index(app, &collapsed_index)?;
+        upsert_local_sync_index(app, &delta_items)?;
         uploaded_items += delta_items.len();
         update_webdav_head_device(&mut sync_head, &cfg.device_id, |device| {
             device.latest_op_seq = device.latest_op_seq.max(next_seq);
@@ -3064,6 +3145,7 @@ async fn sync_once_webdav(
         sync_head_dirty = true;
         set_setting_i64(app, CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PUSH_AT_KEY, now);
         let _ = cleanup_local_webdav_ops(&client, cfg, &paths.ops_path, latest_op_seq).await;
+        replace_local_sync_index(app, &collapse_items_by_sync_key(&local_items))?;
     }
 
     if sync_head_dirty {
@@ -3207,6 +3289,11 @@ pub fn start_cloud_sync_client(app: AppHandle) {
         let _guard = CloudSyncTaskGuard;
 
         loop {
+            if cloud_sync_cancel_requested() {
+                emit_status(Some(&app), disabled_status());
+                break;
+            }
+
             let mut requested = CLOUD_SYNC_REQUESTED.swap(false, Ordering::Relaxed);
             let cfg = match get_config(&app) {
                 Some(c) => c,
@@ -3222,6 +3309,9 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                             received_items: 0,
                         },
                     );
+                    if cloud_sync_cancel_requested() {
+                        break;
+                    }
                     sleep(Duration::from_secs(5)).await;
                     continue;
                 }
@@ -3246,6 +3336,10 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                             received_items: 0,
                         },
                     );
+                    if cloud_sync_cancel_requested() {
+                        emit_status(Some(&app), disabled_status());
+                        break;
+                    }
                     sleep(Duration::from_secs(5)).await;
                     continue;
                 }
@@ -3305,12 +3399,20 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                 );
             }
 
+            if cloud_sync_cancel_requested() {
+                emit_status(Some(&app), disabled_status());
+                break;
+            }
+
             if cfg.auto_sync {
                 let interval = cfg
                     .interval_secs
                     .clamp(MIN_INTERVAL_SECS, MAX_INTERVAL_SECS);
                 let mut elapsed = 0u64;
                 while elapsed < interval {
+                    if cloud_sync_cancel_requested() {
+                        break;
+                    }
                     requested = CLOUD_SYNC_REQUESTED.swap(false, Ordering::Relaxed);
                     if requested {
                         break;
@@ -3320,6 +3422,9 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                 }
             } else {
                 loop {
+                    if cloud_sync_cancel_requested() {
+                        break;
+                    }
                     requested = CLOUD_SYNC_REQUESTED.swap(false, Ordering::Relaxed);
                     if requested {
                         break;
@@ -3327,14 +3432,35 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                     sleep(Duration::from_secs(1)).await;
                 }
             }
+
+            if cloud_sync_cancel_requested() {
+                emit_status(Some(&app), disabled_status());
+                break;
+            }
         }
+
+        // Allow a subsequent start/restart to spawn a fresh task.
+        CLOUD_SYNC_CANCEL_REQUESTED.store(false, Ordering::Relaxed);
     });
 }
 
 pub fn restart_cloud_sync_client(app: AppHandle) {
-    CLOUD_SYNC_CANCEL_REQUESTED.store(false, Ordering::Relaxed);
-    start_cloud_sync_client(app);
-    CLOUD_SYNC_REQUESTED.store(true, Ordering::Relaxed);
+    // Request current loop exit, then start a fresh task and sync once.
+    CLOUD_SYNC_CANCEL_REQUESTED.store(true, Ordering::Relaxed);
+    CLOUD_SYNC_REQUESTED.store(false, Ordering::Relaxed);
+
+    tauri::async_runtime::spawn(async move {
+        // Wait briefly for the active loop to observe cancel and drop.
+        for _ in 0..30 {
+            if !CLOUD_SYNC_TASK_ACTIVE.load(Ordering::Relaxed) {
+                break;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
+        CLOUD_SYNC_CANCEL_REQUESTED.store(false, Ordering::Relaxed);
+        start_cloud_sync_client(app.clone());
+        CLOUD_SYNC_REQUESTED.store(true, Ordering::Relaxed);
+    });
 }
 
 pub fn request_cloud_sync(app: AppHandle) {

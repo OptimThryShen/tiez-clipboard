@@ -213,14 +213,18 @@ const AppHeader = ({
                 <div className="search-input-wrap">
                   <div className="search-input-row">
                     <span className="search-prompt" aria-hidden="true">
-                      %
+                      {theme === "terminal" ? "➜" : "%"}
                     </span>
                     <Search size={14} className="search-icon" />
                     <input
                     ref={searchInputRef}
                     type="text"
                     className={`search-input ${showTagFilter && searchIsFocused && allTags.length > 0 ? 'dropdown-open' : ''}`}
-                    placeholder={t('search_placeholder')}
+                    placeholder={
+                      theme === "terminal"
+                        ? (t("search_placeholder_terminal") || "search history…")
+                        : t('search_placeholder')
+                    }
                     value={search}
                     onCompositionStart={() => setIsComposing(true)}
                     onCompositionEnd={(e) => {
@@ -266,7 +270,7 @@ const AppHeader = ({
                                 setShowTagFilter(false);
                               }}
                               data-tag={tag}
-                              style={{ background: tagBackground, color: getTagTextColor(tagBackground) }}
+                              style={{ background: tagBackground, color: getTagTextColor(tagBackground, theme) }}
                             >
                               {tag}
                             </span>
@@ -284,11 +288,11 @@ const AppHeader = ({
                     }
                   }}
                 >
-                  {['text', 'image', 'file', 'url', 'code', 'video', 'rich_text'].map(t => (
+                  {[null, 'text', 'image', 'file', 'url', 'code', 'video', 'rich_text'].map(type => (
                     <button
-                      key={t}
-                      className={`btn-icon ${typeFilter === t ? 'active' : ''}`}
-                      onClick={() => setTypeFilter(typeFilter === t ? null : t)}
+                      key={type ?? 'all'}
+                      className={`btn-icon ${typeFilter === type ? 'active' : ''}`}
+                      onClick={() => setTypeFilter(type)}
                       style={{
                         width: 'auto',
                         padding: '4px 8px',
@@ -296,11 +300,11 @@ const AppHeader = ({
                         borderRadius: '4px',
                         whiteSpace: 'nowrap',
                         flexShrink: 0,
-                        opacity: typeFilter === t ? 1 : 0.7
+                        opacity: typeFilter === type ? 1 : 0.7
                       }}
-                      title={getTypeName(t)}
+                      title={type === null ? (t('type_all') || '全部') : getTypeName(type)}
                     >
-                      {getTypeName(t)}
+                      {type === null ? (t('type_all') || '全部') : getTypeName(type)}
                     </button>
                   ))}
                 </div>

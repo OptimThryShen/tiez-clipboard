@@ -1171,17 +1171,37 @@ pub fn entry_searchable_text(entry: &ClipboardEntry) -> String {
     entry.content.clone()
 }
 
-pub fn entry_matches_search(entry: &ClipboardEntry, term: &str, tag_only: bool) -> bool {
+pub fn entry_matches_search(
+    entry: &ClipboardEntry,
+    term: &str,
+    tag_only: bool,
+    note_only: bool,
+) -> bool {
     let term = term.trim().to_lowercase();
-    if term.is_empty() {
-        return false;
-    }
 
     if tag_only {
+        if term.is_empty() {
+            return false;
+        }
         return entry
             .tags
             .iter()
             .any(|t| t.eq_ignore_ascii_case(&term));
+    }
+
+    if note_only {
+        let note = entry.note.trim();
+        if note.is_empty() {
+            return false;
+        }
+        if term.is_empty() {
+            return true;
+        }
+        return note.to_lowercase().contains(&term);
+    }
+
+    if term.is_empty() {
+        return false;
     }
 
     if entry
@@ -1704,16 +1724,16 @@ mod tests {
             "[Image Content]",
         );
 
-        assert!(!entry_matches_search(&entry, "screenshot", false));
-        assert!(!entry_matches_search(&entry, "test", false));
+        assert!(!entry_matches_search(&entry, "screenshot", false, false));
+        assert!(!entry_matches_search(&entry, "test", false, false));
     }
 
     #[test]
     fn entry_matches_search_finds_text_in_preview() {
         let entry = sample_entry("text", "full body hidden", "hello world");
 
-        assert!(entry_matches_search(&entry, "hello", false));
-        assert!(!entry_matches_search(&entry, "hidden", false));
+        assert!(entry_matches_search(&entry, "hello", false, false));
+        assert!(!entry_matches_search(&entry, "hidden", false, false));
     }
 
     #[test]
@@ -1721,8 +1741,8 @@ mod tests {
         let mut entry = sample_entry("image", "/tmp/a.png", "[Image Content]");
         entry.tags = vec!["work".to_string()];
 
-        assert!(entry_matches_search(&entry, "work", false));
-        assert!(entry_matches_search(&entry, "notes", false));
+        assert!(entry_matches_search(&entry, "work", false, false));
+        assert!(entry_matches_search(&entry, "notes", false, false));
     }
 
     #[test]
@@ -1731,8 +1751,8 @@ mod tests {
         entry.source_app = "Finder".to_string();
         entry.note = "客户跟进纪要".to_string();
 
-        assert!(entry_matches_search(&entry, "跟进", false));
-        assert!(!entry_matches_search(&entry, "无关词", false));
+        assert!(entry_matches_search(&entry, "跟进", false, false));
+        assert!(!entry_matches_search(&entry, "无关词", false, false));
     }
 
     #[test]
@@ -1740,9 +1760,27 @@ mod tests {
         let mut entry = sample_entry("text", "hello", "hello");
         entry.tags = vec!["AI".to_string(), "AI工具".to_string()];
 
-        assert!(entry_matches_search(&entry, "ai", true));
-        assert!(!entry_matches_search(&entry, "AI工具", true));
-        assert!(!entry_matches_search(&entry, "工具", true));
+        assert!(entry_matches_search(&entry, "ai", true, false));
+        assert!(entry_matches_search(&entry, "AI工具", true, false));
+        assert!(!entry_matches_search(&entry, "工具", true, false));
+    }
+
+    #[test]
+    fn entry_matches_search_note_only_matches_note_field() {
+        let mut entry = sample_entry("text", "hello", "hello");
+        entry.note = "客户跟进".to_string();
+        assert!(entry_matches_search(&entry, "跟进", false, true));
+        assert!(!entry_matches_search(&entry, "跟进", true, false));
+    }
+
+    #[test]
+    fn entry_matches_search_note_only_empty_term_requires_note() {
+        let mut with_note = sample_entry("text", "hello", "hello");
+        with_note.note = "todo".to_string();
+        let mut without_note = sample_entry("text", "hello", "hello");
+        without_note.note.clear();
+        assert!(entry_matches_search(&with_note, "", false, true));
+        assert!(!entry_matches_search(&without_note, "", false, true));
     }
 
     #[test]
@@ -1794,7 +1832,24 @@ mod tests {
     fn derive_rich_text_content_prefers_plain_whitespace_over_html() {
         let html = "<html><body>test</body></html>";
         assert_eq!(derive_rich_text_content(" test", Some(html)), " test");
+        assert_eq!(derive_rich_text_content("test ", Some(html)), "test ");
+        assert_eq!(derive_rich_text_content("test\t", Some(html)), "test\t");
         assert_eq!(derive_rich_text_content("   ", Some(html)), "   ");
+    }
+
+    #[test]
+    fn resolve_clipboard_capture_preserves_trailing_whitespace() {
+        let resolved = super::resolve_clipboard_text_capture(
+            Some("copied text  \t"),
+            Some("<html><body>copied text</body></html>"),
+            None,
+            true,
+            "Browser",
+            None,
+        )
+        .expect("clipboard text should be capturable");
+
+        assert_eq!(resolved.text, "copied text  \t");
     }
 
     #[test]

@@ -692,6 +692,7 @@ const ClipboardItem = ({
     t,
     isAIProcessing,
     onSelect,
+    onHover,
     onCopy,
     onToggleReveal,
     onOpen,
@@ -1229,7 +1230,11 @@ const ClipboardItem = ({
     };
     useEffect(() => {
         if (isEditingTags && tagInputRef.current) {
-            tagInputRef.current.focus();
+            invoke('activate_window_focus')
+                .catch(console.error)
+                .finally(() => {
+                    tagInputRef.current?.focus();
+                });
         }
     }, [isEditingTags]);
 
@@ -1243,12 +1248,16 @@ const ClipboardItem = ({
         ignoreNoteBlurRef.current = true;
         setLocalNoteInput(item.note || "");
         const focusTimer = window.setTimeout(() => {
-            noteInputRef.current?.focus();
-            const el = noteInputRef.current;
-            if (el) {
-                const len = el.value.length;
-                el.setSelectionRange(len, len);
-            }
+            invoke('activate_window_focus')
+                .catch(console.error)
+                .finally(() => {
+                    noteInputRef.current?.focus();
+                    const el = noteInputRef.current;
+                    if (el) {
+                        const len = el.value.length;
+                        el.setSelectionRange(len, len);
+                    }
+                });
             window.setTimeout(() => {
                 ignoreNoteBlurRef.current = false;
             }, 200);
@@ -1346,7 +1355,7 @@ const ClipboardItem = ({
         >
             {item.tags?.map((tag) => {
                 const tagBackground = tagColors?.[tag] || getTagColor(tag, theme);
-                const tagTextColor = getTagTextColor(tagBackground);
+                const tagTextColor = getTagTextColor(tagBackground, theme);
                 return (
                     <span
                         key={tag}
@@ -1484,7 +1493,7 @@ const ClipboardItem = ({
                         >
                             {pickableTagSuggestions.map((sTag, sIdx) => {
                                 const bg = tagColors?.[sTag] || getTagColor(sTag, theme);
-                                const fg = getTagTextColor(bg);
+                                const fg = getTagTextColor(bg, theme);
                                 return (
                                     <button
                                         key={sTag}
@@ -1689,6 +1698,7 @@ const ClipboardItem = ({
                 onSelect();
             }}
             onMouseEnter={(e) => {
+                onHover?.();
                 if (!compactPreviewEnabled) return;
                 // Don't show preview if AI options are open to avoid interference
                 if (showAIOptions) return;

@@ -43,11 +43,16 @@ fn worker(app_handle: AppHandle, rx: Receiver<EncryptionJob>) {
 
         for job in jobs {
             let db_state = app_handle.state::<DbState>();
+
+            // Recover from poisoned mutex so sensitive encrypt/decrypt jobs are not dropped.
             let conn = match db_state.conn.lock() {
                 Ok(c) => c,
-                Err(_) => {
-                    thread::sleep(Duration::from_millis(30));
-                    continue;
+                Err(poisoned) => {
+                    eprintln!(
+                        "encryption queue recovered poisoned DB lock (id={})",
+                        job.id
+                    );
+                    poisoned.into_inner()
                 }
             };
 

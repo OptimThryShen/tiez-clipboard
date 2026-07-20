@@ -94,159 +94,6 @@ const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
 
 const QUICK_PASTE_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"] as const;
 
-type MacosNonactivatingClick = {
-  clientX: number;
-  clientY: number;
-  screenX: number;
-  screenY: number;
-};
-
-const CLIPBOARD_ITEM_ID_PREFIX = "clipboard-item-";
-
-const stackElementsAtPoint = (clientX: number, clientY: number): HTMLElement[] =>
-  document
-    .elementsFromPoint(clientX, clientY)
-    .filter((node): node is HTMLElement => node instanceof HTMLElement);
-
-const parseClipboardItemId = (itemEl: HTMLElement): number | null => {
-  const dataId = itemEl.dataset.clipboardItemId;
-  if (dataId) {
-    const parsed = Number(dataId);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  if (!itemEl.id.startsWith(CLIPBOARD_ITEM_ID_PREFIX)) return null;
-  const parsed = Number(itemEl.id.slice(CLIPBOARD_ITEM_ID_PREFIX.length));
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const invokeContentForPaste = (item: ClipboardEntry): string => {
-  if (
-    item.id !== 0 &&
-    (item.content_type === "image" ||
-      item.content_type === "video" ||
-      item.content_type === "file")
-  ) {
-    return "";
-  }
-  return item.content;
-};
-
-const handleMacosNonactivatingClick = (
-  payload: MacosNonactivatingClick,
-  history: ClipboardEntry[],
-  copyToClipboard: (
-    id: number,
-    content: string,
-    contentType: string,
-    pasteWithFormat?: boolean,
-    isPinned?: boolean,
-    tags?: string[]
-  ) => Promise<void>
-) => {
-  const { clientX, clientY } = payload;
-  if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return;
-
-  const stack = stackElementsAtPoint(clientX, clientY);
-  if (stack.length === 0) return;
-
-  const target = stack[0];
-
-  const modalOverlay = stack
-    .map((node) => node.closest(".modal-overlay") as HTMLElement | null)
-    .find(Boolean);
-  if (modalOverlay) {
-    const interactive = target.closest(
-      'button, input, textarea, select, label.switch, a, [role="button"], [role="switch"], [role="tab"]'
-    ) as HTMLElement | null;
-    if (interactive && modalOverlay.contains(interactive)) {
-      invoke("activate_window_focus").catch(console.error);
-      setTimeout(() => interactive.click(), 0);
-    }
-    return;
-  }
-
-  const overlayRoot = stack
-    .map(
-      (node) =>
-        node.closest(
-          ".settings-panel-root, .settings-view, .tag-manager-page, .emoji-panel, .file-transfer-panel"
-        ) as HTMLElement | null
-    )
-    .find(Boolean);
-  if (overlayRoot) {
-    const interactive = target.closest(
-      'button, input, textarea, select, label.switch, a, [role="button"], [role="switch"], [role="tab"]'
-    ) as HTMLElement | null;
-    if (interactive && overlayRoot.contains(interactive)) {
-      invoke("activate_window_focus").catch(console.error);
-      setTimeout(() => interactive.click(), 0);
-      return;
-    }
-
-    if (overlayRoot.classList.contains("tag-manager-page")) {
-      const card = stack
-        .map((node) => node.closest(".tag-manager-card, .themed-card") as HTMLElement | null)
-        .find((node) => node && overlayRoot.contains(node));
-      if (card) {
-        if (target.closest('button, input, textarea, [role="button"], .card-note')) {
-          return;
-        }
-        const itemId = Number(card.dataset.tagItemId);
-        const contentType = card.dataset.tagItemType || "text";
-        if (!Number.isFinite(itemId)) return;
-        void invoke("copy_to_clipboard", {
-          content: "",
-          contentType,
-          paste: true,
-          id: itemId,
-          deleteAfterUse: false
-        }).catch(console.error);
-      }
-      return;
-    }
-
-    return;
-  }
-
-  let itemEl: HTMLElement | null = null;
-  for (const node of stack) {
-    const candidate = node.closest("[data-test-clipboard-item]") as HTMLElement | null;
-    if (candidate) {
-      itemEl = candidate;
-      break;
-    }
-  }
-  if (!itemEl) return;
-
-  const interactive = target.closest(
-    'button, input, textarea, [role="button"], .drag-handle'
-  ) as HTMLElement | null;
-  if (interactive && itemEl.contains(interactive)) {
-    invoke("activate_window_focus").catch(console.error);
-    setTimeout(() => interactive.click(), 0);
-    return;
-  }
-
-  if (target.closest("a") && itemEl.contains(target.closest("a")!)) {
-    return;
-  }
-
-  const itemId = parseClipboardItemId(itemEl);
-  if (itemId === null) return;
-
-  const item = history.find((entry) => entry.id === itemId);
-  if (!item) return;
-
-  void copyToClipboard(
-    item.id,
-    invokeContentForPaste(item),
-    item.content_type,
-    false,
-    item.is_pinned,
-    item.tags || []
-  );
-};
-
 const buildQuickPasteHintsById = (
   items: ClipboardEntry[],
   quickPasteModifier: QuickPasteModifier
@@ -1100,64 +947,6 @@ const App = () => {
       virtualListRef
     });
 
-  const copyToClipboardRef = useRef(copyToClipboard);
-  const historyRef = useRef(history);
-  copyToClipboardRef.current = copyToClipboard;
-  historyRef.current = history;
-
-  useEffect(() => {
-    if (!isTauriRuntime() || !isMacPlatform()) return;
-
-    let disposed = false;
-    const unlistenPromise = listen<MacosNonactivatingClick>("macos-nonactivating-click", (event) => {
-      if (disposed) return;
-      handleMacosNonactivatingClick(
-        event.payload,
-        historyRef.current,
-        copyToClipboardRef.current
-      );
-    });
-
-    return () => {
-      disposed = true;
-      unlistenPromise.then((unlisten) => unlisten()).catch(() => { });
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isTauriRuntime() || !isMacPlatform()) return;
-
-    const syncHeaderHeight = () => {
-      const header = document.querySelector("header");
-      const height = header?.getBoundingClientRect().height;
-      if (!height || !Number.isFinite(height)) return;
-      invoke("set_macos_header_pass_height", { height }).catch(console.error);
-    };
-
-    syncHeaderHeight();
-    const header = document.querySelector("header");
-    const resizeObserver =
-      typeof ResizeObserver !== "undefined" && header
-        ? new ResizeObserver(syncHeaderHeight)
-        : null;
-    resizeObserver?.observe(header as Element);
-    window.addEventListener("resize", syncHeaderHeight);
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", syncHeaderHeight);
-    };
-  }, [
-    showSearchBox,
-    showSettings,
-    showTagManager,
-    effectiveShowTagManager,
-    effectiveShowEmojiPanel,
-    showTagFilter,
-    searchIsFocused,
-    typeFilter
-  ]);
-
   const { saveMqtt, saveCloudSync, clearHistory, handleResetSettings } = useAppActions({
     t,
     mqttEnabled,
@@ -1228,7 +1017,7 @@ const App = () => {
     virtualListRef
   });
 
-  const { selectItemByIndex } = useKeyboardNavigation({
+  const { selectItemByIndex, highlightItemByIndex } = useKeyboardNavigation({
     filteredHistory: navigableHistory,
     selectedIndex,
     selectedItemId,
@@ -1276,6 +1065,7 @@ const App = () => {
     setAiOptionsOpenId,
     copyToClipboard,
     selectItemByIndex,
+    highlightItemByIndex,
     setRevealedIds,
     openContent,
     togglePin,
