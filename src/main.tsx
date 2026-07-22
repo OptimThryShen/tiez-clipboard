@@ -16,6 +16,9 @@ const isMacPlatform =
 if (isMacPlatform) {
   document.documentElement.classList.add("platform-macos");
   document.body.classList.add("platform-macos");
+} else {
+  document.documentElement.classList.add("platform-windows");
+  document.body.classList.add("platform-windows");
 }
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

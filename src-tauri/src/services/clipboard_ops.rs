@@ -71,38 +71,59 @@ fn capture_clipboard_snapshot() -> ClipboardSnapshot {
 
     #[cfg(target_os = "windows")]
     {
-        if let Some(text_value) = text.clone() {
-            if let Some(html_raw) = unsafe {
-                crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(
-                    "HTML Format",
-                )
-            } {
-                if let Some(html) =
-                    parse_cf_html(&html_raw).filter(|value| !value.trim().is_empty())
-                {
-                    let html_animated_gif_fallback =
-                        extract_animated_image_data_url_from_html(&html);
-                    let mut html_to_store = html;
+        let source =
+            crate::infrastructure::windows_api::window_tracker::get_clipboard_source_app_info();
+        let clipboard_html = unsafe {
+            crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(
+                "HTML Format",
+            )
+        }
+        .and_then(|raw| parse_cf_html(&raw))
+        .filter(|html| !html.trim().is_empty());
 
-                    if let Some(data_url) =
-                        html_animated_gif_fallback.or_else(clipboard_image_fallback_data_url)
-                    {
-                        html_to_store = attach_rich_image_fallback(&html_to_store, &data_url);
-                    }
-
-                    let preserved_named_formats =
-                        capture_preserved_named_formats_from_clipboard(None);
-                    if !preserved_named_formats.is_empty() {
-                        html_to_store =
-                            attach_rich_named_formats(&html_to_store, &preserved_named_formats);
-                    }
-
-                    return ClipboardSnapshot::Text {
-                        text: text_value,
-                        html: Some(html_to_store),
-                    };
-                }
+        if let Some(html) = clipboard_html {
+            let text_value = text.clone().unwrap_or_else(|| derive_rich_text_content("", Some(&html)));
+            let mut html_to_store = html;
+            if let Some(data_url) = extract_animated_image_data_url_from_html(&html_to_store)
+                .or_else(clipboard_image_fallback_data_url)
+            {
+                html_to_store = attach_rich_image_fallback(&html_to_store, &data_url);
             }
+            let formats = capture_preserved_named_formats_from_clipboard(Some(&source));
+            if !formats.is_empty() {
+                html_to_store = attach_rich_named_formats(&html_to_store, &formats);
+            }
+            return ClipboardSnapshot::Text {
+                text: text_value,
+                html: Some(html_to_store),
+            };
+        }
+
+        if let Some(text_value) = text.clone() {
+            let formats = capture_preserved_named_formats_from_clipboard(Some(&source));
+            if !formats.is_empty() {
+                let escaped = text_value
+                    .replace('&', "&amp;")
+                    .replace('<', "&lt;")
+                    .replace('>', "&gt;");
+                return ClipboardSnapshot::Text {
+                    text: text_value,
+                    html: Some(attach_rich_named_formats(
+                        &format!("<pre>{}</pre>", escaped),
+                        &formats,
+                    )),
+                };
+            }
+        }
+
+        // RTF-only clipboard owners exist (legacy editors and some Office paths).
+        // Keep their registered formats even when no Unicode text or CF_HTML is exposed.
+        let formats = capture_preserved_named_formats_from_clipboard(Some(&source));
+        if !formats.is_empty() {
+            return ClipboardSnapshot::Text {
+                text: String::new(),
+                html: Some(attach_rich_named_formats("<div></div>", &formats)),
+            };
         }
 
         if let Some(data_url) = clipboard_image_fallback_data_url() {
@@ -711,23 +732,46 @@ async fn copy_content_to_system_clipboard(
                 crate::LAST_APP_SET_HASH.store(1, Ordering::SeqCst);
             }
 
-            if !content.starts_with("data:") && content.starts_with('/') {
+            let file_paths = content
+                .lines()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let is_file_path_payload = !content.starts_with("data:")
+                && !file_paths.is_empty()
+                && file_paths
+                    .iter()
+                    .all(|path| std::path::Path::new(path).is_absolute());
+
+            if is_file_path_payload {
                 if content_type == "image" {
                     // For image type with local path, read pixels for better compatibility with chat apps
-                    let bytes = std::fs::read(content).map_err(AppError::from)?;
+                    let image_path = &file_paths[0];
+                    let bytes = std::fs::read(image_path).map_err(AppError::from)?;
                     let (primary_hash, _secondary_hash) =
-                        copy_image_bytes_to_clipboard(bytes, current_time, Some(content))?;
+                        copy_image_bytes_to_clipboard(bytes, current_time, Some(image_path))?;
                     // Keep LAST_APP_SET_HASH as content_hash (path hash)
                     // Store pixel/byte hash in HASH_ALT
                     crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
                 } else {
-                    // For video/file types, macOS clipboard doesn't directly support file paths
-                    // as a "file" type. It's usually handled by copying the file itself.
-                    // For now, we'll just copy the path as text.
-                    let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
-                    clipboard
-                        .set_text(content.to_string())
-                        .map_err(AppError::from)?;
+                    #[cfg(target_os = "windows")]
+                    unsafe {
+                        crate::infrastructure::windows_api::win_clipboard::set_clipboard_files(
+                            file_paths,
+                        )
+                        .map_err(AppError::Internal)?;
+                    }
+
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        // Native macOS file pasteboard support is handled separately. Keep the
+                        // textual fallback on other platforms until an equivalent adapter exists.
+                        let mut clipboard = arboard::Clipboard::new().map_err(AppError::from)?;
+                        clipboard
+                            .set_text(content.to_string())
+                            .map_err(AppError::from)?;
+                    }
                 }
             } else if content_type == "image" {
                 let b64_data = if content.starts_with("data:image") {

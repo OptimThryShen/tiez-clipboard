@@ -115,7 +115,11 @@ pub fn init_db(path: &str) -> Result<Connection> {
 
 // save_entry removed (migrated to repository)
 
-pub fn save_image_bytes_to_file(png_bytes: &[u8], data_dir: &std::path::Path) -> Option<String> {
+pub fn save_image_bytes_to_file_with_extension(
+    image_bytes: &[u8],
+    data_dir: &std::path::Path,
+    extension: &str,
+) -> Option<String> {
     use std::io::Write;
 
     let attachments_dir = data_dir.join("attachments");
@@ -125,18 +129,28 @@ pub fn save_image_bytes_to_file(png_bytes: &[u8], data_dir: &std::path::Path) ->
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     use std::hash::{Hash, Hasher};
-    png_bytes.hash(&mut hasher);
+    image_bytes.hash(&mut hasher);
     let hash = hasher.finish();
 
-    let file_name = format!("img_{:x}.png", hash);
+    let extension = match extension.trim().to_ascii_lowercase().as_str() {
+        "gif" => "gif",
+        "jpg" | "jpeg" => "jpg",
+        "webp" => "webp",
+        _ => "png",
+    };
+    let file_name = format!("img_{:x}.{}", hash, extension);
     let file_path = attachments_dir.join(&file_name);
 
     if !file_path.exists() {
         let mut file = std::fs::File::create(&file_path).ok()?;
-        file.write_all(png_bytes).ok()?;
+        file.write_all(image_bytes).ok()?;
     }
 
     Some(file_path.to_string_lossy().to_string())
+}
+
+pub fn save_image_bytes_to_file(png_bytes: &[u8], data_dir: &std::path::Path) -> Option<String> {
+    save_image_bytes_to_file_with_extension(png_bytes, data_dir, "png")
 }
 
 pub fn save_image_to_file(data_url: &str, data_dir: &std::path::Path) -> Option<String> {
@@ -545,6 +559,7 @@ mod tests {
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 content_hash INTEGER NOT NULL DEFAULT 0,
                 tags TEXT NOT NULL DEFAULT '[]',
+                note TEXT NOT NULL DEFAULT '',
                 use_count INTEGER NOT NULL DEFAULT 0,
                 is_external INTEGER NOT NULL DEFAULT 0,
                 pinned_order INTEGER NOT NULL DEFAULT 0

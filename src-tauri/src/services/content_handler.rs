@@ -1,15 +1,17 @@
-// Content handler module for opening various content types
-// No Windows-specific imports needed for macOS native implementation
+// Content handler module for opening various content types.
 use crate::database::DbState;
 use crate::error::AppError;
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
+#[cfg(target_os = "windows")]
+use crate::infrastructure::windows_api::apps::launch_uwp_with_file;
 use base64::{engine::general_purpose, Engine as _};
 use std::collections::HashSet;
 use std::io::Read;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::sync::{LazyLock, Mutex};
-// Removed Windows CommandExt
 use tauri::{Emitter, Manager, State};
 
 static WATCHED_PREVIEW_ENTRY_IDS: LazyLock<Mutex<HashSet<i64>>> =
@@ -178,14 +180,55 @@ fn get_app_path_for_content_type(
 
 async fn handle_url_content(app_path: &Option<String>, content: &str) -> Result<(), AppError> {
     if let Some(app) = app_path {
-        launch_target_with_app(app, content)?;
+        #[cfg(target_os = "windows")]
+        {
+            return launch_windows_url_with_app(app, content);
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            launch_target_with_app(app, content).await?;
+        }
     } else {
-        Command::new("open")
-            .arg(content)
-            .spawn()
-            .map_err(|e| AppError::Internal(format!("启动默认浏览器失败: {}", e)))?;
+        launch_with_default_app(content, "url", false)?;
     }
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_windows_url_with_app(app: &str, content: &str) -> Result<(), AppError> {
+    let app_path = std::path::Path::new(app);
+    if app_path.exists() {
+        let mut command = Command::new(app);
+        command.arg(content).creation_flags(0x08000000);
+        command
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
+        return Ok(());
+    }
+
+    // A macOS application choice can arrive through synced settings. It is not a
+    // valid Windows application identifier, so use the system handler instead.
+    if app.starts_with("/Applications/") || app.to_ascii_lowercase().contains(".app") {
+        return launch_with_default_app(content, "url", false);
+    }
+
+    let escaped_app = app.replace('\'', "''");
+    let escaped_content = content.replace('\'', "''");
+    let script = format!(
+        "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
+        escaped_app, escaped_content
+    );
+    let mut command = Command::new("powershell");
+    command
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .creation_flags(0x08000000);
+
+    if command.spawn().is_ok() {
+        Ok(())
+    } else {
+        launch_with_default_app(content, "url", false)
+    }
 }
 
 fn is_file_type(content_type: &str) -> bool {
@@ -272,14 +315,51 @@ async fn launch_file_with_app(
 ) -> Result<(), AppError> {
     if let Some(app) = app_path {
         let target = temp_path.to_string_lossy().to_string();
-        launch_target_with_app(app, &target)?;
+        launch_target_with_app(app, &target).await?;
     } else {
         launch_with_default_app(path_str, content_type, use_direct_path)?;
     }
     Ok(())
 }
 
-fn launch_target_with_app(app: &str, target: &str) -> Result<(), AppError> {
+async fn launch_target_with_app(app: &str, target: &str) -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        let app_path = std::path::Path::new(app);
+        if app_path.exists() {
+            let mut command = Command::new(app);
+            command.arg(target).creation_flags(0x08000000);
+            command
+                .spawn()
+                .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
+            return Ok(());
+        }
+
+        if app.starts_with("/Applications/") || app.to_ascii_lowercase().contains(".app") {
+            return launch_with_default_app(target, "file", true);
+        }
+
+        if launch_uwp_with_file(app, target).await.is_ok() {
+            return Ok(());
+        }
+
+        let escaped_app = app.replace('\'', "''");
+        let escaped_target = target.replace('\'', "''");
+        let script = format!(
+            "Start-Process -FilePath 'shell:AppsFolder\\{}' -ArgumentList '{}'",
+            escaped_app, escaped_target
+        );
+        let mut command = Command::new("powershell");
+        command
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+            .creation_flags(0x08000000);
+        if command.spawn().is_ok() {
+            return Ok(());
+        }
+
+        return launch_with_default_app(target, "file", true);
+    }
+
     #[cfg(target_os = "macos")]
     {
         let path = std::path::Path::new(app);
@@ -296,13 +376,24 @@ fn launch_target_with_app(app: &str, target: &str) -> Result<(), AppError> {
                 .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
             return Ok(());
         }
+
+        Command::new(app)
+            .arg(target)
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
+        return Ok(());
     }
 
-    Command::new(app)
-        .arg(target)
-        .spawn()
-        .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        Command::new(app)
+            .arg(target)
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("启动程序失败: {}", e)))?;
+        return Ok(());
+    }
 
+    #[allow(unreachable_code)]
     Ok(())
 }
 
@@ -311,7 +402,40 @@ fn launch_with_default_app(
     _content_type: &str,
     _use_direct_path: bool,
 ) -> Result<(), AppError> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::{HSTRING, PCWSTR};
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        let operation = HSTRING::from("open");
+        let target = HSTRING::from(path_str);
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                PCWSTR::from_raw(operation.as_ptr()),
+                PCWSTR::from_raw(target.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize <= 32 {
+            return Err(AppError::Internal(format!(
+                "Failed to open target (ShellExecute error code: {})",
+                result.0 as isize
+            )));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     Command::new("open")
+        .arg(path_str)
+        .spawn()
+        .map_err(|e| AppError::Internal(format!("Failed to open file: {}", e)))?;
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    Command::new("xdg-open")
         .arg(path_str)
         .spawn()
         .map_err(|e| AppError::Internal(format!("Failed to open file: {}", e)))?;

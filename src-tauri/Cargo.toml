@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2.10", features = ["macos-private-api", "tray-icon", "image-png", "protocol-asset"] }
+tauri = { version = "2.11", features = ["macos-private-api", "tray-icon", "image-png", "protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -38,7 +38,7 @@ arboard = "3"
 clipboard-rs = "0.2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp", "gif", "webp"] }
 tokio = { version = "1", features = ["time"] }
-tauri-plugin-dialog = "2.6"
+tauri-plugin-dialog = "2.7"
 tauri-plugin-global-shortcut = "2.3.1"
 window-vibrancy = "0.6"
 rumqttc = { version = "0.25.1", default-features = false, features = ["websocket", "use-rustls-no-provider", "url"] }

@@ -162,8 +162,19 @@ fn remap_fixed_window_position(
         source_offset_y as f64 / source_span_y as f64
     };
 
-    let mapped_x = target_monitor.x + (ratio_x * target_span_x as f64).round() as i32;
-    let mapped_y = target_monitor.y + (ratio_y * target_span_y as f64).round() as i32;
+    const EDGE_SNAP_DISTANCE: i32 = 16;
+    let remap_axis = |offset: i32, source_span: i32, target_span: i32, ratio: f64| {
+        if offset <= EDGE_SNAP_DISTANCE {
+            0
+        } else if source_span.saturating_sub(offset) <= EDGE_SNAP_DISTANCE {
+            target_span
+        } else {
+            (ratio * target_span as f64).round() as i32
+        }
+    };
+
+    let mapped_x = target_monitor.x + remap_axis(source_offset_x, source_span_x, target_span_x, ratio_x);
+    let mapped_y = target_monitor.y + remap_axis(source_offset_y, source_span_y, target_span_y, ratio_y);
 
     (
         mapped_x.clamp(target_monitor.x, target_monitor.x + target_span_x),
@@ -888,7 +899,7 @@ mod tests {
 
         let mapped = remap_fixed_window_position((810, 340), (300, 400), source, target);
 
-        assert_eq!(mapped, (-800, 250));
+        assert_eq!(mapped, (-950, 250));
     }
 
     #[test]

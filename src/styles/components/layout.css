@@ -47,6 +47,33 @@ header {
   align-items: center;
 }
 
+.windows-close-btn {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.windows-header-title {
+  margin-left: 4px;
+  flex: 0 1 auto;
+  max-width: min(180px, 28vw);
+}
+
+.header-actions .windows-close-btn:hover {
+  color: #fff;
+  background: #c42b1c;
+  border-color: #c42b1c;
+  box-shadow: 0 3px 10px rgba(196, 43, 28, 0.24);
+  transform: none;
+}
+
+.header-actions .windows-close-btn:active {
+  color: #fff;
+  background: #a52217;
+  border-color: #a52217;
+  box-shadow: none;
+  transform: scale(0.96);
+}
+
 .traffic-light {
   width: 12px;
   height: 12px;

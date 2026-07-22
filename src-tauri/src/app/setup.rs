@@ -1655,6 +1655,7 @@ fn apply_initial_theme(app: &App) {
             db_state,
             theme,
             mode,
+            None,
         );
     }
 }

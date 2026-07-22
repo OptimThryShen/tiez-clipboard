@@ -394,6 +394,8 @@ const CF_HDROP: u32 = 15;
 
 /// Try to get file paths from Windows clipboard (CF_HDROP)
 pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
+    use windows::Win32::UI::Shell::{DragQueryFileW, HDROP};
+
     if OpenClipboard(None).is_err() {
         return None;
     }
@@ -404,61 +406,20 @@ pub unsafe fn get_clipboard_files() -> Option<Vec<String>> {
             _ => return None,
         };
 
-        let h_global = HGLOBAL(h_drop.0 as *mut _);
-        let p_drop = GlobalLock(h_global);
-        if p_drop.is_null() {
-            return None;
-        }
-
-        // DROPFILES struct manually parsed
-        // offset 0: pFiles (DWORD)
-        // offset 16: fWide (BOOL)
-        let p_base = p_drop as *const u8;
-        let p_files_val = *(p_base as *const u32);
-        let f_wide = *(p_base.add(16) as *const i32);
-
+        let h_drop = HDROP(h_drop.0 as _);
+        let file_count = DragQueryFileW(h_drop, u32::MAX, None);
         let mut files = Vec::new();
-        let files_start = p_base.add(p_files_val as usize);
-
-        if f_wide != 0 {
-            // Unicode (UTF-16)
-            let mut ptr = files_start as *const u16;
-            loop {
-                let mut len = 0;
-                while *ptr.add(len) != 0 {
-                    len += 1;
-                }
-                if len == 0 {
-                    break;
-                } // Double null terminator found
-
-                let slice = std::slice::from_raw_parts(ptr, len);
-                if let Ok(path) = String::from_utf16(slice) {
-                    files.push(path);
-                }
-                ptr = ptr.add(len + 1);
+        for index in 0..file_count {
+            let path_len = DragQueryFileW(h_drop, index, None) as usize;
+            if path_len == 0 {
+                continue;
             }
-        } else {
-            // ANSI - Basic ASCII support as fallback
-            let mut ptr = files_start as *const u8;
-            loop {
-                let mut len = 0;
-                while *ptr.add(len) != 0 {
-                    len += 1;
-                }
-                if len == 0 {
-                    break;
-                }
-
-                let slice = std::slice::from_raw_parts(ptr, len);
-                if let Ok(path) = std::str::from_utf8(slice) {
-                    files.push(path.to_string());
-                }
-                ptr = ptr.add(len + 1);
+            let mut path = vec![0u16; path_len + 1];
+            let copied_len = DragQueryFileW(h_drop, index, Some(&mut path)) as usize;
+            if copied_len > 0 {
+                files.push(String::from_utf16_lossy(&path[..copied_len]));
             }
         }
-
-        let _ = GlobalUnlock(h_global);
 
         if files.is_empty() {
             None

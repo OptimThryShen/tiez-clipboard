@@ -10,6 +10,7 @@ jobs:
   publish-tauri:
     permissions:
       contents: write
+    environment: windows-release
     strategy:
       fail-fast: false
       matrix:
@@ -18,13 +19,21 @@ jobs:
             args: ''
 
     runs-on: ${{ matrix.platform }}
+    env:
+      VITE_AI_DEFAULT_API_KEY: ${{ secrets.VITE_AI_DEFAULT_API_KEY }}
+      TIEZ_PLATFORM: windows
+      TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
+      VITE_TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
+      TIEZ_UPDATE_ENDPOINT: ${{ vars.TIEZ_UPDATE_ENDPOINT }}
+      VITE_TIEZ_UPDATE_ENDPOINT: ${{ vars.TIEZ_UPDATE_ENDPOINT }}
+      TIEZ_UPDATER_PUBLIC_KEY: ${{ vars.TIEZ_UPDATER_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v5
 
       - name: setup node
         uses: actions/setup-node@v5
         with:
-          node-version: lts/*
+          node-version: 20
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -41,8 +50,6 @@ jobs:
         run: npm install
 
       - name: prepare release config
-        env:
-          TIEZ_PLATFORM: windows
         run: node scripts/configure-release.mjs
 
       - uses: tauri-apps/tauri-action@v0

@@ -89,6 +89,7 @@ pub fn set_theme(
     db_state: State<'_, DbState>,
     theme: String,
     color_mode: Option<String>,
+    show_app_border: Option<bool>,
 ) -> AppResult<()> {
     let mut effective_color_mode = color_mode.clone();
     if effective_color_mode
@@ -101,6 +102,17 @@ pub fn set_theme(
             .get("app.color_mode")
             .unwrap_or(Some("system".to_string()));
     }
+    #[cfg(target_os = "windows")]
+    let show_border = show_app_border.unwrap_or_else(|| {
+        db_state
+            .settings_repo
+            .get("app.show_app_border")
+            .unwrap_or(Some("true".to_string()))
+            .map(|value| value != "false")
+        .unwrap_or(true)
+    });
+    #[cfg(not(target_os = "windows"))]
+    let _ = show_app_border;
 
     if let Ok(mut guard) = state.theme.lock() {
         *guard = theme.clone();
@@ -113,6 +125,82 @@ pub fn set_theme(
     };
 
     let _ = window.set_theme(native_theme);
+
+    #[cfg(target_os = "windows")]
+    {
+        use windows::core::BOOL;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWM_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR,
+            DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+        };
+
+        let raw_hwnd = window
+            .hwnd()
+            .map_err(|error| AppError::Internal(error.to_string()))?;
+        let hwnd = HWND(raw_hwnd.0 as _);
+        let _ = window_vibrancy::clear_vibrancy(&window);
+        let is_dark = match effective_color_mode.as_deref() {
+            Some("light") => false,
+            Some("dark") => true,
+            _ => window.theme().unwrap_or(Theme::Dark) == Theme::Dark,
+        };
+
+        unsafe {
+            let dark_mode = BOOL::from(is_dark);
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &dark_mode as *const _ as _,
+                std::mem::size_of::<BOOL>() as u32,
+            );
+
+            const DWMWA_COLOR_DEFAULT: u32 = 0xFFFF_FFFF;
+            const DWMWA_COLOR_NONE: u32 = 0xFFFF_FFFE;
+            let border_color = if show_border {
+                DWMWA_COLOR_DEFAULT
+            } else {
+                DWMWA_COLOR_NONE
+            };
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_BORDER_COLOR,
+                &border_color as *const _ as _,
+                std::mem::size_of::<u32>() as u32,
+            );
+
+            let corner = DWM_WINDOW_CORNER_PREFERENCE(DWMWCP_ROUND.0);
+            let _ = DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE,
+                &corner as *const _ as _,
+                std::mem::size_of::<DWM_WINDOW_CORNER_PREFERENCE>() as u32,
+            );
+        }
+
+        let build = windows_version::OsVersion::current().build;
+        let is_windows_11 = build >= 22000;
+        match theme.as_str() {
+            "mica" if is_windows_11 => {
+                let _ = window_vibrancy::apply_mica(&window, Some(is_dark));
+                let _ = window.set_shadow(show_border);
+            }
+            "acrylic" if build >= 17134 => {
+                let _ = window_vibrancy::apply_acrylic(
+                    &window,
+                    Some(if is_dark {
+                        (30, 30, 30, 40)
+                    } else {
+                        (240, 240, 240, 40)
+                    }),
+                );
+                let _ = window.set_shadow(show_border && is_windows_11);
+            }
+            _ => {
+                let _ = window.set_shadow(show_border && is_windows_11);
+            }
+        }
+    }
 
     #[cfg(target_os = "macos")]
     {

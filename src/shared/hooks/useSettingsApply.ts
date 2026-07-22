@@ -26,7 +26,7 @@ export const useSettingsApply = ({
   clipboardItemFontSize,
   clipboardTagFontSize,
   surfaceOpacity,
-  showAppBorder: _showAppBorder
+  showAppBorder
 }: UseSettingsApplyOptions) => {
   useEffect(() => {
     if (!settingsLoaded) return;
@@ -84,6 +84,7 @@ export const useSettingsApply = ({
     invoke("set_theme", {
       theme: normalizedTheme,
       color_mode: colorMode,
+      show_app_border: showAppBorder,
     }).catch(console.error);
 
     let unlisten: (() => void) | null = null;
@@ -98,6 +99,7 @@ export const useSettingsApply = ({
           invoke("set_theme", {
             theme: normalizedTheme,
             color_mode: "system",
+            show_app_border: showAppBorder,
           }).catch(console.error);
         })
         .then((f) => {
@@ -126,7 +128,7 @@ export const useSettingsApply = ({
       if (unlisten) unlisten();
       if (cleanupMedia) cleanupMedia();
     };
-  }, [theme, colorMode, settingsLoaded, compactMode, hideUnselectedItemActions]);
+  }, [theme, colorMode, showAppBorder, settingsLoaded, compactMode, hideUnselectedItemActions]);
 
   useEffect(() => {
     if (!settingsLoaded) return;

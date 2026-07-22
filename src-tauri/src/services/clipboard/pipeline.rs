@@ -1,5 +1,7 @@
 use crate::app_state::{AppDataDir, PasteQueue, SessionHistory, SettingsState};
-use crate::database::{is_text_type, save_image_bytes_to_file, calc_image_hash_from_bytes, DbState};
+use crate::database::{
+    calc_image_hash_from_bytes, is_text_type, save_image_bytes_to_file_with_extension, DbState,
+};
 use crate::domain::models::ClipboardEntry;
 #[cfg(target_os = "macos")]
 use crate::infrastructure::macos_api::window::get_active_app_snapshot;
@@ -15,7 +17,10 @@ use tauri::{AppHandle, Emitter, Manager};
 pub enum ClipboardData {
     Text(String),
     RichText { text: String, html: String },
-    Image { png_bytes: Vec<u8> },
+    Image {
+        bytes: Vec<u8>,
+        extension: String,
+    },
     Files(Vec<String>),
 }
 
@@ -29,7 +34,7 @@ pub struct PipelineContext {
     pub should_stop: bool,
     pub pending_removals: Vec<i64>,
     pub reuse_session_id: Option<i64>,
-    pub image_png_bytes: Option<Vec<u8>>,
+    pub encoded_image: Option<(Vec<u8>, String)>,
     pub image_content_hash: Option<i64>,
 }
 
@@ -67,7 +72,7 @@ impl PipelineContext {
             should_stop: false,
             pending_removals: Vec::new(),
             reuse_session_id: None,
-            image_png_bytes: None,
+            encoded_image: None,
             image_content_hash: None,
         }
     }
@@ -124,8 +129,8 @@ impl PipelineStage for DiscoveryStage {
                 };
                 ("rich_text".to_string(), content, Some(html.clone()))
             }
-            ClipboardData::Image { png_bytes } => {
-                ctx.image_png_bytes = Some(png_bytes.clone());
+            ClipboardData::Image { bytes, extension } => {
+                ctx.encoded_image = Some((bytes.clone(), extension.clone()));
                 ("image".to_string(), String::new(), None)
             }
             ClipboardData::Files(f) => {
@@ -216,11 +221,13 @@ impl PipelineStage for TransformationStage {
         // Normalize line endings only; preserve leading/trailing whitespace (#97).
         entry.content = entry.content.replace("\r\n", "\n");
 
-        if let Some(png_bytes) = ctx.image_png_bytes.take() {
-            ctx.image_content_hash = calc_image_hash_from_bytes(&png_bytes);
+        if let Some((image_bytes, extension)) = ctx.encoded_image.take() {
+            ctx.image_content_hash = calc_image_hash_from_bytes(&image_bytes);
             let app_data_dir = ctx.app_handle.state::<AppDataDir>();
             let data_dir = app_data_dir.0.lock().unwrap().clone();
-            if let Some(path) = save_image_bytes_to_file(&png_bytes, &data_dir) {
+            if let Some(path) =
+                save_image_bytes_to_file_with_extension(&image_bytes, &data_dir, &extension)
+            {
                 entry.content = path;
                 entry.is_external = true;
             }

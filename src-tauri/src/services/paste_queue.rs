@@ -149,6 +149,18 @@ async fn paste_next_step_inner(app_handle: tauri::AppHandle) {
                     //      already in the target app. Do NOT restore focus as that would move
                     //      focus to a stale/wrong app and break the paste.
                     if window_was_visible {
+                        #[cfg(target_os = "windows")]
+                        {
+                            use crate::global_state::LAST_ACTIVE_HWND;
+                            use crate::infrastructure::windows_ext::WindowExt;
+                            use windows::Win32::Foundation::HWND;
+
+                            let previous = LAST_ACTIVE_HWND
+                                .load(std::sync::atomic::Ordering::Relaxed);
+                            if previous != 0 {
+                                WindowExt::force_focus_window(HWND(previous as _));
+                            }
+                        }
                         #[cfg(target_os = "macos")]
                         {
                             let mut reactivated = false;

@@ -1,4 +1,4 @@
-import type { CSSProperties, RefObject } from "react";
+import type { CSSProperties, MouseEvent, RefObject } from "react";
 import {
   ChevronLeft,
   MessageSquare,
@@ -8,11 +8,13 @@ import {
   Settings as SettingsIcon,
   Smile,
   Tag,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getTagColor, getTagTextColor } from "../../../shared/lib/utils";
+import { isMacPlatform } from "../../../shared/lib/platform";
 
 interface AppHeaderProps {
   t: (key: string) => string;
@@ -97,6 +99,19 @@ const AppHeader = ({
   };
 
   const searchVisible = showSearchBox || search.trim().length > 0;
+  const isMac = isMacPlatform();
+  const headerTitle = showEmojiPanel
+    ? (t('emoji_panel') || '表情包')
+    : showTagManager && tagManagerEnabled
+      ? (t('tag_manager') || '标签管理')
+      : showSettings
+        ? settingsTitle
+        : t('app_name');
+
+  const hideWindow = (e: MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    invoke("hide_window_cmd").catch(console.error);
+  };
 
   return (
     <header
@@ -122,21 +137,22 @@ const AppHeader = ({
     >
       <div className="header-top">
         <div className="header-leading" style={{ gap: '4px', paddingLeft: '4px' }}>
-          <div className="mac-traffic-lights">
-            <button
-              className="traffic-light red"
-              title={t('hide')}
-              onClick={async (e) => {
-                e.stopPropagation();
-                invoke("hide_window_cmd").catch(console.error);
-              }}
-            />
-          </div>
+          {isMac && (
+            <div className="mac-traffic-lights">
+              <button
+                className="traffic-light red"
+                title={t('hide')}
+                aria-label={t('hide')}
+                onClick={hideWindow}
+              />
+            </div>
+          )}
           {(showSettings || showTagManager || showEmojiPanel) && (
             <button className="btn-icon" onClick={onBack} style={{ marginLeft: '4px' }}>
               <ChevronLeft size={16} />
             </button>
           )}
+          {!isMac && <span className="header-title windows-header-title">{headerTitle}</span>}
         </div>
 
         <div className="header-drag-region" style={{ flex: 1 }}>
@@ -187,17 +203,21 @@ const AppHeader = ({
             </button>
           )}
 
-          <div style={{ marginLeft: '4px', display: 'flex', alignItems: 'center' }}>
-            <span className="header-title">
-              {showEmojiPanel
-                ? (t('emoji_panel') || '表情包')
-                : showTagManager && tagManagerEnabled
-                  ? (t('tag_manager') || '标签管理')
-                  : showSettings
-                    ? settingsTitle
-                    : t('app_name')}
-            </span>
-          </div>
+          {isMac && (
+            <div style={{ marginLeft: '4px', display: 'flex', alignItems: 'center' }}>
+              <span className="header-title">{headerTitle}</span>
+            </div>
+          )}
+          {!isMac && (
+            <button
+              className="btn-icon windows-close-btn"
+              title={t('hide')}
+              aria-label={t('hide')}
+              onClick={hideWindow}
+            >
+              <X size={16} strokeWidth={2.2} />
+            </button>
+          )}
         </div>
       </div>
 

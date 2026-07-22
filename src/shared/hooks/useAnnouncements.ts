@@ -6,7 +6,7 @@ import type { Announcement } from "../types/announcement";
 export function useAnnouncements() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchAnnouncements = useCallback(async () => {
     if (!isTauriRuntime()) {
