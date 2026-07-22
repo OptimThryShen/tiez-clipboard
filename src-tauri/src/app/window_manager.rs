@@ -650,6 +650,7 @@ pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
             }
         }
 
+        #[cfg(target_os = "macos")]
         crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
 
         #[cfg(windows)]
@@ -693,6 +694,7 @@ fn hide_window(app_handle: AppHandle, restore_focus: bool) -> Result<(), String>
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
         let _ = window.set_always_on_top(pinned);
+        #[cfg(target_os = "macos")]
         crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
         clear_window_vibrancy(&window);
         #[cfg(target_os = "macos")]
@@ -734,6 +736,7 @@ pub fn focus_clipboard_window(app_handle: AppHandle) -> Result<(), String> {
         IS_HIDDEN.store(false, Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         crate::app::setup::persist_edge_dock(&app_handle, 0);
+        #[cfg(target_os = "macos")]
         crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
 
         #[cfg(windows)]

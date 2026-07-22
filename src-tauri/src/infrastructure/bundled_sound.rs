@@ -5,6 +5,9 @@
 static COPY_SOUND: &[u8] = include_bytes!("../../resources/sounds/Tink.wav");
 static PASTE_SOUND: &[u8] = include_bytes!("../../resources/sounds/Frog.wav");
 
+#[cfg(target_os = "windows")]
+use std::io::Cursor;
+
 pub fn play_clipboard_sound(kind: &str, volume: f64) {
     let vol = volume.clamp(0.0, 1.0) as f32;
     if vol <= 0.0 {
@@ -22,7 +25,6 @@ pub fn play_clipboard_sound(kind: &str, volume: f64) {
 
 #[cfg(target_os = "windows")]
 fn play_wav_on_windows(wav: &'static [u8], volume: f32) {
-    use std::io::Cursor;
     use windows::core::PCWSTR;
     use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
 

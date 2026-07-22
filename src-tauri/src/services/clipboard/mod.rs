@@ -10,6 +10,24 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 #[cfg(target_os = "macos")]
+fn get_platform_clipboard_html() -> Option<String> {
+    crate::infrastructure::macos_api::clipboard::get_clipboard_html()
+}
+
+#[cfg(target_os = "windows")]
+fn get_platform_clipboard_html() -> Option<String> {
+    unsafe {
+        crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format("HTML Format")
+    }
+    .and_then(|raw| utils::parse_cf_html(&raw))
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn get_platform_clipboard_html() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "macos")]
 const MAX_MACOS_TEXT_BYTES: usize = 128 * 1024;
 fn build_rich_image_fallback_data_url(
     width: usize,
@@ -127,7 +145,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                         text.hash(&mut hasher);
                     }
                 }
-                if let Some(html) = crate::infrastructure::macos_api::clipboard::get_clipboard_html() {
+                if let Some(html) = get_platform_clipboard_html() {
                     if html.len() > MAX_MACOS_TEXT_BYTES {
                         "__HTML_TOO_LARGE__".hash(&mut hasher);
                     } else {
@@ -178,7 +196,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         let clipboard_html_snapshot = {
             let settings = app.state::<SettingsState>();
             if settings.capture_rich_text.load(Ordering::Relaxed) {
-                let mut html = crate::infrastructure::macos_api::clipboard::get_clipboard_html();
+                let mut html = get_platform_clipboard_html();
                 if html.as_ref().map(|value| value.trim().is_empty()).unwrap_or(true) {
                     if let Some(rtf) =
                         crate::infrastructure::macos_api::clipboard::get_clipboard_rtf()
@@ -214,7 +232,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                     .unwrap_or(false);
             #[cfg(not(target_os = "macos"))]
             let has_rich_html = if rich_text_enabled && has_text {
-                crate::infrastructure::macos_api::clipboard::get_clipboard_html()
+                get_platform_clipboard_html()
                     .map(|html| !html.trim().is_empty())
                     .unwrap_or(false)
             } else {
@@ -395,7 +413,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
                     if settings.capture_rich_text.load(Ordering::Relaxed) {
                         if let Some(mut html) =
-                            crate::infrastructure::macos_api::clipboard::get_clipboard_html()
+                            get_platform_clipboard_html()
                         {
                             if !html.trim().is_empty() {
                                 if let Some(image) = clipboard_image.as_ref() {
@@ -451,14 +469,14 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 #[cfg(target_os = "windows")]
 pub fn capture_preserved_named_formats_from_clipboard(
     _source_snapshot: Option<&str>,
-) -> Vec<(String, Vec<u8>)> {
+) -> Vec<crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat> {
     vec![]
 }
 
 #[cfg(not(target_os = "windows"))]
 pub fn capture_preserved_named_formats_from_clipboard(
     _source_snapshot: Option<&str>,
-) -> Vec<(String, Vec<u8>)> {
+) -> Vec<crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat> {
     vec![]
 }
 

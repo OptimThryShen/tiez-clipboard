@@ -98,6 +98,17 @@ pub static LAST_TOGGLE_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
 pub static LAST_SHOW_TIMESTAMP: AtomicU64 = AtomicU64::new(0);
 pub static TASKBAR_CREATED_MSG: AtomicU32 = AtomicU32::new(0);
 
+#[cfg(target_os = "windows")]
+pub static QUICK_PASTE_DIGIT_MASK: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_os = "windows")]
+pub static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_os = "windows")]
+pub static HOOK_HANDLE: std::sync::atomic::AtomicPtr<std::ffi::c_void> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+#[cfg(target_os = "windows")]
+pub static HOOK_MOUSE_HANDLE: std::sync::atomic::AtomicPtr<std::ffi::c_void> =
+    std::sync::atomic::AtomicPtr::new(std::ptr::null_mut());
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DockPosition {
     None,

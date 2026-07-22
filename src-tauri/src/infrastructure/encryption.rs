@@ -226,14 +226,14 @@ fn load_key_dpapi(path: &Path) -> Result<[u8; KEY_LEN], String> {
 #[cfg(target_os = "windows")]
 fn dpapi_protect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
-    use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPTOAPI_BLOB};
+    use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPT_INTEGER_BLOB};
 
     unsafe {
-        let mut input = CRYPTOAPI_BLOB {
+        let mut input = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
         };
-        let mut output = CRYPTOAPI_BLOB {
+        let mut output = CRYPT_INTEGER_BLOB {
             cbData: 0,
             pbData: std::ptr::null_mut(),
         };
@@ -260,14 +260,14 @@ fn dpapi_protect(data: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(target_os = "windows")]
 fn dpapi_unprotect(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::Foundation::{LocalFree, HLOCAL};
-    use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPTOAPI_BLOB};
+    use windows::Win32::Security::Cryptography::{CryptUnprotectData, CRYPT_INTEGER_BLOB};
 
     unsafe {
-        let mut input = CRYPTOAPI_BLOB {
+        let mut input = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
             pbData: data.as_ptr() as *mut u8,
         };
-        let mut output = CRYPTOAPI_BLOB {
+        let mut output = CRYPT_INTEGER_BLOB {
             cbData: 0,
             pbData: std::ptr::null_mut(),
         };

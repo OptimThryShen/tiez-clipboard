@@ -32,7 +32,6 @@ pub struct AppInfo {
 static EXECUTABLE_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 static FILE_ICON_CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> = OnceLock::new();
 
-#[tauri::command]
 pub async fn scan_installed_apps() -> AppResult<Vec<AppInfo>> {
     let mut apps = Vec::new();
     println!("Starting app scan...");
@@ -174,7 +173,6 @@ pub async fn scan_installed_apps() -> AppResult<Vec<AppInfo>> {
     Ok(apps)
 }
 
-#[tauri::command]
 pub async fn get_associated_apps(extension: String) -> AppResult<Vec<AppInfo>> {
     let ext = if extension.starts_with('.') {
         extension.clone()
@@ -249,7 +247,6 @@ pub async fn get_associated_apps(extension: String) -> AppResult<Vec<AppInfo>> {
     Ok(Vec::new())
 }
 
-#[tauri::command]
 pub fn get_system_default_app(content_type: String) -> AppResult<String> {
     let ext = match content_type.as_str() {
         "image" => ".png",
@@ -316,7 +313,6 @@ pub fn get_system_default_app(content_type: String) -> AppResult<String> {
 
 use std::os::windows::ffi::OsStrExt;
 
-#[tauri::command]
 pub fn get_executable_icon(executable_path: String) -> AppResult<Option<String>> {
     let cache_key = normalize_icon_cache_key(&executable_path);
     if cache_key.is_empty() {
@@ -341,7 +337,6 @@ pub fn get_executable_icon(executable_path: String) -> AppResult<Option<String>>
     Ok(icon)
 }
 
-#[tauri::command]
 pub fn get_file_icon(file_path: String) -> AppResult<Option<String>> {
     let cache_key = normalize_file_icon_cache_key(&file_path);
     if cache_key.is_empty() {

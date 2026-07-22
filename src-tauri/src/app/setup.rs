@@ -716,12 +716,8 @@ fn restore_pin_state_after_edge_expand(app_handle: &AppHandle, window: &tauri::W
     let prev = WINDOW_PINNED.swap(user_pinned, Ordering::Relaxed);
     if prev != user_pinned {
         let _ = window.set_always_on_top(user_pinned);
-        #[cfg(target_os = "windows")]
-        crate::infrastructure::macos_api::window::set_window_focusable(&window, !user_pinned);
         #[cfg(target_os = "macos")]
-        crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
-        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
-        crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
+        crate::infrastructure::macos_api::window::set_window_focusable(&window, !user_pinned);
         let _ = app_handle.emit("window-pinned-changed", user_pinned);
     } else {
         let _ = window.set_always_on_top(user_pinned);
@@ -1483,6 +1479,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                         // click-outside-to-hide checks WINDOW_PINNED (user pin only).
                         if !WINDOW_PINNED.load(Ordering::Relaxed) {
                             let _ = window.set_always_on_top(true);
+                            #[cfg(target_os = "macos")]
                             crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
                             #[cfg(windows)]
                             if let Ok(hwnd) = window.hwnd() {
@@ -1537,6 +1534,7 @@ fn start_edge_docking_monitor(app_handle: AppHandle) {
                     // Restore always-on-top / focus from user pin (WINDOW_PINNED was never toggled by tuck).
                     let user_pinned = WINDOW_PINNED.load(Ordering::Relaxed);
                     let _ = window.set_always_on_top(user_pinned);
+                    #[cfg(target_os = "macos")]
                     crate::infrastructure::macos_api::window::set_window_focusable(&window, !user_pinned);
                     #[cfg(windows)]
                     if let Ok(hwnd) = window.hwnd() {

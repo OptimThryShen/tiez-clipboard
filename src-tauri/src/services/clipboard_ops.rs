@@ -1024,7 +1024,6 @@ async fn copy_text_with_retry(content: &str) -> AppResult<()> {
     {
         crate::infrastructure::macos_api::clipboard::set_clipboard_text_and_html(&paste_text, "")
             .map_err(AppError::Internal)?;
-        return Ok(());
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -1053,6 +1052,8 @@ async fn copy_text_with_retry(content: &str) -> AppResult<()> {
             }
         }
     }
+
+    Ok(())
 }
 
 async fn perform_paste_action(
@@ -1090,13 +1091,14 @@ async fn perform_paste_action(
             // Try to give focus away again using native API if we have a PID
             let prev_pid = crate::global_state::LAST_ACTIVE_APP_PID.load(Ordering::Relaxed);
             if prev_pid != 0 {
+                #[cfg(target_os = "macos")]
                 crate::infrastructure::macos_api::apps::activate_app_by_pid(prev_pid as i32);
             }
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         } else {
             println!("[WARN] Clipboard window STOLE focus back, attempting manual hide...");
             if let Some(window) = app_handle.get_webview_window("main") {
-                #[cfg(not(target_os = "windows"))]
+                #[cfg(target_os = "macos")]
                 crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
                 #[cfg(target_os = "macos")]
                 let _ =
@@ -1134,7 +1136,7 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
     if crate::WINDOW_PINNED.load(Ordering::Relaxed) {
         // In pinned mode, keep window non-focusable and restore focus back to last app
         if let Some(_window) = app_handle.get_webview_window("main") {
-            #[cfg(target_os = "windows")]
+            #[cfg(target_os = "macos")]
             crate::infrastructure::macos_api::window::set_window_focusable(&_window, false);
         }
         // On macOS, focus restoration is implicit after hiding a non-focusable window.
@@ -1146,7 +1148,7 @@ async fn hide_window_after_paste(app_handle: &tauri::AppHandle) {
         if let Some(compact_preview) = app_handle.get_webview_window("compact-preview") {
             let _ = compact_preview.hide();
         }
-        #[cfg(target_os = "windows")]
+        #[cfg(target_os = "macos")]
         crate::infrastructure::macos_api::window::set_window_focusable(&_window, false);
         #[cfg(target_os = "macos")]
         let _ = crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
