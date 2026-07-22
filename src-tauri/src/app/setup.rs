@@ -38,8 +38,49 @@ static WINDOW_SIZE_SAVE_PENDING: AtomicBool = AtomicBool::new(false);
 static LAST_WINDOW_SIZE_EVENT_MS: AtomicU64 = AtomicU64::new(0);
 static LAST_WINDOW_SIZE: OnceLock<Mutex<(u32, u32)>> = OnceLock::new();
 
+#[cfg(target_os = "macos")]
+fn register_macos_wake_hotkey_refresh(app_handle: AppHandle) {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSWorkspace, NSWorkspaceDidWakeNotification};
+    use objc2_foundation::NSNotification;
+    use std::ptr::NonNull;
+    use std::time::Duration;
+
+    let center = NSWorkspace::sharedWorkspace().notificationCenter();
+    let wake_handler = RcBlock::new(move |_notification: NonNull<NSNotification>| {
+        let app_handle = app_handle.clone();
+        std::thread::spawn(move || {
+            // macOS may need a short moment to restore Carbon event hotkeys after wake.
+            std::thread::sleep(Duration::from_millis(750));
+            let main_thread_handle = app_handle.clone();
+            let _ = app_handle.run_on_main_thread(move || {
+                match crate::app::commands::sync_registered_hotkeys(&main_thread_handle) {
+                    Ok(()) => info!(">>> [HOTKEY] Re-registered shortcuts after macOS wake"),
+                    Err(error) => {
+                        eprintln!(">>> [HOTKEY] Wake re-registration failed: {error}")
+                    }
+                }
+            });
+        });
+    });
+
+    // NSNotificationCenter owns the returned observer for the process lifetime.
+    unsafe {
+        let observer = center.addObserverForName_object_queue_usingBlock(
+            Some(NSWorkspaceDidWakeNotification),
+            None,
+            None,
+            &wake_handler,
+        );
+        let _ = objc2::rc::Retained::into_raw(observer);
+    }
+}
+
 pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     let app_handle = app.handle().clone();
+
+    #[cfg(target_os = "macos")]
+    register_macos_wake_hotkey_refresh(app_handle.clone());
 
     // Initialize GLOBAL_APP_HANDLE
     let _ = GLOBAL_APP_HANDLE.set(app_handle.clone());
@@ -501,6 +542,7 @@ fn setup_state(
     app.manage(crate::services::file_transfer::ServerInfo {
         port: std::sync::atomic::AtomicU16::new(0),
         ip: std::sync::Mutex::new(String::new()),
+        access_token: std::sync::Mutex::new(String::new()),
     });
     app.manage(crate::services::file_transfer::UploadSessions::default());
     app.manage(crate::services::file_transfer::ServerActivityState::default());
@@ -916,7 +958,9 @@ fn start_services(app: &App, s: &StartupSettings, app_handle: AppHandle) {
         let mut guard = HOTKEY_STRING.lock().unwrap();
         *guard = hotkey_str.clone();
     }
-    let _ = crate::app::commands::sync_registered_hotkeys(&app_handle);
+    if let Err(error) = crate::app::commands::sync_registered_hotkeys(&app_handle) {
+        eprintln!(">>> [HOTKEY] Initial registration failed: {error}");
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -1858,7 +1902,7 @@ fn handle_blur(_window: &tauri::Window) {}
 
 #[cfg(target_os = "macos")]
 fn handle_blur(_window: &tauri::Window) {
-    if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
+    if is_blur_ignored() || WINDOW_PINNED.load(Ordering::Relaxed) {
         return;
     }
 
@@ -1868,7 +1912,7 @@ fn handle_blur(_window: &tauri::Window) {
 
 #[cfg(target_os = "windows")]
 fn handle_blur(window: &tauri::Window) {
-    if IGNORE_BLUR.load(Ordering::Relaxed) || WINDOW_PINNED.load(Ordering::Relaxed) {
+    if is_blur_ignored() || WINDOW_PINNED.load(Ordering::Relaxed) {
         return;
     }
 
@@ -1893,7 +1937,7 @@ fn handle_blur(window: &tauri::Window) {
         let tucked_by_edge = IS_HIDDEN.load(Ordering::Relaxed)
             || CURRENT_DOCK.load(Ordering::Relaxed) != 0;
         if !down && !tucked_by_edge && matches!(w.is_focused(), Ok(false)) {
-            if !IGNORE_BLUR.load(Ordering::Relaxed) && !WINDOW_PINNED.load(Ordering::Relaxed) {
+            if !is_blur_ignored() && !WINDOW_PINNED.load(Ordering::Relaxed) {
                 let _ = w.app_handle().emit("force-hide-compact-preview", ());
                 crate::app::window_manager::clear_window_vibrancy_for_label(
                     w.app_handle(),

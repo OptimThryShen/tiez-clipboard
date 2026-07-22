@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import AppModal from "../../../shared/components/AppModal";
 import type { EditableAiProfile } from "../types";
 
@@ -27,7 +26,6 @@ const AiProfileModal = ({ editingProfile, t, onClose, onSave, setEditingProfile 
                         style={{ width: "100%" }}
                         value={editingProfile.baseUrl}
                         onChange={(e) => setEditingProfile({ ...editingProfile, baseUrl: e.target.value })}
-                        onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                     />
                 </div>
                 <div>
@@ -38,7 +36,6 @@ const AiProfileModal = ({ editingProfile, t, onClose, onSave, setEditingProfile 
                         style={{ width: "100%" }}
                         value={editingProfile.apiKey}
                         onChange={(e) => setEditingProfile({ ...editingProfile, apiKey: e.target.value })}
-                        onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                     />
                 </div>
                 <div>
@@ -48,7 +45,6 @@ const AiProfileModal = ({ editingProfile, t, onClose, onSave, setEditingProfile 
                         style={{ width: "100%" }}
                         value={editingProfile.model}
                         onChange={(e) => setEditingProfile({ ...editingProfile, model: e.target.value })}
-                        onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                         placeholder="gpt-4o"
                     />
                 </div>

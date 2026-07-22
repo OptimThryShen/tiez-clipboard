@@ -239,7 +239,7 @@ pub fn is_clipboard_panel_available(app: &AppHandle) -> bool {
 
 #[cfg(target_os = "macos")]
 fn should_keep_clipboard_panel_visible() -> bool {
-    crate::global_state::IGNORE_BLUR.load(AtomicOrdering::Relaxed)
+    crate::global_state::is_blur_ignored()
         || crate::global_state::WINDOW_PINNED.load(AtomicOrdering::Relaxed)
         || crate::global_state::IS_HIDDEN.load(AtomicOrdering::Relaxed)
         || crate::global_state::CURRENT_DOCK.load(AtomicOrdering::Relaxed) != 0

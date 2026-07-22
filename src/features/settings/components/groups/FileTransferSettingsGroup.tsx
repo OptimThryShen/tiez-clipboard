@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { withNativeDialog } from "../../../../shared/lib/focus";
 import { ChevronDown, ChevronRight, HelpCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import { QRCodeCanvas } from "qrcode.react";
@@ -17,6 +18,7 @@ interface FileTransferSettingsGroupProps {
     availableIps?: string[];
     setLocalIp?: (val: string) => void;
     actualPort: string;
+    accessToken: string;
     fileTransferAutoOpen: boolean;
     setFileTransferAutoOpen: (val: boolean) => void;
     showAutoCloseHint: boolean;
@@ -44,6 +46,7 @@ const FileTransferSettingsGroup = ({
     availableIps,
     setLocalIp,
     actualPort,
+    accessToken,
     fileTransferAutoOpen,
     setFileTransferAutoOpen,
     showAutoCloseHint,
@@ -92,7 +95,6 @@ const FileTransferSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: '4px', padding: '8px', width: '80px' }}
                                 value={fileServerPort}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => { setFileServerPort(e.target.value); }}
                                 onBlur={() => applyFileServerPort(fileServerPort)}
                                 onKeyDown={(e) => {
@@ -181,7 +183,7 @@ const FileTransferSettingsGroup = ({
                         </div>
 
                         {showAutoCloseHint && (
-                            <div style={{ margin: '4px 8px 12px', padding: '10px 14px', background: 'rgba(72, 123, 219, 0.08)', border: '1px solid rgba(72, 123, 219, 0.2)', borderRadius: '8px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                            <div style={{ margin: '4px 8px 12px', padding: '10px 14px', background: 'rgba(var(--accent-color-rgb), 0.08)', border: '1px solid rgba(var(--accent-color-rgb), 0.2)', borderRadius: 'var(--button-radius)', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
                                 {t('auto_close_hint')}
                             </div>
                         )}
@@ -201,7 +203,7 @@ const FileTransferSettingsGroup = ({
                             </label>
                         </div>
 
-                        {localIp && actualPort && (
+                        {localIp && actualPort && accessToken && (
                             <motion.div
                                 initial={{ height: 0, opacity: 0 }}
                                 animate={{ height: 'auto', opacity: 1 }}
@@ -209,7 +211,10 @@ const FileTransferSettingsGroup = ({
                             >
                                 <div className="file-transfer-panel">
                                     <div className="qr-container">
-                                        <QRCodeCanvas value={`http://${localIp}:${actualPort}`} size={90} />
+                                        <QRCodeCanvas
+                                            value={`http://${localIp}:${actualPort}/?auth=${encodeURIComponent(accessToken)}`}
+                                            size={90}
+                                        />
                                         <div className="qr-label">SCAN ME</div>
                                     </div>
                                     <div className="transfer-info">
@@ -244,7 +249,10 @@ const FileTransferSettingsGroup = ({
                                     style={{ width: 'auto', fontSize: '10px', height: '24px', padding: '0 8px' }}
                                     onClick={async () => {
                                         try {
-                                            const selected = await open({ directory: true, multiple: false });
+                                            const selected = await withNativeDialog(
+                                                () => open({ directory: true, multiple: false }),
+                                                "settings:file-transfer-path"
+                                            );
                                             if (selected) {
                                                 saveSetting('file_transfer_path', selected as string);
                                                 setTimeout(fetchEffectiveTransferPath, 100);

@@ -1,6 +1,7 @@
 import type { ComponentType, ReactNode, CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open, message } from "@tauri-apps/plugin-dialog";
+import { withNativeDialog } from "../../../../shared/lib/focus";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import {
     THEMES,
@@ -28,6 +29,8 @@ interface AppearanceSettingsGroupProps {
     setLanguage: (val: Locale) => void;
     showSourceAppIcon: boolean;
     setShowSourceAppIcon: (val: boolean) => void;
+    hideUnselectedItemActions: boolean;
+    setHideUnselectedItemActions: (val: boolean) => void;
 
     compactMode: boolean;
     setCompactMode: (val: boolean) => void;
@@ -71,6 +74,8 @@ const AppearanceSettingsGroup = ({
     setLanguage,
     showSourceAppIcon,
     setShowSourceAppIcon,
+    hideUnselectedItemActions,
+    setHideUnselectedItemActions,
 
     compactMode,
     setCompactMode,
@@ -194,6 +199,27 @@ const AppearanceSettingsGroup = ({
 
                 <div className="setting-item">
                     <LabelWithHint
+                        label={t('hide_unselected_item_actions') || '隐藏未选中条目的操作按钮'}
+                        hint={t('hide_unselected_item_actions_hint') || '开启后，只有当前选中的剪贴板条目显示右上角操作按钮'}
+                        hintKey="hide_unselected_item_actions"
+                    />
+                    <label className="switch">
+                        <input
+                            className="cb"
+                            type="checkbox"
+                            checked={hideUnselectedItemActions}
+                            onChange={(e) => {
+                                const val = e.target.checked;
+                                setHideUnselectedItemActions(val);
+                                saveAppSetting('hide_unselected_item_actions', String(val));
+                            }}
+                        />
+                        <div className="toggle"><div className="left" /><div className="right" /></div>
+                    </label>
+                </div>
+
+                <div className="setting-item">
+                    <LabelWithHint
                         label={t('compact_mode') || 'Compact Mode'}
                         hint={t('compact_mode_hint') || 'When enabled, clipboard list displays more densely with more entries visible. Hover to preview.'}
                         hintKey="compact_mode"
@@ -276,29 +302,38 @@ const AppearanceSettingsGroup = ({
                                 <button
                                     onClick={async () => {
                                         try {
-                                            const selected = await open({
-                                                multiple: false,
-                                                filters: [{
-                                                    name: 'Image',
-                                                    extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']
-                                                }]
-                                            });
-                                            if (selected && typeof selected === 'string') {
+                                            const selected = await withNativeDialog(async () => {
+                                                const path = await open({
+                                                    multiple: false,
+                                                    title: t('choose_background') || '选择背景',
+                                                    filters: [{
+                                                        name: 'Image',
+                                                        extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif']
+                                                    }]
+                                                });
+                                                if (!path || typeof path !== 'string') return null;
+
                                                 try {
-                                                    const stats = await invoke<{ size: number }>('get_file_size', { path: selected });
+                                                    const stats = await invoke<{ size: number }>('get_file_size', { path });
                                                     const maxSize = 10 * 1024 * 1024;
                                                     if (stats.size > maxSize) {
                                                         await message(
                                                             t('background_size_error') || `图片文件过大！请选择小于 ${Math.round(maxSize / 1024 / 1024)}MB 的图片。`,
                                                             { title: t('error') || '错误', kind: 'error' }
                                                         );
-                                                        return;
+                                                        return null;
                                                     }
                                                 } catch (e) { console.warn(e); }
+
+                                                return path;
+                                            }, "settings:choose-background");
+                                            if (selected && typeof selected === 'string') {
                                                 setCustomBackground(selected);
                                                 saveAppSetting('custom_background', selected);
                                             }
-                                        } catch (err) { console.error(err); }
+                                        } catch (err) {
+                                            console.error(err);
+                                        }
                                     }}
                                     className="btn-icon"
                                     style={{ flex: 1, height: '36px', fontSize: '12px', fontWeight: 'bold' }}

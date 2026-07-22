@@ -2,6 +2,7 @@ export interface FileTransferChatViewProps {
   t: (key: string) => string;
   localIp: string;
   actualPort: string;
+  accessToken: string;
 }
 
 export type FileTransferMessageDirection = "in" | "out";

@@ -1,4 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight, Edit2, RotateCcw, Trash2 } from "lucide-react";
 import type { AiProfile, AiProfileStatusMap, EditableAiProfile } from "../../types";
 
@@ -48,8 +47,7 @@ const AiSettingsGroup = ({
     aiTargetLang,
     setAiTargetLang,
     aiThinkingBudget,
-    setAiThinkingBudget,
-    theme
+    setAiThinkingBudget
 }: AiSettingsGroupProps) => (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
         <div className="group-header" onClick={onToggle}>
@@ -98,9 +96,9 @@ const AiSettingsGroup = ({
                             flexDirection: 'column',
                             padding: '0',
                             marginBottom: '16px',
-                            background: 'rgba(0, 0, 0, 0.02)',
-                            borderRadius: theme === 'retro' ? '0' : '8px',
-                            border: theme === 'retro' ? '2px solid var(--border-dark)' : '1px solid rgba(128, 128, 128, 0.1)',
+                            background: 'var(--advanced-card-background)',
+                            borderRadius: 'var(--advanced-card-radius)',
+                            border: 'var(--advanced-card-border)',
                             overflow: 'hidden'
                         }}>
                             {aiProfiles.map(profile => (
@@ -111,9 +109,9 @@ const AiSettingsGroup = ({
                                             height: '8px',
                                             borderRadius: '50%',
                                             backgroundColor:
-                                                profileStatuses[profile.id] === 'success' ? '#4CAF50' :
-                                                    profileStatuses[profile.id] === 'error' ? '#F44336' :
-                                                        profileStatuses[profile.id] === 'loading' ? '#FF9800' : '#999',
+                                                profileStatuses[profile.id] === 'success' ? 'var(--status-success)' :
+                                                    profileStatuses[profile.id] === 'error' ? 'var(--status-danger)' :
+                                                        profileStatuses[profile.id] === 'loading' ? 'var(--status-warning)' : 'var(--text-muted)',
                                             marginRight: '12px',
                                             flexShrink: 0,
                                             boxShadow: profileStatuses[profile.id] === 'none' ? 'none' : '0 0 4px rgba(0,0,0,0.2)'
@@ -130,7 +128,7 @@ const AiSettingsGroup = ({
                                         </button>
                                         <button className="btn-icon" onClick={() => setEditingProfile(profile)}><Edit2 size={12} /></button>
                                         {!['ds_v4_pro_v1', 'ds_flash_v1'].includes(profile.id) && (
-                                            <button className="btn-icon" onClick={() => handleDeleteProfile(profile.id)} style={{ color: '#f44336' }}><Trash2 size={12} /></button>
+                                            <button className="btn-icon" onClick={() => handleDeleteProfile(profile.id)} style={{ color: 'var(--status-danger)' }}><Trash2 size={12} /></button>
                                         )}
                                     </div>
                                 </div>
@@ -217,7 +215,6 @@ const AiSettingsGroup = ({
                                 min="1024"
                                 max="10000"
                                 value={aiThinkingBudget}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => {
                                     setAiThinkingBudget(e.target.value);
                                     saveSetting('ai_thinking_budget', e.target.value);

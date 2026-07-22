@@ -71,7 +71,7 @@ const SyncSettingsGroup = ({
                             width: '8px',
                             height: '8px',
                             borderRadius: '50%',
-                            backgroundColor: mqttStatus === 'connected' ? '#4CAF50' : mqttStatus === 'connecting' ? '#FF9800' : '#F44336',
+                            backgroundColor: mqttStatus === 'connected' ? 'var(--status-success)' : mqttStatus === 'connecting' ? 'var(--status-warning)' : 'var(--status-danger)',
                             display: 'inline-block'
                         }}
                         title={mqttStatus === 'connected' ? "Connected" : mqttStatus === 'connecting' ? "Connecting..." : "Disconnected"}
@@ -85,9 +85,9 @@ const SyncSettingsGroup = ({
                 <div style={{
                     marginBottom: '12px',
                     padding: '8px 12px',
-                    background: 'rgba(72, 123, 219, 0.1)',
-                    border: '1px solid rgba(72, 123, 219, 0.2)',
-                    borderRadius: '4px',
+                    background: 'rgba(var(--accent-color-rgb), 0.1)',
+                    border: '1px solid rgba(var(--accent-color-rgb), 0.2)',
+                    borderRadius: 'var(--button-radius)',
                     display: 'flex',
                     flexDirection: 'row',
                     justifyContent: 'space-between',
@@ -169,7 +169,6 @@ const SyncSettingsGroup = ({
                                     className="search-input"
                                     style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                     value={mqttWsPath}
-                                    onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                     onChange={e => { setMqttWsPath(e.target.value); saveMqtt('mqtt_ws_path', e.target.value); }}
                                     placeholder="/mqtt"
                                 />
@@ -181,7 +180,6 @@ const SyncSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                 value={mqttServer}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => { setMqttServer(e.target.value); saveMqtt('mqtt_server', e.target.value); }}
                                 placeholder="mqtt.example.com"
                             />
@@ -192,7 +190,6 @@ const SyncSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                 value={mqttPort}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => { setMqttPort(e.target.value); saveMqtt('mqtt_port', e.target.value); }}
                                 placeholder="1883"
                             />
@@ -203,7 +200,6 @@ const SyncSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                 value={mqttUser}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => { setMqttUser(e.target.value); saveMqtt('mqtt_username', e.target.value); }}
                                 placeholder="Optional"
                             />
@@ -215,7 +211,6 @@ const SyncSettingsGroup = ({
                                 style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                 type="password"
                                 value={mqttPass}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={e => { setMqttPass(e.target.value); saveMqtt('mqtt_password', e.target.value); }}
                                 placeholder="Optional"
                             />
@@ -227,7 +222,6 @@ const SyncSettingsGroup = ({
                                     className="search-input"
                                     style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
                                     value={mqttTopic}
-                                    onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                     onChange={e => { setMqttTopic(e.target.value); saveMqtt('mqtt_topic', e.target.value); }}
                                     placeholder="tiez/my_device"
                                 />

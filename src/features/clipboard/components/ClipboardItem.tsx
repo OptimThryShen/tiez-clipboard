@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useMemo, memo } from "react";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -45,8 +45,11 @@ import { getFileIcon as getSystemFileIcon, peekFileIcon } from "../../../shared/
 import { getSourceAppIcon, peekSourceAppIcon } from "../../../shared/lib/sourceAppIcon";
 import { stripRichStorageMarkers } from "../../../shared/lib/repairHtmlFragment";
 import { registerCompactPreviewControls } from "../lib/compactPreviewControls";
+import { acquireBlurGuard, activateForInput, releaseBlurGuard } from "../../../shared/lib/focus";
 
 const COMPACT_PREVIEW_LABEL = "compact-preview";
+const COMPACT_PREVIEW_BLUR_OWNER = "compact-preview";
+let compactPreviewBlurGuardTask: Promise<void> = Promise.resolve();
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 const TABULAR_RICH_HTML_RE = /<(table|tr|td|th|thead|tbody|tfoot|colgroup|col)\b/i;
@@ -147,8 +150,13 @@ let compactPreviewLifecycleListenersReady: Promise<void> | null = null;
 const loadWebviewWindowModule = async () => import("@tauri-apps/api/webviewWindow");
 
 const setIgnoreBlurSafe = (ignore: boolean) => {
-    compactPreviewLog("set_ignore_blur", { ignore });
-    invoke("set_ignore_blur", { ignore }).catch(() => { });
+    compactPreviewLog("compact preview blur guard", { ignore });
+    compactPreviewBlurGuardTask = compactPreviewBlurGuardTask
+        .catch(() => { })
+        .then(() => ignore
+            ? acquireBlurGuard(COMPACT_PREVIEW_BLUR_OWNER)
+            : releaseBlurGuard(COMPACT_PREVIEW_BLUR_OWNER))
+        .catch(() => { });
 };
 
 const clearCompactPreviewPendingState = () => {
@@ -1230,7 +1238,7 @@ const ClipboardItem = ({
     };
     useEffect(() => {
         if (isEditingTags && tagInputRef.current) {
-            invoke('activate_window_focus')
+            activateForInput()
                 .catch(console.error)
                 .finally(() => {
                     tagInputRef.current?.focus();
@@ -1248,7 +1256,7 @@ const ClipboardItem = ({
         ignoreNoteBlurRef.current = true;
         setLocalNoteInput(item.note || "");
         const focusTimer = window.setTimeout(() => {
-            invoke('activate_window_focus')
+            activateForInput()
                 .catch(console.error)
                 .finally(() => {
                     noteInputRef.current?.focus();
@@ -1397,9 +1405,6 @@ const ClipboardItem = ({
                                 setLocalTagInput(val);
                                 onTagInput(val);
                             }}
-                            onMouseDown={() => {
-                                invoke('activate_window_focus').catch(console.error);
-                            }}
                             onChange={(e) => {
                                 const val = e.target.value;
                                 setLocalTagInput(val);
@@ -1542,10 +1547,7 @@ const ClipboardItem = ({
                     value={localNoteInput}
                     placeholder={t('note_placeholder') || 'Add a note…'}
                     rows={2}
-                    onMouseDown={(e) => {
-                        e.stopPropagation();
-                        invoke('activate_window_focus').catch(console.error);
-                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
                     onChange={(e) => setLocalNoteInput(e.target.value)}
                     onKeyDown={(e) => {
                         if (e.key === 'Escape') {
@@ -1936,7 +1938,6 @@ const ClipboardItem = ({
                         <input
                             autoFocus
                             className="search-input"
-                            onMouseDown={() => invoke('activate_window_focus').catch(console.error)}
                             style={{ width: '100%', fontSize: '12px', padding: '8px', border: '1px solid var(--accent-color)' }}
                             placeholder={item.content}
                             onKeyDown={(e) => {
@@ -2081,10 +2082,11 @@ const ClipboardItem = ({
                             right: '4px',
                             zIndex: 100000,
                             marginTop: '4px',
-                            background: 'var(--bg-element)',
-                            border: '2px solid var(--border-dark)',
-                            borderRadius: '4px',
-                            boxShadow: '4px 4px 0 0 var(--shadow-color)',
+                            background: 'var(--popover-background)',
+                            color: 'var(--popover-color)',
+                            border: 'var(--popover-border)',
+                            borderRadius: 'var(--popover-radius)',
+                            boxShadow: 'var(--popover-shadow)',
                             padding: '6px',
                             minWidth: '140px',
                             maxHeight: '200px',
@@ -2097,7 +2099,7 @@ const ClipboardItem = ({
                             gap: '4px'
                         } : {
                             padding: '8px 10px',
-                            background: 'rgba(72, 123, 219, 0.05)',
+                            background: 'rgba(var(--accent-color-rgb), 0.05)',
                             border: '1.5px dashed var(--accent-color)',
                             borderRadius: '4px',
                             display: 'flex',
@@ -2118,7 +2120,7 @@ const ClipboardItem = ({
                                         width: '100%',
                                         fontSize: '11px',
                                         height: '32px',
-                                        boxShadow: '2px 2px 0 0 var(--shadow-color)',
+                                        boxShadow: 'var(--button-shadow)',
                                         textTransform: 'none',
                                         justifyContent: 'flex-start',
                                         paddingLeft: '10px'

@@ -1,13 +1,10 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { restoreLastFocus } from "../lib/focus";
 import { isMacPlatform } from "../lib/platform";
-import { isTauriRuntime } from "../lib/tauriRuntime";
 
 type FocusState = "normal" | "clipboard";
 
 type UseInputFocusOptions = {
-  enableDelay?: number;
   restoreDelay?: number;
 };
 
@@ -24,9 +21,8 @@ const isEditableElement = (el: Element | null) => {
 export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
   options: UseInputFocusOptions = {}
 ) {
-  const { enableDelay = 60, restoreDelay = 120 } = options;
+  const { restoreDelay = 120 } = options;
   const inputRef = useRef<T | null>(null);
-  const focusTimer = useRef<number | null>(null);
   const blurTimer = useRef<number | null>(null);
   const focusState = useRef<FocusState>("normal");
 
@@ -35,20 +31,6 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-  };
-
-  const debouncedEnableFocus = () => {
-    if (!isTauriRuntime()) return;
-
-    clearTimer(focusTimer);
-    focusTimer.current = window.setTimeout(async () => {
-      try {
-        await invoke("activate_window_focus");
-        focusState.current = "clipboard";
-      } catch {
-        // Ignore focus errors
-      }
-    }, enableDelay);
   };
 
   const debouncedRestoreFocus = () => {
@@ -83,7 +65,7 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
     if (!element) return;
 
     const handleFocus = () => {
-      debouncedEnableFocus();
+      focusState.current = "clipboard";
     };
 
     const handleBlur = () => {
@@ -95,7 +77,7 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
 
     const checkInitialFocus = window.setTimeout(() => {
       if (document.activeElement === element) {
-        debouncedEnableFocus();
+        focusState.current = "clipboard";
       }
     }, 0);
 
@@ -103,10 +85,9 @@ export function useInputFocus<T extends HTMLElement = HTMLInputElement>(
       element.removeEventListener("focus", handleFocus);
       element.removeEventListener("blur", handleBlur);
       clearTimeout(checkInitialFocus);
-      clearTimer(focusTimer);
       clearTimer(blurTimer);
     };
-  }, [enableDelay, restoreDelay]);
+  }, [restoreDelay]);
 
   return inputRef;
 }

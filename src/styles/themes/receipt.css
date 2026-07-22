@@ -19,7 +19,9 @@ body.theme-receipt {
   --spacing-sm: 6px;
 
   --shell-backdrop-filter: none;
-  --shell-radius: 4px;
+  /* Preserve the receipt's sharp internal rhythm while giving the desktop
+     window a reliably visible, clipped outer corner. */
+  --shell-radius: 8px;
 
   --content-font-family: var(--font-main);
   --content-line-height: 1.35;
@@ -208,8 +210,9 @@ body.theme-receipt {
 }
 
 body.theme-receipt .app-container {
-  clip-path: none;
-  -webkit-clip-path: none;
+  border-radius: inherit;
+  clip-path: inset(0 round var(--shell-radius));
+  -webkit-clip-path: inset(0 round var(--shell-radius));
 }
 
 :root.dark-mode.theme-receipt,
@@ -256,12 +259,6 @@ body.theme-receipt .history-item,
 body.theme-receipt .item-meta,
 body.theme-receipt .settings-group {
   font-family: var(--font-main);
-}
-
-.theme-receipt .history-item.selected .item-meta::before {
-  content: "> ";
-  font-weight: 700;
-  color: var(--accent-color);
 }
 
 .theme-receipt .history-item.selected {

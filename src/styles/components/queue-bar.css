@@ -21,7 +21,7 @@
 
 .queue-bar .count-chip {
   background: var(--accent-color);
-  color: #fff;
+  color: var(--on-accent);
   width: 32px;
   height: 32px;
   display: flex;
@@ -67,7 +67,7 @@
 
 .queue-bar .start-btn {
   background: var(--accent-color);
-  color: #fff !important;
+  color: var(--on-accent) !important;
   font-size: 12px;
   padding: 6px 12px !important;
   height: 32px !important;
@@ -80,8 +80,8 @@
 }
 
 .queue-bar .close-btn {
-  background: #ff4d4f;
-  color: #fff !important;
+  background: var(--status-danger);
+  color: var(--on-accent) !important;
   width: 32px !important;
   height: 32px !important;
   padding: 0 !important;

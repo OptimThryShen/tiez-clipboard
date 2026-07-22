@@ -1,6 +1,6 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { acquireBlurGuard, releaseBlurGuard } from "../lib/focus";
 
 export interface AppModalProps {
   open: boolean;
@@ -21,13 +21,16 @@ const AppModal = ({
   overlayClassName = "",
   closeOnOverlayClick = true
 }: AppModalProps) => {
+  const modalId = useId();
+
   useEffect(() => {
     if (!open) return;
-    invoke("set_ignore_blur", { ignore: true }).catch(() => {});
+    const owner = `app-modal:${modalId}`;
+    const acquired = acquireBlurGuard(owner).catch(() => {});
     return () => {
-      invoke("set_ignore_blur", { ignore: false }).catch(() => {});
+      void acquired.finally(() => releaseBlurGuard(owner).catch(() => {}));
     };
-  }, [open]);
+  }, [modalId, open]);
 
   if (!open || typeof document === "undefined") return null;
 

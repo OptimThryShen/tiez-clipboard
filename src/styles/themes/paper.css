@@ -34,6 +34,9 @@ body.theme-paper {
   --font-mono: "Courier New", Courier, monospace;
 
   --radius-window: 4px;
+  /* The paper treatment is rectilinear inside; the native window still
+     needs a subtle shell radius for its transparent outer edge. */
+  --shell-radius: 8px;
   --radius-panel: 2px;
   --radius-card: 0px;
   --radius-control: 2px;
@@ -93,6 +96,7 @@ body.theme-paper {
   --tag-chip-shadow: none;
 
   --menu-border: 1px solid #d5c4a1;
+  --menu-radius: 2px;
   --menu-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 
   --scrollbar-size: 10px;

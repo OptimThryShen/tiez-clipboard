@@ -470,6 +470,12 @@
   box-shadow: var(--button-shadow);
 }
 
+body.hide-unselected-item-actions .history-item:not(.selected) .item-actions {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .item-meta-right {
   display: flex;
   align-items: center;

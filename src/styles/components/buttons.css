@@ -36,3 +36,14 @@
   border-color: var(--button-active-filled-border-color);
   box-shadow: var(--button-active-filled-shadow);
 }
+
+/* A pinned window is a persistent state, not a primary action. Keep its
+   header indicator quiet in translucent themes instead of emitting a blue
+   active glow every time the window is shown. */
+body.theme-mica .header-pin-btn.active,
+body.theme-acrylic .header-pin-btn.active {
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border-color: var(--line-strong);
+  box-shadow: none;
+}

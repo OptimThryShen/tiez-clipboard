@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ask } from "@tauri-apps/plugin-dialog";
+import { withNativeDialog } from "../../../../shared/lib/focus";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { getHotkeyDisplayTokens } from "../../../../shared/lib/hotkeyDisplay";
 import { isMacPlatform } from "../../../../shared/lib/platform";
@@ -190,7 +191,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         value={persistentLimitDraft}
                                         onFocus={(e) => {
                                             e.target.select();
-                                            invoke("focus_clipboard_window").catch(console.error);
                                         }}
                                         onChange={(e) => {
                                             const next = e.target.value;
@@ -473,13 +473,13 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                         try {
                                             const isAdmin = await invoke<boolean>("check_is_admin");
                                             if (!isAdmin) {
-                                                const confirmed = await ask(
+                                                const confirmed = await withNativeDialog(() => ask(
                                                     props.t('game_mode_admin_required') || "Game Mode requires Administrator privileges to work correctly with games (especially for IME/Input handling). Restart as Admin now?",
                                                     {
                                                         title: props.t('admin_required') || "Administrator Required",
                                                         kind: 'warning'
                                                     }
-                                                );
+                                                ), "settings:game-mode-admin");
 
                                                 if (confirmed) {
                                                     await invoke("save_setting", { key: 'app.paste_method', value: 'game_mode' });
@@ -673,7 +673,6 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                 style={{ width: 'calc(100% - 30px)', maxWidth: '100%', minHeight: '80px', padding: '8px', borderRadius: '0', marginLeft: '30px', boxSizing: 'border-box' }}
                                 placeholder={props.t('privacy_protection_custom_rules_placeholder')}
                                 value={props.privacyProtectionCustomRules}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={(e) => {
                                     const val = e.target.value;
                                     props.setPrivacyProtectionCustomRules(val);
@@ -756,7 +755,11 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <span className="item-label">{props.t('global_hotkey')}</span>
                             </div>
-                            <span className="hint">{props.isRecording ? props.t('hotkey_recording_esc') : props.t('hotkey_click_hint')}</span>
+                            <span className="hint">
+                                {props.isRecording
+                                    ? props.t('hotkey_recording_esc')
+                                    : `${props.t('main_hotkey_hint')} ${props.t('hotkey_click_hint')}`}
+                            </span>
                         </div>
 
                         <div
@@ -838,10 +841,10 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             }
 
                                             if (changed) {
-                                                const confirmed = await ask(
+                                                const confirmed = await withNativeDialog(() => ask(
                                                     props.t('restart_explorer_confirm'),
                                                     { title: props.t('restart_explorer_title'), kind: 'warning' }
-                                                );
+                                                ), "settings:restart-explorer");
                                                 if (confirmed) {
                                                     await invoke("restart_explorer");
                                                     if (enabled) {

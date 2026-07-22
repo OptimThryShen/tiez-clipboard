@@ -227,6 +227,24 @@ pub fn set_ignore_blur(ignore: bool) {
 }
 
 #[tauri::command]
+pub fn acquire_blur_guard(owner: String) -> Result<usize, String> {
+    let owner = owner.trim();
+    if owner.is_empty() {
+        return Err("Blur guard owner cannot be empty".to_string());
+    }
+    Ok(crate::global_state::acquire_blur_guard(owner))
+}
+
+#[tauri::command]
+pub fn release_blur_guard(owner: String) -> Result<usize, String> {
+    let owner = owner.trim();
+    if owner.is_empty() {
+        return Err("Blur guard owner cannot be empty".to_string());
+    }
+    Ok(crate::global_state::release_blur_guard(owner))
+}
+
+#[tauri::command]
 pub fn set_window_pinned(app_handle: AppHandle, state: State<'_, DbState>, pinned: bool) {
     crate::WINDOW_PINNED.store(pinned, Ordering::Relaxed);
     if let Some(window) = app_handle.get_webview_window("main") {

@@ -41,6 +41,7 @@ pub struct StatusPayload {
     pub enabled: bool,
     pub port: u16,
     pub ip: String,
+    pub access_token: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -85,4 +86,5 @@ pub struct SharedFileState(pub Mutex<HashMap<String, String>>);
 pub struct ServerInfo {
     pub port: std::sync::atomic::AtomicU16,
     pub ip: Mutex<String>,
+    pub access_token: Mutex<String>,
 }

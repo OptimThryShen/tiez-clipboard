@@ -1,21 +1,32 @@
-import { useState, useEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
+import type { ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
     Plus,
     Maximize2,
     Minimize2,
     ExternalLink,
     Folder,
-    RotateCcw,
+    Download,
     Image as ImageIcon,
     Link as LinkIcon,
     Clipboard,
     Video,
     Send,
+    Wifi,
+    FileText,
+    LoaderCircle,
+    QrCode,
+    FileArchive,
+    Music,
+    FileCode,
+    Cpu,
+    FileSpreadsheet,
+    Presentation,
+    File as FileIcon,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeCanvas } from "qrcode.react";
@@ -25,14 +36,136 @@ import type {
     FileTransferMessage,
     FileTransferDevice
 } from "../types";
+import { getFileIcon as getSystemFileIcon, peekFileIcon } from "../../../shared/lib/fileIcon";
+import { withNativeDialog } from "../../../shared/lib/focus";
+
+type TransferFileKind =
+    | 'archive'
+    | 'audio'
+    | 'executable'
+    | 'pdf'
+    | 'document'
+    | 'spreadsheet'
+    | 'presentation'
+    | 'code'
+    | 'image'
+    | 'video'
+    | 'file';
+
+const getTransferFileKind = (fileName: string): TransferFileKind => {
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) return 'archive';
+    if (['mp3', 'wav', 'flac', 'm4a', 'aac', 'ogg'].includes(extension)) return 'audio';
+    if (['exe', 'msi', 'bat', 'sh', 'app', 'dmg', 'pkg'].includes(extension)) return 'executable';
+    if (extension === 'pdf') return 'pdf';
+    if (['doc', 'docx', 'txt', 'rtf', 'md'].includes(extension)) return 'document';
+    if (['xls', 'xlsx', 'csv', 'numbers'].includes(extension)) return 'spreadsheet';
+    if (['ppt', 'pptx', 'key'].includes(extension)) return 'presentation';
+    if (['js', 'ts', 'tsx', 'jsx', 'py', 'rs', 'c', 'cpp', 'go', 'java', 'html', 'css', 'json', 'yaml', 'yml', 'toml', 'sql'].includes(extension)) return 'code';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'heic', 'avif'].includes(extension)) return 'image';
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'].includes(extension)) return 'video';
+    return 'file';
+};
+
+const TransferFileTypeIcon = ({
+    filePath,
+    fileName,
+    preparing
+}: {
+    filePath?: string;
+    fileName: string;
+    preparing?: boolean;
+}) => {
+    const [systemIcon, setSystemIcon] = useState<string | null>(() => peekFileIcon(filePath) ?? null);
+    const kind = getTransferFileKind(fileName);
+
+    useEffect(() => {
+        let cancelled = false;
+        if (!filePath) {
+            setSystemIcon(null);
+            return () => { cancelled = true; };
+        }
+
+        const cached = peekFileIcon(filePath);
+        if (cached !== undefined) {
+            setSystemIcon(cached ?? null);
+            return () => { cancelled = true; };
+        }
+
+        setSystemIcon(null);
+        getSystemFileIcon(filePath).then(icon => {
+            if (!cancelled) setSystemIcon(icon);
+        });
+        return () => { cancelled = true; };
+    }, [filePath]);
+
+    if (preparing) return <LoaderCircle size={22} className="wt-spin" />;
+    if (systemIcon) {
+        return <img src={systemIcon} alt="" className="wt-file-system-icon" loading="lazy" />;
+    }
+
+    const iconByKind: Record<TransferFileKind, ReactNode> = {
+        archive: <FileArchive size={23} />,
+        audio: <Music size={23} />,
+        executable: <Cpu size={23} />,
+        pdf: <FileText size={23} />,
+        document: <FileText size={23} />,
+        spreadsheet: <FileSpreadsheet size={23} />,
+        presentation: <Presentation size={23} />,
+        code: <FileCode size={23} />,
+        image: <ImageIcon size={23} />,
+        video: <Video size={23} />,
+        file: <FileIcon size={23} />
+    };
+
+    return <span className={`wt-file-fallback-icon is-${kind}`}>{iconByKind[kind]}</span>;
+};
+
+const isLocalTransferPath = (path?: string) => (
+    Boolean(path) && !/^(?:https?:|data:|blob:|\/download\/)/i.test(path || '')
+);
+
+const decodeFileName = (value: string) => {
+    try {
+        return decodeURIComponent(value.replace(/\+/g, ' '));
+    } catch {
+        return value;
+    }
+};
+
+const getTransferFileName = (message: FileTransferMessage) => {
+    if (message._fileName?.trim()) return message._fileName.trim();
+
+    for (const value of [message.content, message.file_path]) {
+        if (!value) continue;
+        const queryName = value.match(/(?:^|[?&])name=([^&]+)/i)?.[1];
+        if (queryName) return decodeFileName(queryName);
+
+        const withoutQuery = value.split(/[?#]/)[0];
+        const baseName = withoutQuery.split(/[/\\]/).pop();
+        if (baseName && !['download', 'file'].includes(baseName.toLowerCase())) {
+            return decodeFileName(baseName);
+        }
+    }
+
+    return '文件';
+};
+
+const getTransferFileIconPath = (message: FileTransferMessage) => {
+    if (isLocalTransferPath(message.file_path)) return message.file_path;
+    if (isLocalTransferPath(message.content)) return message.content;
+    return undefined;
+};
 
 // File Transfer Chat View Component
 const FileTransferChatView = ({
     t,
     localIp,
-    actualPort
+    actualPort,
+    accessToken
 }: FileTransferChatViewProps) => {
     const composerMinHeight = 32;
+    const connectionUrl = `http://${localIp}:${actualPort}/?auth=${encodeURIComponent(accessToken)}`;
     const [messages, setMessages] = useState<FileTransferMessage[]>([]);
     const [input, setInput] = useState("");
     const [appLogo, setAppLogo] = useState("");
@@ -43,9 +176,19 @@ const FileTransferChatView = ({
     const [showFullScreen, setShowFullScreen] = useState(false);
     const [showExpandBtn, setShowExpandBtn] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const contextMenuRef = useRef<HTMLDivElement>(null);
     const [contextMenu, setContextMenu] = useState<FileTransferContextMenu | null>(null);
     const [onlineDevices, setOnlineDevices] = useState<FileTransferDevice[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const [showQrCode, setShowQrCode] = useState(false);
+    const [isChoosingFiles, setIsChoosingFiles] = useState(false);
+    const hasOnlineDevices = onlineDevices.length > 0;
+    const primaryDeviceName = typeof onlineDevices[0]?.name === 'string' && onlineDevices[0].name.trim()
+        ? onlineDevices[0].name.trim()
+        : '已连接设备';
+    const conversationTitle = onlineDevices.length > 1
+        ? `${primaryDeviceName} 等 ${onlineDevices.length} 台设备`
+        : primaryDeviceName;
 
     const URL_REGEX = /((https?:\/\/|www\.)[^\s<]+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,})(?:\/[^\s<]*)?)/gi;
 
@@ -139,6 +282,7 @@ const FileTransferChatView = ({
 
             const response = await fetch(`http://127.0.0.1:${port}/share-chunk`, {
                 method: "POST",
+                headers: { Authorization: `Bearer ${accessToken}` },
                 body: formData
             });
 
@@ -218,6 +362,105 @@ const FileTransferChatView = ({
         if (message.file_path) return convertFileSrc(message.file_path);
         return convertFileSrc(message.content);
     };
+
+    const openTransferContent = async ({
+        filePath,
+        content,
+        type
+    }: {
+        filePath?: string;
+        content?: string;
+        type?: string;
+    }) => {
+        const localTarget = [filePath, content].find(value => isLocalTransferPath(value));
+        const rawTarget = localTarget || filePath || content;
+        if (!rawTarget) {
+            await emit('toast', '没有可打开的文件');
+            return;
+        }
+
+        const isRemoteTarget = !localTarget && /^(?:https?:|\/download\/)/i.test(rawTarget);
+        const target = isRemoteTarget ? resolveServerDownloadUrl(rawTarget) : rawTarget;
+
+        try {
+            // File-transfer message IDs are session-local sequence numbers, not
+            // clipboard database IDs. Passing them to open_content can replace
+            // the supplied path with an unrelated clipboard entry.
+            await invoke('open_content', {
+                id: 0,
+                content: target,
+                contentType: isRemoteTarget ? 'url' : (type || 'file')
+            });
+        } catch (error) {
+            console.error('Failed to open transferred content', error);
+            await emit('toast', '无法打开此内容，请确认文件仍然存在');
+        }
+    };
+
+    const normalizeTimestamp = (timestamp: number) => (
+        timestamp < 1_000_000_000_000 ? timestamp * 1000 : timestamp
+    );
+
+    const formatMessageTime = (timestamp: number) => {
+        if (!timestamp) return '';
+        const normalized = normalizeTimestamp(timestamp);
+        const date = new Date(normalized);
+        if (Number.isNaN(date.getTime())) return '';
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const getMessageDayKey = (timestamp: number) => {
+        if (!timestamp) return '';
+        const date = new Date(normalizeTimestamp(timestamp));
+        if (Number.isNaN(date.getTime())) return '';
+        return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    };
+
+    const formatMessageDay = (timestamp: number) => {
+        const date = new Date(normalizeTimestamp(timestamp));
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(today.getDate() - 1);
+
+        const key = getMessageDayKey(timestamp);
+        if (key === getMessageDayKey(today.getTime())) return '今天';
+        if (key === getMessageDayKey(yesterday.getTime())) return '昨天';
+        return date.toLocaleDateString([], {
+            month: 'numeric',
+            day: 'numeric',
+            ...(date.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' })
+        });
+    };
+
+    const messagesBelongToSameGroup = (
+        previous: FileTransferMessage | undefined,
+        next: FileTransferMessage | undefined
+    ) => {
+        if (!previous || !next || previous.direction !== next.direction) return false;
+
+        const previousSender = previous.sender_id || previous.sender_name || previous.direction;
+        const nextSender = next.sender_id || next.sender_name || next.direction;
+        if (previousSender !== nextSender) return false;
+
+        const previousTime = normalizeTimestamp(previous.timestamp);
+        const nextTime = normalizeTimestamp(next.timestamp);
+        return Math.abs(nextTime - previousTime) <= 5 * 60 * 1000;
+    };
+
+    const openContextMenu = (
+        event: ReactMouseEvent<HTMLElement>,
+        menu: Omit<FileTransferContextMenu, 'x' | 'y'>
+    ) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setContextMenu({
+            ...menu,
+            x: event.clientX,
+            y: event.clientY
+        });
+    };
+
+    const isLocalFilePath = isLocalTransferPath;
 
     const splitTrailingPunctuation = (raw: string) => {
         let url = raw;
@@ -311,26 +554,8 @@ const FileTransferChatView = ({
 
     const getAvatarConfig = (m: FileTransferMessage) => {
         if (m.sender_id === 'pc' || m.direction === 'out') {
-            return { isImg: !!appLogo, content: appLogo || 'PC', color: 'var(--text-primary)', initial: 'PC' };
+            return { isImg: !!appLogo, content: appLogo || 'PC', color: 'var(--accent-color)', initial: 'PC' };
         }
-
-        const gradients = [
-            'linear-gradient(135deg, #FF5F6D 0%, #FFC371 100%)',
-            'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)',
-            'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
-            'linear-gradient(135deg, #8E2DE2 0%, #4A00E0 100%)',
-            'linear-gradient(135deg, #f953c6 0%, #b91d73 100%)',
-            'linear-gradient(135deg, #ee0979 0%, #ff6a00 100%)',
-            'linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)',
-            'linear-gradient(135deg, #f7971e 0%, #ffd200 100%)'
-        ];
-
-        const id = m.sender_id || 'mobile';
-        let hash = 0;
-        for (let i = 0; i < id.length; i++) {
-            hash = id.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const gradient = gradients[Math.abs(hash) % gradients.length];
 
         let initial = 'M';
         if (m.sender_name) {
@@ -342,7 +567,11 @@ const FileTransferChatView = ({
             else initial = m.sender_name.charAt(0).toUpperCase();
         }
 
-        return { isImg: false, color: gradient, initial };
+        return {
+            isImg: false,
+            color: 'color-mix(in srgb, var(--accent-color) 74%, var(--text-secondary))',
+            initial
+        };
     };
 
     const fetchMessages = async () => {
@@ -487,6 +716,32 @@ const FileTransferChatView = ({
         }
     }, [composerMinHeight, input]);
 
+    const chooseFilesToSend = async () => {
+        if (isChoosingFiles) return;
+        setIsChoosingFiles(true);
+
+        try {
+            const selected = await withNativeDialog(() => open({
+                multiple: true,
+                title: '选择要发送的文件'
+            }), 'file-transfer:choose-files');
+
+            if (!selected) return;
+            const paths = Array.isArray(selected) ? selected : [selected];
+            await queueFilesForSending(
+                paths.map(path => ({
+                    name: path.split(/[/\\]/).pop() || '文件',
+                    path
+                }))
+            );
+        } catch (error) {
+            console.error('Failed to choose files', error);
+            await emit('toast', '无法打开文件选择器，请重试');
+        } finally {
+            setIsChoosingFiles(false);
+        }
+    };
+
     const send = async () => {
         if (!input.trim()) return;
         try {
@@ -533,13 +788,63 @@ const FileTransferChatView = ({
         }
     };
 
-    // Close context menu on click outside
+    // Keep the contextual menu inside the window and dismiss it like a native IM menu.
     useEffect(() => {
-        const handleClick = () => setContextMenu(null);
-        if (contextMenu) {
-            document.addEventListener('click', handleClick);
-            return () => document.removeEventListener('click', handleClick);
-        }
+        if (!contextMenu) return;
+
+        const frame = requestAnimationFrame(() => {
+            const menu = contextMenuRef.current;
+            if (!menu) return;
+
+            const edge = 8;
+            const nextX = Math.max(edge, Math.min(contextMenu.x, window.innerWidth - menu.offsetWidth - edge));
+            const nextY = Math.max(edge, Math.min(contextMenu.y, window.innerHeight - menu.offsetHeight - edge));
+
+            if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
+                setContextMenu(current => current ? { ...current, x: nextX, y: nextY } : current);
+            }
+
+            if (!menu.contains(document.activeElement)) menu.focus({ preventScroll: true });
+        });
+
+        const handlePointerDown = (event: PointerEvent) => {
+            if (!contextMenuRef.current?.contains(event.target as Node)) {
+                setContextMenu(null);
+            }
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setContextMenu(null);
+                return;
+            }
+
+            if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+            const items = Array.from(
+                contextMenuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || []
+            );
+            if (items.length === 0) return;
+
+            event.preventDefault();
+            const activeIndex = items.indexOf(document.activeElement as HTMLElement);
+            if (event.key === 'Home') items[0].focus();
+            if (event.key === 'End') items[items.length - 1].focus();
+            if (event.key === 'ArrowDown') items[activeIndex < 0 ? 0 : (activeIndex + 1) % items.length].focus();
+            if (event.key === 'ArrowUp') items[activeIndex < 0 ? items.length - 1 : (activeIndex - 1 + items.length) % items.length].focus();
+        };
+        const closeMenu = () => setContextMenu(null);
+
+        document.addEventListener('pointerdown', handlePointerDown, true);
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('resize', closeMenu);
+        window.addEventListener('scroll', closeMenu, true);
+
+        return () => {
+            cancelAnimationFrame(frame);
+            document.removeEventListener('pointerdown', handlePointerDown, true);
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('resize', closeMenu);
+            window.removeEventListener('scroll', closeMenu, true);
+        };
     }, [contextMenu]);
 
     useEffect(() => {
@@ -624,78 +929,137 @@ const FileTransferChatView = ({
                     >
                         <div className="wt-drag-drop-zone">
                             <Folder size={64} strokeWidth={1.5} />
-                            <div className="wt-drag-drop-text">Drop to Send</div>
+                            <div className="wt-drag-drop-text">松开发送文件</div>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {localIp && actualPort && (
-                <div className="wt-header">
-                    <div className="wt-info-panel">
-                        <div className="wt-qr-container">
-                            <QRCodeCanvas value={`http://${localIp}:${actualPort}`} size={64} />
-                        </div>
-                        <div className="wt-info-list" style={{ flex: 1 }}>
-                            <div className="wt-info-row">
-                                <span className="wt-info-label">LOCAL IP:</span>
-                                <span className="wt-info-value">{localIp}</span>
+            {localIp && actualPort && accessToken && (
+                <div className={`wt-header ${hasOnlineDevices ? 'is-connected' : 'is-onboarding'}`}>
+                    {!hasOnlineDevices ? (
+                        <div className="wt-onboarding-connect">
+                            <div className="wt-onboarding-identity">
+                                <div className="wt-onboarding-copy">
+                                    <div className="wt-onboarding-title">局域网文件传输</div>
+                                    <div className="wt-onboarding-status">等待设备连接</div>
+                                    <div className="wt-onboarding-address">{localIp}:{actualPort}</div>
+                                </div>
                             </div>
-                            <div className="wt-info-row">
-                                <span className="wt-info-label">PORT:</span>
-                                <span className="wt-info-value">{actualPort}</span>
-                            </div>
-                            <div className="wt-info-row">
-                                <span className="wt-info-label">ONLINE:</span>
-                                <span className="wt-info-value" style={{ color: "var(--accent-color)" }}>
-                                    {onlineDevices.length} 个设备已连接
-                                </span>
+                            <div className="wt-onboarding-qr" title="手机扫码连接">
+                                <QRCodeCanvas value={connectionUrl} size={54} />
                             </div>
                         </div>
-                    </div>
+                    ) : (
+                        <>
+                            <div className="wt-conversation-identity">
+                                <div className="wt-conversation-copy">
+                                    <div className="wt-conversation-title">{conversationTitle}</div>
+                                    <div className="wt-presence-line">
+                                        {onlineDevices.length === 1 ? '在线 · 局域网传输' : `${onlineDevices.length} 台设备在线`}
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className={`wt-header-action ${showQrCode ? 'is-active' : ''}`}
+                                title="显示连接二维码"
+                                aria-label="显示连接二维码"
+                                aria-expanded={showQrCode}
+                                onClick={() => setShowQrCode(value => !value)}
+                            >
+                                <QrCode size={19} />
+                            </button>
+                            {showQrCode && (
+                                <div className="wt-qr-popover">
+                                    <div className="wt-qr-popover-code">
+                                        <QRCodeCanvas value={connectionUrl} size={112} />
+                                    </div>
+                                    <div className="wt-qr-popover-title">连接其他设备</div>
+                                    <div className="wt-qr-popover-address">{localIp}:{actualPort}</div>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </div>
             )}
 
             <div className="wt-chat-box" ref={chatBoxRef}>
                 {messages.length === 0 && (
-                    <div style={{ opacity: 0.5, textAlign: 'center', marginTop: '40px', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
-                        {t ? (t('waiting_connection') || "Waiting for connection...") : "Waiting for connection..."}
+                    <div className="wt-empty-state">
+                        <div className={`wt-empty-icon${hasOnlineDevices ? '' : ' is-waiting'}`} aria-hidden="true">
+                            <Wifi size={22} strokeWidth={1.8} />
+                        </div>
+                        <div className="wt-empty-title">{hasOnlineDevices ? '开始传输' : '等待设备连接'}</div>
+                        <div className="wt-empty-copy">
+                            {hasOnlineDevices ? '输入消息、选择文件，或直接将文件拖到这里' : '使用上方二维码连接手机后，即可互传消息与文件'}
+                        </div>
                     </div>
                 )}
-                {messages.map(m => {
+                {messages.map((m, index) => {
                     const avatar = getAvatarConfig(m);
+                    const transferFileName = getTransferFileName(m);
+                    const groupedWithPrevious = messagesBelongToSameGroup(messages[index - 1], m);
+                    const groupedWithNext = messagesBelongToSameGroup(m, messages[index + 1]);
+                    const startsNewDay = index === 0
+                        || getMessageDayKey(messages[index - 1].timestamp) !== getMessageDayKey(m.timestamp);
                     return (
-                        <div key={m.id} className={`wt-message ${m.direction === 'out' ? 'sent' : 'received'}`}>
-                            <div
-                                className="wt-avatar"
-                                style={{
-                                    background: avatar.isImg ? 'transparent' : avatar.color,
-                                }}
-                            >
-                                {avatar.isImg ? (
-                                    <img src={avatar.content} loading="lazy" alt="Avatar" />
-                                ) : (
-                                    avatar.initial
-                                )}
+                        <Fragment key={m.id}>
+                        {startsNewDay && m.timestamp > 0 && (
+                            <div className="wt-day-separator" role="separator">
+                                <span>{formatMessageDay(m.timestamp)}</span>
                             </div>
-                            <div className="wt-bubble">
-                                {m.sender_name && m.direction === 'in' && (
-                                    <div className="wt-sender-name">
-                                        {m.sender_name}
-                                    </div>
+                        )}
+                        <div
+                            className={`wt-message ${m.direction === 'out' ? 'sent' : 'received'} ${groupedWithPrevious ? 'is-grouped-with-previous' : 'is-group-start'} ${groupedWithNext ? 'is-grouped-with-next' : 'is-group-end'}`}
+                        >
+                            {!groupedWithNext ? (
+                                <div
+                                    className="wt-avatar"
+                                    style={{
+                                        background: avatar.isImg ? 'transparent' : avatar.color,
+                                    }}
+                                    aria-label={m.direction === 'out' ? '我的设备' : (m.sender_name || '对方设备')}
+                                >
+                                    {avatar.isImg ? (
+                                        <img
+                                            src={avatar.content}
+                                            loading="lazy"
+                                            alt={m.direction === 'out' ? '我的设备' : (m.sender_name || '对方设备')}
+                                        />
+                                    ) : (
+                                        avatar.initial
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="wt-avatar-spacer" aria-hidden="true" />
+                            )}
+                            <div className="wt-message-stack">
+                                <div
+                                    className={`wt-bubble wt-bubble-${m.msg_type}`}
+                                    onContextMenu={(event) => {
+                                        if (m._preparing) return;
+                                        const menuType = m.msg_type === 'text' || m.msg_type === 'image' || m.msg_type === 'video'
+                                            ? m.msg_type
+                                            : 'file';
+                                        openContextMenu(event, {
+                                            filePath: menuType === 'text' ? undefined : (m.file_path || m.content),
+                                            content: m.content,
+                                            id: m.id,
+                                            type: menuType
+                                        });
+                                    }}
+                                >
+                                {m.sender_name && m.direction === 'in' && !groupedWithPrevious && (
+                                    <div className="wt-sender-name">{m.sender_name}</div>
                                 )}
                                 {m.msg_type === 'text' && (
                                     <div
                                         className="wt-text-content"
-                                        onContextMenu={(e) => {
-                                            e.preventDefault();
-                                            setContextMenu({
-                                                x: e.clientX,
-                                                y: e.clientY,
+                                        onContextMenu={(e) => openContextMenu(e, {
                                                 content: m.content,
                                                 type: 'text'
-                                            });
-                                        }}
+                                            })}
                                     >{renderTextWithLinks(m.content)}</div>
                                 )}
                                 {m.msg_type === 'image' && (
@@ -707,10 +1071,10 @@ const FileTransferChatView = ({
                                             style={{ cursor: 'pointer' }}
                                             alt="Image"
                                             onClick={async () => {
-                                                await invoke('open_content', {
-                                                    id: m.id,
-                                                    content: m.file_path || m.content,
-                                                    contentType: 'image'
+                                                await openTransferContent({
+                                                    filePath: m.file_path,
+                                                    content: m.content,
+                                                    type: 'image'
                                                 });
                                             }}
                                             onError={(e) => {
@@ -731,22 +1095,16 @@ const FileTransferChatView = ({
                                                     }
                                                 }).catch(err => console.error("Fallback image load failed", err));
                                             }}
-                                            onContextMenu={(e) => {
-                                                e.preventDefault();
-                                                setContextMenu({
-                                                    x: e.clientX,
-                                                    y: e.clientY,
-                                                    // For received images, m.content is often the file path
+                                            onContextMenu={(e) => openContextMenu(e, {
                                                     filePath: m.file_path || m.content,
                                                     content: m.content,
                                                     id: m.id,
                                                     type: 'image'
-                                                });
-                                            }}
+                                                })}
                                         />
                                         <div className="wt-media-footer">
                                             <ImageIcon size={12} />
-                                            <span>Image</span>
+                                            <span>图片</span>
                                         </div>
                                     </>
                                 )}
@@ -756,22 +1114,16 @@ const FileTransferChatView = ({
                                             src={getMessageMediaSrc(m)}
                                             className="wt-video-preview"
                                             controls
-                                            onContextMenu={(e) => {
-                                                e.preventDefault();
-                                                setContextMenu({
-                                                    x: e.clientX,
-                                                    y: e.clientY,
-                                                    // For received videos, m.content is often the file path
+                                            onContextMenu={(e) => openContextMenu(e, {
                                                     filePath: m.file_path || m.content,
                                                     content: m.content,
                                                     id: m.id,
                                                     type: 'video'
-                                                });
-                                            }}
+                                                })}
                                         />
-                                        <div style={{ fontSize: '11px', opacity: 0.7, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                        <div className="wt-media-footer">
                                             <Video size={12} />
-                                            <span>Video</span>
+                                            <span>视频</span>
                                         </div>
                                     </>
                                 )}
@@ -781,25 +1133,17 @@ const FileTransferChatView = ({
                                             style={{ cursor: m.direction === 'in' && !m._preparing ? 'pointer' : 'default' }}
                                             onClick={async () => {
                                                 if (m.direction === 'in' && !m._preparing) {
-                                                    try {
-                                                        const targetPath = m.file_path || m.content;
-                                                        await invoke('open_content', {
-                                                            id: m.id,
-                                                            content: targetPath,
-                                                            contentType: 'file'
-                                                        });
-                                                    } catch (e) {
-                                                        console.error("Failed to open file", e);
-                                                    }
+                                                    await openTransferContent({
+                                                        filePath: m.file_path,
+                                                        content: m.content,
+                                                        type: 'file'
+                                                    });
                                                 }
                                             }}
 
                                             onContextMenu={(e) => {
                                                 if (!m._preparing) {
-                                                    e.preventDefault();
-                                                    setContextMenu({
-                                                        x: e.clientX,
-                                                        y: e.clientY,
+                                                    openContextMenu(e, {
                                                         filePath: m.file_path || m.content,
                                                         content: m.content,
                                                         id: m.id,
@@ -808,20 +1152,18 @@ const FileTransferChatView = ({
                                                 }
                                             }}
                                         >
-                                            <div className="wt-file-icon">{m._preparing ? '📤' : (m.direction === 'in' ? '✅' : '📄')}</div>
+                                            <div className="wt-file-icon">
+                                                <TransferFileTypeIcon
+                                                    filePath={getTransferFileIconPath(m)}
+                                                    fileName={transferFileName}
+                                                    preparing={m._preparing}
+                                                />
+                                            </div>
                                             <div className="wt-file-info">
-                                                <div className="wt-file-name">
-                                                    {m._preparing
-                                                        ? m._fileName
-                                                        : (m.content.includes("name=")
-                                                            ? decodeURIComponent(m.content.split("name=")[1])
-                                                            : (m.direction === 'in' && m.content.includes('\\')
-                                                                ? m.content.split(/[/\\]/).pop()
-                                                                : "File Transfer"))}
-                                                </div>
+                                                <div className="wt-file-name">{transferFileName}</div>
                                                 {!m._preparing && (
                                                     <div className="wt-file-status">
-                                                        {m.direction === 'in' ? 'Saved - Click to open' : 'Ready for download'}
+                                                        {m.direction === 'in' ? '已接收 · 点击打开' : '可供下载'}
                                                     </div>
                                                 )}
                                             </div>
@@ -832,15 +1174,21 @@ const FileTransferChatView = ({
                                                     <div className="progress-bar" style={{ width: '100%', animation: 'pulse 1.5s ease-in-out infinite' }}></div>
                                                 </div>
                                                 <div className="status-text">
-                                                    <span className="status-label">Preparing...</span>
+                                                    <span className="status-label">正在准备文件…</span>
                                                     <span className="percent"></span>
                                                 </div>
                                             </div>
                                         )}
                                     </>
                                 )}
+                                </div>
+                                <div className="wt-message-meta">
+                                    <span>{formatMessageTime(m.timestamp)}</span>
+                                    {m.direction === 'out' && <span className="wt-delivery-mark">✓</span>}
+                                </div>
                             </div>
                         </div>
+                        </Fragment>
                     );
                 })}
                 <div ref={messagesEndRef} />
@@ -849,29 +1197,16 @@ const FileTransferChatView = ({
             <div className="wt-footer">
                 <div className="wt-composer">
                     <button
+                        type="button"
                         className="wt-btn-icon"
-                        title="Send File"
-                        onClick={async () => {
-                            try {
-                                const selected = await open({
-                                    multiple: true
-                                });
-
-                                if (selected) {
-                                    const paths = Array.isArray(selected) ? selected : [selected];
-                                    await queueFilesForSending(
-                                        paths.map((path) => ({
-                                            name: path.split(/[/\\]/).pop() || "File",
-                                            path
-                                        }))
-                                    );
-                                }
-                            } catch (e) {
-                                console.error(e);
-                            }
-                        }}
+                        title={isChoosingFiles ? '正在打开文件选择器' : '发送文件'}
+                        aria-label={isChoosingFiles ? '正在打开文件选择器' : '发送文件'}
+                        disabled={isChoosingFiles}
+                        onClick={() => void chooseFilesToSend()}
                     >
-                        <Plus size={18} />
+                        {isChoosingFiles
+                            ? <LoaderCircle size={18} className="wt-spin" />
+                            : <Plus size={18} />}
                     </button>
 
                     <div className="wt-input-wrap">
@@ -879,7 +1214,6 @@ const FileTransferChatView = ({
                             ref={textareaRef}
                             className="wt-input"
                             value={input}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={e => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
                             onPaste={handlePaste}
@@ -889,16 +1223,24 @@ const FileTransferChatView = ({
                     </div>
                         {showExpandBtn && (
                             <button
+                                type="button"
                                 className="wt-btn-icon"
                                 onClick={() => setShowFullScreen(true)}
-                                title="Full Screen Edit"
-                                style={{ borderRadius: '8px' }}
+                                title="展开编辑"
+                                aria-label="展开编辑"
                             >
                                 <Maximize2 size={16} />
                             </button>
                         )}
 
-                    <button onClick={send} className="wt-btn send">
+                    <button
+                        type="button"
+                        onClick={send}
+                        className="wt-btn send"
+                        disabled={!input.trim()}
+                        title="发送消息"
+                        aria-label="发送消息"
+                    >
                         <Send size={18} />
                     </button>
                 </div>
@@ -913,11 +1255,12 @@ const FileTransferChatView = ({
                         className="wt-fullscreen-editor"
                     >
                         <div className="wt-fullscreen-header">
-                            <div className="wt-fullscreen-title">FULL SCREEN EDIT</div>
+                            <div className="wt-fullscreen-title">编辑消息</div>
                             <button
                                 onClick={() => setShowFullScreen(false)}
                                 className="wt-overlay-icon-btn"
-                                title="Minimize"
+                                title="收起编辑器"
+                                aria-label="收起编辑器"
                             >
                                 <Minimize2 size={16} />
                             </button>
@@ -925,9 +1268,8 @@ const FileTransferChatView = ({
 
                         <textarea
                             value={input}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={e => setInput(e.target.value)}
-                            placeholder="Type your message..."
+                            placeholder="输入消息…"
                             className="wt-fullscreen-textarea"
                             onPaste={handlePaste}
                         />
@@ -937,192 +1279,231 @@ const FileTransferChatView = ({
                                 onClick={() => setShowFullScreen(false)}
                                 className="wt-btn"
                             >
-                                CANCEL
+                                取消
                             </button>
                             <button
                                 onClick={send}
                                 className="wt-btn send"
                             >
-                                SEND
+                                发送
                             </button>
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
 
-            {/* Context Menu */}
-            {
-                contextMenu && (
+            <AnimatePresence>
+                {contextMenu && (
                     <motion.div
+                        ref={contextMenuRef}
                         className="wt-context-menu"
-                        initial={{ opacity: 0, scale: 0.98, y: -5 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        style={{
-                            top: contextMenu.y,
-                            left: contextMenu.x,
-                        }}
-                        onClick={(e) => e.stopPropagation()}
+                        role="menu"
+                        aria-label="消息操作"
+                        tabIndex={-1}
+                        initial={{ opacity: 0, scale: 0.97 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.97 }}
+                        transition={{ duration: 0.12 }}
+                        style={{ top: contextMenu.y, left: contextMenu.x }}
+                        onContextMenu={(event) => event.preventDefault()}
                     >
-                        {/* Custom Actions (Open / Explorer) */}
                         {(contextMenu.type === 'file' || contextMenu.type === 'image' || contextMenu.type === 'video') && (
                             <>
-                                <div
-                                    className="context-item"
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
                                     onClick={async () => {
-                                        await invoke('open_content', {
-                                            id: contextMenu.id || 0,
-                                            content: contextMenu.filePath,
-                                            contentType: contextMenu.type || 'file'
+                                        const selected = contextMenu;
+                                        setContextMenu(null);
+                                        await openTransferContent({
+                                            filePath: selected.filePath,
+                                            content: selected.content,
+                                            type: selected.type
                                         });
-                                        setContextMenu(null);
                                     }}
                                 >
-                                    <ExternalLink size={14} />
+                                    <ExternalLink size={16} />
                                     <span>{t ? (t('open') || '打开') : '打开'}</span>
-                                </div>
-                                <div
-                                    className="context-item"
-                                    onClick={async () => {
-                                        await invoke('open_file_location', { filePath: contextMenu.filePath });
-                                        setContextMenu(null);
-                                    }}
-                                >
-                                    <Folder size={14} />
-                                    <span>{t ? (t('show_in_finder') || '在访达中显示') : '在访达中显示'}</span>
-                                </div>
-                                <div style={{ height: '1px', background: 'var(--border-dark)', margin: '4px 8px', opacity: 0.3 }} />
+                                </button>
+                                {isLocalFilePath(contextMenu.filePath) && (
+                                    <button
+                                        type="button"
+                                        className="wt-context-item"
+                                        role="menuitem"
+                                        onClick={async () => {
+                                            const selected = contextMenu;
+                                            setContextMenu(null);
+                                            try {
+                                                await invoke('open_file_location', { filePath: selected.filePath });
+                                            } catch (error) {
+                                                console.error('Failed to reveal file', error);
+                                            }
+                                        }}
+                                    >
+                                        <Folder size={16} />
+                                        <span>{t ? (t('show_in_finder') || '在访达中显示') : '在访达中显示'}</span>
+                                    </button>
+                                )}
+                                <div className="wt-context-separator" role="separator" />
                             </>
                         )}
 
-                        {/* Standard Actions (Copy / Save As) */}
                         {contextMenu.type === 'image' && (
                             <>
-                                <div
-                                    className="context-item"
+                                {isLocalFilePath(contextMenu.filePath) && (
+                                    <button
+                                        type="button"
+                                        className="wt-context-item"
+                                        role="menuitem"
+                                        onClick={async () => {
+                                            const selected = contextMenu;
+                                            setContextMenu(null);
+                                            try {
+                                                const target = await withNativeDialog(() => saveDialog({
+                                                    defaultPath: selected.filePath?.split(/[/\\]/).pop() || 'image.png',
+                                                    filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+                                                }), 'file-transfer:save-image');
+                                                if (target && selected.filePath) {
+                                                    await invoke('save_file_copy', { sourcePath: selected.filePath, targetPath: target });
+                                                }
+                                            } catch (error) {
+                                                console.error('Failed to save image', error);
+                                            }
+                                        }}
+                                    >
+                                        <Download size={16} />
+                                        <span>{t ? (t('save_image_as') || '图片另存为…') : '图片另存为…'}</span>
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
                                     onClick={async () => {
-                                        const target = await open({
-                                            save: true,
-                                            defaultPath: contextMenu.filePath?.split(/[/\\]/).pop() || 'image.png',
-                                            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
-                                        });
-                                        if (target && contextMenu.filePath) {
-                                            await invoke('save_file_copy', { sourcePath: contextMenu.filePath, targetPath: target });
-                                        }
+                                        const selected = contextMenu;
                                         setContextMenu(null);
+                                        if (selected.filePath) {
+                                            await invoke('copy_to_clipboard', { content: selected.filePath, contentType: 'image', paste: false, id: 0, deleteAfterUse: false })
+                                                .catch(error => console.error('Failed to copy image', error));
+                                        }
                                     }}
                                 >
-                                    <RotateCcw size={14} style={{ transform: 'rotate(90deg)' }} />
-                                    <span>{t ? (t('save_image_as') || '将图像另存为...') : '将图像另存为...'}</span>
-                                </div>
-                                <div
-                                    className="context-item"
+                                    <ImageIcon size={16} />
+                                    <span>{t ? (t('copy_image') || '复制图片') : '复制图片'}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
                                     onClick={async () => {
-                                        if (contextMenu.filePath) {
-                                            await invoke('copy_to_clipboard', { content: contextMenu.filePath, contentType: 'image', paste: false, id: 0, deleteAfterUse: false });
-                                        }
+                                        const selected = contextMenu;
                                         setContextMenu(null);
+                                        const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                        if (link) await navigator.clipboard.writeText(link);
                                     }}
                                 >
-                                    <ImageIcon size={14} />
-                                    <span>{t ? (t('copy_image') || '拷贝图像') : '拷贝图像'}</span>
-                                </div>
-                                <div
-                                    className="context-item"
-                                    onClick={async () => {
-                                        if (contextMenu.filePath && contextMenu.filePath.startsWith('http')) {
-                                            await navigator.clipboard.writeText(contextMenu.filePath);
-                                        } else if (contextMenu.content) {
-                                            await navigator.clipboard.writeText(contextMenu.content);
-                                        }
-                                        setContextMenu(null);
-                                    }}
-                                >
-                                    <LinkIcon size={14} />
-                                    <span>{t ? (t('copy_image_link') || '拷贝图像链接') : '拷贝图像链接'}</span>
-                                </div>
+                                    <LinkIcon size={16} />
+                                    <span>{t ? (t('copy_image_link') || '复制图片链接') : '复制图片链接'}</span>
+                                </button>
                             </>
                         )}
 
                         {contextMenu.type === 'video' && (
                             <>
-                                <div
-                                    className="context-item"
+                                {isLocalFilePath(contextMenu.filePath) && (
+                                    <button
+                                        type="button"
+                                        className="wt-context-item"
+                                        role="menuitem"
+                                        onClick={async () => {
+                                            const selected = contextMenu;
+                                            setContextMenu(null);
+                                            try {
+                                                const target = await withNativeDialog(() => saveDialog({
+                                                    defaultPath: selected.filePath?.split(/[/\\]/).pop() || 'video.mp4',
+                                                    filters: [{ name: '视频', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] }]
+                                                }), 'file-transfer:save-video');
+                                                if (target && selected.filePath) {
+                                                    await invoke('save_file_copy', { sourcePath: selected.filePath, targetPath: target });
+                                                }
+                                            } catch (error) {
+                                                console.error('Failed to save video', error);
+                                            }
+                                        }}
+                                    >
+                                        <Download size={16} />
+                                        <span>{t ? (t('save_video_as') || '视频另存为…') : '视频另存为…'}</span>
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
                                     onClick={async () => {
-                                        const target = await open({
-                                            save: true,
-                                            defaultPath: contextMenu.filePath?.split(/[/\\]/).pop() || 'video.mp4',
-                                            filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] }]
-                                        });
-                                        if (target && contextMenu.filePath) {
-                                            await invoke('save_file_copy', { sourcePath: contextMenu.filePath, targetPath: target });
-                                        }
+                                        const selected = contextMenu;
                                         setContextMenu(null);
+                                        if (selected.filePath) {
+                                            await invoke('copy_to_clipboard', { content: selected.filePath, contentType: 'video', paste: false, id: 0, deleteAfterUse: false })
+                                                .catch(error => console.error('Failed to copy video', error));
+                                        }
                                     }}
                                 >
-                                    <RotateCcw size={14} style={{ transform: 'rotate(90deg)' }} />
-                                    <span>{t ? (t('save_video_as') || '将视频另存为...') : '将视频另存为...'}</span>
-                                </div>
-                                <div
-                                    className="context-item"
+                                    <Video size={16} />
+                                    <span>{t ? (t('copy_video') || '复制视频') : '复制视频'}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
                                     onClick={async () => {
-                                        if (contextMenu.filePath) {
-                                            await invoke('copy_to_clipboard', { content: contextMenu.filePath, contentType: 'video', paste: false, id: 0, deleteAfterUse: false });
-                                        }
+                                        const selected = contextMenu;
                                         setContextMenu(null);
+                                        const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                        if (link) await navigator.clipboard.writeText(link);
                                     }}
                                 >
-                                    <Video size={14} />
-                                    <span>{t ? (t('copy_video') || '拷贝视频') : '拷贝视频'}</span>
-                                </div>
-                                <div
-                                    className="context-item"
-                                    onClick={async () => {
-                                        if (contextMenu.filePath && contextMenu.filePath.startsWith('http')) {
-                                            await navigator.clipboard.writeText(contextMenu.filePath);
-                                        } else if (contextMenu.filePath) {
-                                            await navigator.clipboard.writeText(contextMenu.filePath);
-                                        }
-                                        setContextMenu(null);
-                                    }}
-                                >
-                                    <LinkIcon size={14} />
-                                    <span>{t ? (t('copy_video_link') || '拷贝视频链接') : '拷贝视频链接'}</span>
-                                </div>
+                                    <LinkIcon size={16} />
+                                    <span>{t ? (t('copy_video_link') || '复制视频链接') : '复制视频链接'}</span>
+                                </button>
                             </>
                         )}
 
                         {contextMenu.type === 'text' && (
-                            <div
-                                className="context-item"
+                            <button
+                                type="button"
+                                className="wt-context-item"
+                                role="menuitem"
                                 onClick={async () => {
-                                    if (contextMenu.content) {
-                                        await navigator.clipboard.writeText(contextMenu.content);
-                                    }
+                                    const selected = contextMenu;
                                     setContextMenu(null);
+                                    if (selected.content) await navigator.clipboard.writeText(selected.content);
                                 }}
                             >
-                                <Clipboard size={14} />
-                                <span>{t ? (t('copy_text') || '拷贝文本') : '拷贝文本'}</span>
-                            </div>
+                                <Clipboard size={16} />
+                                <span>{t ? (t('copy_text') || '复制文本') : '复制文本'}</span>
+                            </button>
                         )}
 
                         {contextMenu.type === 'file' && (
-                            <div
-                                className="context-item"
+                            <button
+                                type="button"
+                                className="wt-context-item"
+                                role="menuitem"
                                 onClick={async () => {
-                                    if (contextMenu.content) {
-                                        await navigator.clipboard.writeText(contextMenu.content);
-                                    }
+                                    const selected = contextMenu;
                                     setContextMenu(null);
+                                    const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                    if (link) await navigator.clipboard.writeText(link);
                                 }}
                             >
-                                <LinkIcon size={14} />
-                                <span>{t ? (t('copy_link') || '拷贝链接') : '拷贝链接'}</span>
-                            </div>
+                                <LinkIcon size={16} />
+                                <span>{t ? (t('copy_link') || '复制下载链接') : '复制下载链接'}</span>
+                            </button>
                         )}
                     </motion.div>
-                )
-            }
+                )}
+            </AnimatePresence>
         </div >
     );
 };

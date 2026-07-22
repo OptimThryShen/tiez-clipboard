@@ -744,6 +744,11 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
     </div>
 
     <script>
+        // The one-time QR credential is persisted as an HttpOnly session cookie by
+        // the server. Remove it from the visible URL and browser history immediately.
+        if (window.location.search.includes('auth=')) {{
+            window.history.replaceState(null, '', window.location.pathname);
+        }}
         const fileInput = document.getElementById('file-input');
         const textInput = document.getElementById('text-input');
         const sendBtn = document.getElementById('send-btn');
@@ -1022,7 +1027,7 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
             scrollToBottom();
 
             const CHUNK_SIZE = 1024 * 512; // 512KB
-            const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+            const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
             const uploadId = Math.random().toString(36).substr(2, 9);
 
             for (let i = 0; i < totalChunks; i++) {{

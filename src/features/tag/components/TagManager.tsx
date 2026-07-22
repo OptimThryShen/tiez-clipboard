@@ -8,6 +8,7 @@ import {
 import AppModal from "../../../shared/components/AppModal";
 import { getTagColor } from "../../../shared/lib/utils";
 import { toTauriLocalImageSrc, withImageCacheBust } from "../../../shared/lib/localImageSrc";
+import { activateForInput } from "../../../shared/lib/focus";
 import type { ClipboardEntry } from "../../../shared/types";
 
 interface TagManagerProps {
@@ -315,7 +316,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
         setEditingNoteId(item.id);
         setNoteDraft(item.note || '');
         requestAnimationFrame(() => {
-            invoke("activate_window_focus")
+            activateForInput()
                 .catch(console.error)
                 .finally(() => {
                     noteInputRef.current?.focus();
@@ -404,7 +405,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                     className="search-input advanced-search-input"
                                     placeholder={t("find_or_create")}
                                     value={tagSearch}
-                                    onMouseDown={() => invoke("activate_window_focus").catch(console.error)}
                                     onChange={(e) => setTagSearch(e.target.value)}
                                     onKeyDown={async (e) => {
                                         if (e.key === "Enter" && tagSearch.trim()) {
@@ -498,7 +498,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                     <input
                                         className="inline-tag-edit"
                                         value={newTagName}
-                                        onMouseDown={() => invoke("activate_window_focus").catch(console.error)}
                                         onChange={(e) => setNewTagName(e.target.value)}
                                         autoFocus
                                         onKeyDown={async (e) => {
@@ -836,7 +835,6 @@ export default function TagManager({ t, theme }: TagManagerProps) {
                                                         rows={2}
                                                         onMouseDown={(e) => {
                                                             e.stopPropagation();
-                                                            invoke("activate_window_focus").catch(console.error);
                                                         }}
                                                         onChange={(e) => setNoteDraft(e.target.value)}
                                                         onKeyDown={(e) => {

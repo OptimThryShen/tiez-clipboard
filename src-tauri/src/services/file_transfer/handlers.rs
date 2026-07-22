@@ -2,10 +2,11 @@ use axum::{
     body::Body,
     extract::{
         ws::{Message as WsMessage, WebSocket},
-        Multipart, Path, Query, State, WebSocketUpgrade,
+        Multipart, Path, Query, Request, State, WebSocketUpgrade,
     },
-    http::{header, HeaderMap, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Json},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
+    middleware::Next,
+    response::{Html, IntoResponse, Json, Response},
 };
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
@@ -27,6 +28,188 @@ use super::models::*;
 use super::utils::*;
 use super::web_ui::render_index;
 use super::{append_message, register_received_file};
+
+const TRANSFER_CHUNK_SIZE: usize = 512 * 1024;
+const MIN_DISK_RESERVE: u64 = 512 * 1024 * 1024;
+const MAX_DISK_RESERVE: u64 = 5 * 1024 * 1024 * 1024;
+
+fn ensure_disk_capacity(path: &std::path::Path, required: u64) -> Result<(), &'static str> {
+    let available = fs2::available_space(path).map_err(|_| "Unable to inspect free disk space")?;
+    let total = fs2::total_space(path).map_err(|_| "Unable to inspect disk capacity")?;
+    let reserve = (total / 50).clamp(MIN_DISK_RESERVE, MAX_DISK_RESERVE);
+    if available.saturating_sub(reserve) < required {
+        Err("Not enough disk space while preserving the system safety reserve")
+    } else {
+        Ok(())
+    }
+}
+
+fn safe_file_name(value: &str) -> String {
+    let normalized = value.replace('\\', "/");
+    let base = normalized.rsplit('/').next().unwrap_or("");
+    let cleaned: String = base
+        .chars()
+        .filter(|ch| !ch.is_control() && *ch != '/' && *ch != '\\')
+        .take(240)
+        .collect();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() {
+        "unnamed-file".to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+fn safe_upload_id(value: &str) -> Option<&str> {
+    if !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn safe_identity(value: &str, fallback: &str) -> String {
+    let value: String = value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(128)
+        .collect();
+    if value.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        value
+    }
+}
+
+fn validate_chunk(meta: &ChunkMetadata, data_len: usize) -> Result<(), &'static str> {
+    if safe_upload_id(&meta.upload_id).is_none() {
+        return Err("Invalid upload id");
+    }
+    let expected_chunks = std::cmp::max(
+        1_u64,
+        meta.total_size
+            .saturating_add(TRANSFER_CHUNK_SIZE as u64 - 1)
+            / TRANSFER_CHUNK_SIZE as u64,
+    );
+    if meta.total_chunks as u64 != expected_chunks || meta.chunk_index >= meta.total_chunks {
+        return Err("Invalid chunk metadata");
+    }
+    let expected_len = if meta.total_size == 0 {
+        0_u64
+    } else if meta.chunk_index + 1 == meta.total_chunks {
+        meta.total_size
+            .saturating_sub(meta.chunk_index as u64 * TRANSFER_CHUNK_SIZE as u64)
+    } else {
+        TRANSFER_CHUNK_SIZE as u64
+    };
+    if data_len as u64 != expected_len {
+        return Err("Invalid chunk size");
+    }
+    Ok(())
+}
+
+fn request_token(request: &Request) -> Option<String> {
+    if let Some(value) = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+    {
+        return Some(value.to_string());
+    }
+
+    if let Some(value) = request
+        .uri()
+        .query()
+        .and_then(|query| query.split('&').find_map(|part| part.strip_prefix("auth=")))
+        .and_then(|value| urlencoding::decode(value).ok())
+    {
+        return Some(value.into_owned());
+    }
+
+    request
+        .headers()
+        .get(header::COOKIE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|cookies| {
+            cookies.split(';').find_map(|cookie| {
+                let (name, value) = cookie.trim().split_once('=')?;
+                (name == "tiez_ft_session").then(|| value.to_string())
+            })
+        })
+}
+
+fn apply_security_headers(response: &mut Response) {
+    let headers = response.headers_mut();
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    headers.insert(
+        header::X_CONTENT_TYPE_OPTIONS,
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::REFERRER_POLICY,
+        HeaderValue::from_static("no-referrer"),
+    );
+    headers.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    headers.insert(
+        "permissions-policy",
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=()"),
+    );
+    headers.insert(
+        header::CONTENT_SECURITY_POLICY,
+        HeaderValue::from_static(
+            "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+        ),
+    );
+}
+
+pub async fn require_session(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let expected = state
+        .app_handle
+        .state::<ServerInfo>()
+        .access_token
+        .lock()
+        .map(|token| token.clone())
+        .unwrap_or_default();
+    let supplied = request_token(&request);
+    let from_query = request
+        .uri()
+        .query()
+        .is_some_and(|query| query.split('&').any(|part| part.starts_with("auth=")));
+
+    let is_preflight = request.method() == Method::OPTIONS;
+    let mut response = if is_preflight
+        || (!expected.is_empty() && supplied.as_deref() == Some(expected.as_str()))
+    {
+        next.run(request).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired transfer session",
+        )
+            .into_response()
+    };
+
+    if from_query && response.status() != StatusCode::UNAUTHORIZED {
+        if let Ok(cookie) = HeaderValue::from_str(&format!(
+            "tiez_ft_session={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=28800",
+            expected
+        )) {
+            response.headers_mut().append(header::SET_COOKIE, cookie);
+        }
+    }
+    apply_security_headers(&mut response);
+    response
+}
 
 fn with_cors(mut response: axum::response::Response) -> axum::response::Response {
     let headers = response.headers_mut();
@@ -102,6 +285,7 @@ pub async fn poll_messages(
                             urlencoding::encode(&filename)
                         );
                     }
+                    m_clone.file_path = None;
                     m_clone
                 })
                 .collect::<Vec<Message>>(),
@@ -152,6 +336,8 @@ pub async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
                             device_id,
                             device_name,
                         } => {
+                            let device_id = safe_identity(&device_id, "mobile");
+                            let device_name = safe_identity(&device_name, "手机");
                             let online_devices = state_inner.app_handle.state::<OnlineDevices>();
                             {
                                 let mut guard = online_devices.0.lock().unwrap();
@@ -212,24 +398,19 @@ pub async fn handle_text(
     let db_state = state.app_handle.state::<DbState>();
     update_activity(&state.app_handle);
 
-    let sender_id = if payload.sender_id.is_empty() {
-        "mobile"
-    } else {
-        &payload.sender_id
-    };
-    let sender_name = if payload.sender_name.is_empty() {
-        "手机"
-    } else {
-        &payload.sender_name
-    };
+    if payload.content.len() > 1024 * 1024 {
+        return (StatusCode::PAYLOAD_TOO_LARGE, "Text is too large").into_response();
+    }
+    let sender_id = safe_identity(&payload.sender_id, "mobile");
+    let sender_name = safe_identity(&payload.sender_name, "手机");
 
     append_message(
         &state.app_handle,
         "in",
         "text",
         &payload.content,
-        sender_id,
-        sender_name,
+        &sender_id,
+        &sender_name,
         None,
     );
 
@@ -336,19 +517,19 @@ pub async fn upload(
 
         if name == "sender_id" {
             if let Ok(val) = field.text().await {
-                current_sender_id = val;
+                current_sender_id = safe_identity(&val, "mobile");
             }
             continue;
         }
         if name == "sender_name" {
             if let Ok(val) = field.text().await {
-                current_sender_name = val;
+                current_sender_name = safe_identity(&val, "手机");
             }
             continue;
         }
 
         if name == "file" {
-            let file_name = field.file_name().unwrap_or("unknown.txt").to_string();
+            let file_name = safe_file_name(field.file_name().unwrap_or("unknown.txt"));
             let content_type = field
                 .content_type()
                 .unwrap_or("application/octet-stream")
@@ -378,6 +559,10 @@ pub async fn upload(
                 let mut stream = field;
                 let mut write_success = true;
                 while let Some(Ok(chunk)) = stream.next().await {
+                    if ensure_disk_capacity(&save_dir, chunk.len() as u64).is_err() {
+                        write_success = false;
+                        break;
+                    }
                     if let Err(e) = file.write_all(&chunk).await {
                         eprintln!("Error writing: {}", e);
                         write_success = false;
@@ -396,6 +581,8 @@ pub async fn upload(
                     )
                     .await;
                     success = true;
+                } else {
+                    let _ = tokio::fs::remove_file(&target_path).await;
                 }
             }
         }
@@ -442,6 +629,10 @@ pub async fn upload_chunk(
         Some(d) => d,
         None => return (StatusCode::BAD_REQUEST, "Missing data").into_response(),
     };
+    if let Err(message) = validate_chunk(&meta, data.len()) {
+        return (StatusCode::BAD_REQUEST, message).into_response();
+    }
+    let safe_name = safe_file_name(&meta.file_name);
 
     let sessions = state.app_handle.state::<UploadSessions>();
     let temp_path = {
@@ -473,7 +664,32 @@ pub async fn upload_chunk(
     };
 
     let mut options = tokio::fs::OpenOptions::new();
-    options.create(true).append(true).write(true);
+    let required_space = if meta.chunk_index == 0 {
+        meta.total_size
+    } else {
+        data.len() as u64
+    };
+    if ensure_disk_capacity(temp_path.parent().unwrap_or(&temp_path), required_space).is_err() {
+        return (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "Not enough available disk space",
+        )
+            .into_response();
+    }
+    options.create(true).write(true);
+    if meta.chunk_index == 0 {
+        options.truncate(true);
+    } else {
+        let expected_offset = meta.chunk_index as u64 * TRANSFER_CHUNK_SIZE as u64;
+        let current_size = tokio::fs::metadata(&temp_path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if current_size != expected_offset {
+            return (StatusCode::CONFLICT, "Chunk received out of order").into_response();
+        }
+        options.append(true);
+    }
 
     if let Ok(mut file) = options.open(&temp_path).await {
         if let Err(e) = file.write_all(&data).await {
@@ -488,7 +704,7 @@ pub async fn upload_chunk(
         let final_filename = format!(
             "{}_{}",
             chrono::Utc::now().format("%Y%m%d%H%M%S"),
-            meta.file_name
+            safe_name
         );
         let final_path = temp_path.parent().unwrap().join(&final_filename);
 
@@ -508,7 +724,7 @@ pub async fn upload_chunk(
         register_received_file(
             &state.app_handle,
             final_path,
-            meta.file_name,
+            safe_name,
             content_type,
             meta.sender_id,
             meta.sender_name,
@@ -555,6 +771,10 @@ pub async fn share_chunk(
         Some(d) => d,
         None => return with_cors((StatusCode::BAD_REQUEST, "Missing data").into_response()),
     };
+    if let Err(message) = validate_chunk(&meta, data.len()) {
+        return with_cors((StatusCode::BAD_REQUEST, message).into_response());
+    }
+    let safe_name = safe_file_name(&meta.file_name);
 
     let sessions = state.app_handle.state::<UploadSessions>();
     let temp_path = {
@@ -572,7 +792,36 @@ pub async fn share_chunk(
     };
 
     let mut options = tokio::fs::OpenOptions::new();
-    options.create(true).append(true).write(true);
+    let required_space = if meta.chunk_index == 0 {
+        meta.total_size
+    } else {
+        data.len() as u64
+    };
+    if ensure_disk_capacity(temp_path.parent().unwrap_or(&temp_path), required_space).is_err() {
+        return with_cors(
+            (
+                StatusCode::INSUFFICIENT_STORAGE,
+                "Not enough available disk space",
+            )
+                .into_response(),
+        );
+    }
+    options.create(true).write(true);
+    if meta.chunk_index == 0 {
+        options.truncate(true);
+    } else {
+        let expected_offset = meta.chunk_index as u64 * TRANSFER_CHUNK_SIZE as u64;
+        let current_size = tokio::fs::metadata(&temp_path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        if current_size != expected_offset {
+            return with_cors(
+                (StatusCode::CONFLICT, "Chunk received out of order").into_response(),
+            );
+        }
+        options.append(true);
+    }
 
     if let Ok(mut file) = options.open(&temp_path).await {
         if let Err(e) = file.write_all(&data).await {
@@ -587,7 +836,7 @@ pub async fn share_chunk(
         let final_filename = format!(
             "share_{}_{}",
             chrono::Utc::now().format("%Y%m%d%H%M%S"),
-            meta.file_name
+            safe_name
         );
         let final_path = temp_path.parent().unwrap().join(&final_filename);
 
@@ -608,7 +857,7 @@ pub async fn share_chunk(
             .unwrap_or_else(|| "application/octet-stream".to_string());
         let is_image = content_type.starts_with("image/");
         let is_video = content_type.starts_with("video/");
-        let file_name_lower = meta.file_name.to_lowercase();
+        let file_name_lower = safe_name.to_lowercase();
         let msg_type = if is_image {
             "image"
         } else if is_video
@@ -664,6 +913,11 @@ pub async fn handle_file_download_proxy(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            let disposition_filename: String = filename
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .map(|ch| if ch == '"' || ch == '\\' { '_' } else { ch })
+                .collect();
             let mime = mime_guess::from_path(&path)
                 .first_or_octet_stream()
                 .to_string();
@@ -673,12 +927,12 @@ pub async fn handle_file_download_proxy(
             let disposition = if is_image || is_video {
                 format!(
                     "inline; filename=\"{}\"; filename*=UTF-8''{}",
-                    filename, encoded_name
+                    disposition_filename, encoded_name
                 )
             } else {
                 format!(
                     "attachment; filename=\"{}\"; filename*=UTF-8''{}",
-                    filename, encoded_name
+                    disposition_filename, encoded_name
                 )
             };
 
@@ -755,4 +1009,82 @@ pub async fn handle_file_download_proxy(
     }
 
     (StatusCode::NOT_FOUND, "File not found").into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_names_cannot_escape_the_receive_directory() {
+        assert_eq!(safe_file_name("../../private/secret.txt"), "secret.txt");
+        assert_eq!(safe_file_name(r"..\..\private\secret.txt"), "secret.txt");
+        assert_eq!(safe_file_name("../.."), "unnamed-file");
+    }
+
+    #[test]
+    fn upload_ids_are_path_safe() {
+        assert!(safe_upload_id("mobile_123-abc").is_some());
+        assert!(safe_upload_id("../../escape").is_none());
+        assert!(safe_upload_id("").is_none());
+    }
+
+    #[test]
+    fn request_tokens_support_qr_cookie_and_desktop_header() {
+        let query_request = Request::builder()
+            .uri("/?auth=session-123")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            request_token(&query_request).as_deref(),
+            Some("session-123")
+        );
+
+        let cookie_request = Request::builder()
+            .header(header::COOKIE, "other=x; tiez_ft_session=session-456")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            request_token(&cookie_request).as_deref(),
+            Some("session-456")
+        );
+
+        let header_request = Request::builder()
+            .header(header::AUTHORIZATION, "Bearer session-789")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            request_token(&header_request).as_deref(),
+            Some("session-789")
+        );
+    }
+
+    #[test]
+    fn chunk_metadata_must_match_the_real_payload() {
+        let metadata = ChunkMetadata {
+            upload_id: "upload-1".to_string(),
+            chunk_index: 0,
+            total_chunks: 1,
+            file_name: "small.txt".to_string(),
+            sender_id: "mobile".to_string(),
+            sender_name: "phone".to_string(),
+            total_size: 4,
+            content_type: Some("text/plain".to_string()),
+        };
+        assert!(validate_chunk(&metadata, 4).is_ok());
+        assert!(validate_chunk(&metadata, 3).is_err());
+
+        let large_size = 25_u64 * 1024 * 1024 * 1024;
+        let large_metadata = ChunkMetadata {
+            upload_id: "large-upload".to_string(),
+            chunk_index: 0,
+            total_chunks: (large_size / TRANSFER_CHUNK_SIZE as u64) as usize,
+            file_name: "large.bin".to_string(),
+            sender_id: "mobile".to_string(),
+            sender_name: "phone".to_string(),
+            total_size: large_size,
+            content_type: Some("application/octet-stream".to_string()),
+        };
+        assert!(validate_chunk(&large_metadata, TRANSFER_CHUNK_SIZE).is_ok());
+    }
 }

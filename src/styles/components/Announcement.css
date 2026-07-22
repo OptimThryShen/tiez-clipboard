@@ -88,14 +88,14 @@
     font-weight: 900;
     text-transform: uppercase;
     border-radius: 4px;
-    color: #fff;
+    color: var(--on-accent);
     letter-spacing: 0.5px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.ticker-tag.info { background: #3b82f6; }
-.ticker-tag.warning { background: #f59e0b; }
-.ticker-tag.update { background: #10b981; }
+.ticker-tag.info { background: var(--status-info); }
+.ticker-tag.warning { background: var(--status-warning); }
+.ticker-tag.update { background: var(--status-success); }
 
 .ticker-text {
     overflow: hidden;
@@ -152,8 +152,8 @@
 }
 
 .ticker-fixed-close:hover {
-    background: #ef4444;
-    color: #fff;
+    background: var(--status-danger);
+    color: var(--on-accent);
 }
 
 
@@ -254,8 +254,8 @@
 
 .theme-mica .ticker-fixed-close:hover,
 .theme-acrylic .ticker-fixed-close:hover {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+    background: rgba(var(--status-danger-rgb), 0.1);
+    color: var(--status-danger);
 }
 
 /* --- Dark Mode Logic for Modern Themes --- */
@@ -375,7 +375,7 @@
     height: 32px;
     border-radius: 8px;
     background: var(--accent-color);
-    color: #fff;
+    color: var(--on-accent);
     flex-shrink: 0;
 }
 
@@ -420,7 +420,7 @@
 
 .announcement-btn.primary {
     background: var(--accent-color);
-    color: #fff;
+    color: var(--on-accent);
     border: none;
 }
 

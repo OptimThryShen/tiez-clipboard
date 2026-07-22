@@ -12,10 +12,11 @@
 /* Tabs - Minimalist */
 .emoji-tabs {
   display: flex;
-  background: var(--bg-element);
+  background: var(--emoji-tabs-background);
   padding: 3px;
-  border-radius: 12px;
-  border: 1px solid var(--line-soft);
+  border-radius: var(--emoji-tabs-radius);
+  border: var(--emoji-tabs-border);
+  box-shadow: var(--emoji-tabs-shadow);
   position: relative;
   z-index: 10;
 }
@@ -27,7 +28,7 @@
   background: transparent;
   cursor: pointer;
   position: relative;
-  border-radius: 9px;
+  border-radius: var(--emoji-tab-radius);
   transition: all 0.2s ease;
   display: flex;
   align-items: center;
@@ -44,17 +45,17 @@
 }
 
 .emoji-tab.active .emoji-tab-text {
-  color: var(--text-primary);
+  color: var(--emoji-active-color);
 }
 
 .active-tab-indicator {
   position: absolute;
   inset: 0;
-  background: var(--bg-panel);
-  border-radius: 9px;
+  background: var(--emoji-active-background);
+  border-radius: var(--emoji-tab-radius);
   z-index: 1;
-  border: 1px solid var(--line-soft);
-  box-shadow: var(--shadow-xs);
+  border: var(--emoji-tabs-border);
+  box-shadow: var(--emoji-active-shadow);
 }
 
 /* Content Area */
@@ -107,9 +108,10 @@
 .emoji-btn {
   height: 36px;
   width: 100%;
-  background: var(--bg-button);
-  border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  background: var(--emoji-button-background);
+  border: var(--emoji-button-border);
+  border-radius: var(--emoji-button-radius);
+  box-shadow: var(--emoji-button-shadow);
   font-size: 18px;
   display: flex;
   align-items: center;
@@ -119,9 +121,10 @@
 }
 
 .emoji-btn:hover {
-  background: var(--bg-panel);
-  border-color: var(--accent-color);
-  transform: scale(1.05);
+  background: var(--bg-input);
+  border-color: var(--button-hover-border-color);
+  box-shadow: var(--button-hover-shadow);
+  transform: var(--button-hover-transform);
 }
 
 /* Favorites Grid - Clean Grid */
@@ -135,9 +138,10 @@
 .emoji-fav-card {
   aspect-ratio: 1;
   position: relative;
-  background: var(--bg-button);
-  border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  background: var(--emoji-card-background);
+  border: var(--emoji-card-border);
+  border-radius: var(--emoji-card-radius);
+  box-shadow: var(--emoji-card-shadow);
   padding: 6px;
   transition: all 0.2s ease;
   display: flex;
@@ -146,8 +150,10 @@
 }
 
 .emoji-fav-card:hover {
-  border-color: var(--accent-color);
-  background: var(--bg-panel);
+  border-color: var(--card-hover-border-color);
+  background: var(--bg-input);
+  box-shadow: var(--card-hover-shadow);
+  transform: var(--card-hover-transform);
 }
 
 .emoji-fav-preview {
@@ -161,7 +167,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 8px;
+  border-radius: var(--button-radius);
 }
 
 .emoji-fav-preview img {
@@ -179,7 +185,7 @@
   height: 20px;
   background: var(--bg-body);
   color: var(--text-primary);
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -196,9 +202,9 @@
 }
 
 .emoji-fav-remove:hover {
-  background: #ff4757;
-  color: white;
-  border-color: #ff4757;
+  background: var(--status-danger);
+  color: var(--on-accent);
+  border-color: var(--status-danger);
 }
 
 /* Add Button Card - Ultra Minimalist */
@@ -276,7 +282,7 @@
   align-items: center;
   justify-content: center;
   border: 1px dashed var(--accent-color);
-  border-radius: 14px;
+  border-radius: var(--panel-radius);
   margin: 4px;
   pointer-events: none;
 }
@@ -287,7 +293,25 @@
   color: var(--accent-color);
   background: var(--bg-panel);
   padding: 8px 16px;
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--line-soft);
+}
+
+.emoji-tab:focus-visible,
+.emoji-btn:focus-visible,
+.emoji-fav-preview:focus-visible,
+.emoji-fav-remove:focus-visible,
+.emoji-fav-add-btn:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .emoji-tab,
+  .emoji-btn,
+  .emoji-fav-card,
+  .emoji-fav-remove {
+    transition: none;
+  }
 }

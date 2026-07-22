@@ -5,6 +5,7 @@ pub mod web_ui;
 
 use axum::{
     extract::DefaultBodyLimit,
+    middleware,
     routing::{get, options, post},
     Router,
 };
@@ -59,6 +60,7 @@ pub fn set_display_ip(app_handle: AppHandle, ip: String) {
             enabled: port != 0,
             port,
             ip,
+            access_token: server_info.access_token.lock().unwrap().clone(),
         },
     );
 }
@@ -228,10 +230,15 @@ pub async fn toggle_file_server(
         }
         let actual_ip = get_local_ip_addr(app_handle.clone());
         let server_info = app_handle.state::<ServerInfo>();
+        let access_token = uuid::Uuid::new_v4().to_string();
         server_info.port.store(actual_port, Ordering::SeqCst);
         {
             let mut ip_guard = server_info.ip.lock().unwrap();
             *ip_guard = actual_ip.clone();
+        }
+        {
+            let mut token_guard = server_info.access_token.lock().unwrap();
+            *token_guard = access_token.clone();
         }
         let app_handle_clone = app_handle.clone();
         let h = tokio::spawn(async move {
@@ -251,6 +258,7 @@ pub async fn toggle_file_server(
                 } else {
                     actual_ip
                 },
+                access_token,
             },
         );
         let db_state = app_handle.state::<DbState>();
@@ -271,12 +279,17 @@ pub async fn toggle_file_server(
                 let mut ip_guard = server_info.ip.lock().unwrap();
                 *ip_guard = String::new();
             }
+            {
+                let mut token_guard = server_info.access_token.lock().unwrap();
+                *token_guard = String::new();
+            }
             let _ = app_handle.emit(
                 "file-server-status-changed",
                 StatusPayload {
                     enabled: false,
                     port: 0,
                     ip: String::new(),
+                    access_token: String::new(),
                 },
             );
             Ok("Server stopped".to_string())
@@ -315,8 +328,12 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
             "/download/{token}",
             get(handlers::handle_file_download_proxy),
         )
-        .with_state(state)
-        .layer(DefaultBodyLimit::disable());
+        .with_state(state.clone())
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            state,
+            handlers::require_session,
+        ));
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("Server error: {}", e);
@@ -328,12 +345,17 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         let mut ip_guard = server_info.ip.lock().unwrap();
         *ip_guard = String::new();
     }
+    {
+        let mut token_guard = server_info.access_token.lock().unwrap();
+        *token_guard = String::new();
+    }
     let _ = app_handle.emit(
         "file-server-status-changed",
         StatusPayload {
             enabled: false,
             port: 0,
             ip: String::new(),
+            access_token: String::new(),
         },
     );
 }
@@ -395,7 +417,9 @@ pub fn append_message(
     if let Some(ws_state) = app.try_state::<WsBroadcaster>() {
         if let Ok(guard) = ws_state.0.lock() {
             if let Some(tx) = guard.as_ref() {
-                let _ = tx.send(serde_json::to_string(&msg).unwrap_or_default());
+                let mut public_msg = msg.clone();
+                public_msg.file_path = None;
+                let _ = tx.send(serde_json::to_string(&public_msg).unwrap_or_default());
             }
         }
     }
@@ -506,10 +530,12 @@ pub fn get_file_server_status(app_handle: AppHandle) -> StatusPayload {
     let server_info = app_handle.state::<ServerInfo>();
     let port = server_info.port.load(Ordering::Relaxed);
     let ip = server_info.ip.lock().unwrap().clone();
+    let access_token = server_info.access_token.lock().unwrap().clone();
     StatusPayload {
         enabled: port != 0,
         port,
         ip,
+        access_token,
     }
 }
 

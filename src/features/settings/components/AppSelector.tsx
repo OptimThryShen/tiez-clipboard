@@ -22,9 +22,7 @@ const AppSelector = ({
     type,
     installedApps,
     onSelect,
-    theme,
-    t,
-    colorMode
+    t
 }: AppSelectorProps) => {
     const [recommended, setRecommended] = useState<InstalledAppOption[]>([]);
     const [loading, setLoading] = useState(false);
@@ -176,23 +174,11 @@ const AppSelector = ({
         }
     }, [isOpen, selectedIndex]);
 
-    const isModern = theme !== "retro";
-    const isDarkMode =
-        colorMode === "dark" ||
-        (colorMode === "system" && document.documentElement.classList.contains("dark-mode"));
-
-    const controlBackground = isModern
-        ? (isDarkMode ? "rgba(30,30,30,0.75)" : "rgba(255,255,255,0.6)")
-        : (isDarkMode ? "#202020" : "#fff");
-    const menuBackground = isModern
-        ? (isDarkMode ? "rgba(25,25,25,0.96)" : "rgba(255,255,255,0.97)")
-        : (isDarkMode ? "#1f1f1f" : "#fff");
-    const borderColor = isModern
-        ? (isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(128,128,128,0.2)")
-        : (isDarkMode ? "#111" : "#373737");
-    const textColor = isDarkMode ? "#eaeaea" : "var(--text-primary)";
-    const subtleText = isDarkMode ? "#b0b0b0" : "var(--text-secondary)";
-    const selectedBackground = isModern ? "var(--accent-color)" : "#373737";
+    const controlBackground = "var(--bg-input)";
+    const menuBackground = "var(--popover-background)";
+    const textColor = "var(--text-primary)";
+    const subtleText = "var(--text-secondary)";
+    const selectedBackground = "var(--menu-item-hover-background)";
 
     const handleSelect = (app: InstalledAppOption) => {
         setIsOpen(false);
@@ -284,7 +270,7 @@ const AppSelector = ({
                             style={{
                                 border: "none",
                                 background: selected ? selectedBackground : "transparent",
-                                color: selected ? "#fff" : textColor,
+                                color: selected ? "var(--menu-item-hover-color)" : textColor,
                                 textAlign: "left",
                                 padding: "10px 12px",
                                 cursor: "pointer",
@@ -328,7 +314,6 @@ const AppSelector = ({
                     }}
                     onFocus={() => {
                         setIsOpen(true);
-                        invoke("focus_clipboard_window").catch(console.error);
                     }}
                     onClick={() => setIsOpen(true)}
                     onKeyDown={handleInputKeyDown}
@@ -338,8 +323,8 @@ const AppSelector = ({
                         width: "100%",
                         minHeight: "36px",
                         padding: "0 36px 0 12px",
-                        borderRadius: isModern ? "8px" : "4px",
-                        border: `1px solid ${borderColor}`,
+                        borderRadius: "var(--input-radius)",
+                        border: "var(--input-border)",
                         background: controlBackground,
                         color: textColor,
                         outline: "none",
@@ -391,12 +376,11 @@ const AppSelector = ({
                         maxHeight: "260px",
                         overflowY: "auto",
                         background: menuBackground,
-                        border: `1px solid ${borderColor}`,
-                        borderRadius: isModern ? "10px" : "4px",
-                        boxShadow: isModern
-                            ? (isDarkMode ? "0 12px 32px rgba(0,0,0,0.4)" : "0 12px 32px rgba(0,0,0,0.16)")
-                            : (isDarkMode ? "4px 4px 0 #000" : "4px 4px 0 #1a1a1a"),
-                        backdropFilter: isModern ? "blur(12px)" : "none"
+                        color: "var(--popover-color)",
+                        border: "var(--popover-border)",
+                        borderRadius: "var(--popover-radius)",
+                        boxShadow: "var(--popover-shadow)",
+                        backdropFilter: "var(--popover-backdrop-filter)"
                     }}
                 >
                     {loading ? (

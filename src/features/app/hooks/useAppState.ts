@@ -90,6 +90,7 @@ export const useAppState = (): AppState => {
   const [theme, setTheme] = useState(DEFAULT_THEME);
   const [colorMode, setColorMode] = useState("system");
   const [showSourceAppIcon, setShowSourceAppIcon] = useState(true);
+  const [hideUnselectedItemActions, setHideUnselectedItemActions] = useState(false);
 
   const [compactMode, setCompactMode] = useState(false);
   const [clipboardItemFontSize, setClipboardItemFontSize] = useState(13);
@@ -143,6 +144,7 @@ export const useAppState = (): AppState => {
   const [localIp, setLocalIp] = useState("");
   const [availableIps, setAvailableIps] = useState<string[]>([]);
   const [actualPort, setActualPort] = useState("");
+  const [fileTransferAccessToken, setFileTransferAccessToken] = useState("");
   const [fileTransferPath, setFileTransferPath] = useState("");
   const [fileTransferAutoOpen, setFileTransferAutoOpen] = useState(false);
   const [fileTransferAutoCopy, setFileTransferAutoCopy] = useState(false);
@@ -296,6 +298,8 @@ export const useAppState = (): AppState => {
     setColorMode,
     showSourceAppIcon,
     setShowSourceAppIcon,
+    hideUnselectedItemActions,
+    setHideUnselectedItemActions,
 
     compactMode,
     setCompactMode,
@@ -400,6 +404,8 @@ export const useAppState = (): AppState => {
     setAvailableIps,
     actualPort,
     setActualPort,
+    fileTransferAccessToken,
+    setFileTransferAccessToken,
     fileTransferPath,
     setFileTransferPath,
     fileTransferAutoOpen,

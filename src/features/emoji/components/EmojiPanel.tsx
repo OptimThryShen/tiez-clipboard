@@ -4,6 +4,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import { withNativeDialog } from "../../../shared/lib/focus";
 import { Plus, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -510,10 +511,10 @@ const EmojiPanel = ({ t, favorites, setFavorites, activeTab, setActiveTab, saveS
   };
 
   const handleSelectFiles = async () => {
-    const selected = await open({
+    const selected = await withNativeDialog(() => open({
       multiple: true,
       filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif", "avif"] }]
-    });
+    }), "emoji:choose-favorites");
     if (!selected) return;
     const paths = Array.isArray(selected) ? selected : [selected];
     void addFavoritePaths(paths);

@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import AppSelector from "./AppSelector";
 import AppModal from "../../../shared/components/AppModal";
 import type { InstalledAppOption } from "../../app/types";
+import { withNativeDialog } from "../../../shared/lib/focus";
 
 interface AppSelectorModalProps {
     show: string | null;
@@ -48,13 +49,13 @@ const AppSelectorModal = ({ show, installedApps, theme, colorMode, t, onClose, o
                 className="modal-button"
                 onClick={async () => {
                     try {
-                        const selected = await open({
+                        const selected = await withNativeDialog(() => open({
                             multiple: false,
                             filters: [{
                                 name: "Applications",
                                 extensions: ["exe", "cmd", "bat", "lnk"]
                             }]
-                        });
+                        }), "settings:choose-application");
                         if (selected && show) {
                             onSave(show, selected as string);
                             onClose();

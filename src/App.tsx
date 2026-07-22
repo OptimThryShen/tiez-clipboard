@@ -13,6 +13,8 @@ import { useDebounce } from "./shared/hooks/useDebounce";
 import { useHistoryFetch } from "./shared/hooks/useHistoryFetch";
 import { useHotkeyConfig } from "./shared/hooks/useHotkeyConfig";
 import { useInputFocus } from "./shared/hooks/useInputFocus";
+import { useFocusCoordinator } from "./shared/hooks/useFocusCoordinator";
+import { focusClipboardWindow } from "./shared/lib/focus";
 import { useSearchScroll } from "./shared/hooks/useSearchScroll";
 import { useSettingsApply } from "./shared/hooks/useSettingsApply";
 import { useSettingsInit } from "./shared/hooks/useSettingsInit";
@@ -127,6 +129,7 @@ const buildQuickPasteHintsById = (
 };
 
 const App = () => {
+  useFocusCoordinator();
   type FileTransferSourceView = "clipboard" | "settings" | "tag_manager" | "emoji_panel";
 
   const appState = useAppState();
@@ -235,6 +238,8 @@ const App = () => {
     setColorMode,
     showSourceAppIcon,
     setShowSourceAppIcon,
+    hideUnselectedItemActions,
+    setHideUnselectedItemActions,
 
     compactMode,
     setCompactMode,
@@ -311,6 +316,8 @@ const App = () => {
     setAvailableIps,
     actualPort,
     setActualPort,
+    fileTransferAccessToken,
+    setFileTransferAccessToken,
     setFileTransferPath,
     setFileTransferAutoOpen,
     setFileTransferAutoCopy,
@@ -618,6 +625,7 @@ const App = () => {
     setRegistryWinVEnabled,
     setPasteMethod,
     setShowSourceAppIcon,
+    setHideUnselectedItemActions,
 
     setDeleteAfterPaste,
     setMoveToTopAfterPaste,
@@ -678,7 +686,7 @@ const App = () => {
     setShowEmojiPanel(false);
     setShowSearchBox(true);
     setSearchIsFocused(true);
-    invoke("activate_window_focus")
+    focusClipboardWindow()
       .catch(console.error)
       .finally(() => {
         requestAnimationFrame(() => {
@@ -744,6 +752,7 @@ const App = () => {
     setDefaultApps,
     setFileServerEnabled,
     setActualPort,
+    setFileTransferAccessToken,
     setLocalIp,
     setAvailableIps,
     setWinClipboardDisabled
@@ -760,6 +769,7 @@ const App = () => {
     colorMode,
 
     compactMode,
+    hideUnselectedItemActions,
     settingsLoaded,
     clipboardItemFontSize,
     clipboardTagFontSize,
@@ -1161,6 +1171,7 @@ const App = () => {
           chatMode={chatMode}
           localIp={localIp}
           actualPort={actualPort}
+          fileTransferAccessToken={fileTransferAccessToken}
           settingsPanelProps={settingsPanelProps}
           emojiFavorites={emojiFavorites}
           setEmojiFavorites={setEmojiFavorites}

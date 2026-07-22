@@ -185,7 +185,7 @@
   background: transparent;
   border: none;
   box-shadow: none !important;
-  color: #ff9800;
+  color: var(--status-warning);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -250,7 +250,7 @@
   padding: 12px;
   background: var(--bg-element);
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--panel-radius);
   box-shadow: var(--shadow-xs);
   color: var(--text-primary);
   overflow: hidden;
@@ -394,9 +394,9 @@
   display: flex;
   gap: 8px;
   width: 100%;
-  background: rgba(var(--bg-panel-rgb), 0.5);
+  background: color-mix(in srgb, var(--bg-panel) 64%, transparent);
   padding: 4px;
-  border-radius: 10px;
+  border-radius: var(--segmented-radius);
   border: 1px solid rgba(var(--accent-color-rgb), 0.04);
 }
 
@@ -406,7 +406,7 @@
   padding: 0 12px;
   font-size: 13px;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: var(--segment-radius);
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -415,7 +415,7 @@
 
 .settings-inline-choice-btn.primary {
   background: var(--accent-color);
-  color: white;
+  color: var(--on-accent);
   box-shadow: 0 2px 8px rgba(var(--accent-color-rgb), 0.25);
 }
 
@@ -452,7 +452,7 @@
   min-height: 0 !important;
   height: 100% !important;
   border: none;
-  background: var(--bg-panel);
+  background: var(--advanced-surface-background);
   border-radius: 0;
   box-shadow: none;
   overflow: hidden !important;
@@ -769,9 +769,9 @@
   width: 100%;
   max-width: 420px;
   padding: 24px 20px;
-  border: 1px dashed rgba(var(--accent-color-rgb), 0.18);
-  border-radius: 14px;
-  background: rgba(var(--bg-panel-rgb), 0.55);
+  border: var(--advanced-card-border);
+  border-radius: var(--advanced-card-radius);
+  background: var(--advanced-card-background);
   text-align: center;
 }
 
@@ -794,9 +794,9 @@
 
 .advanced-rule-card {
   flex-shrink: 0;
-  border: 1px solid rgba(var(--accent-color-rgb), 0.1);
-  border-radius: 14px;
-  background: rgba(var(--bg-panel-rgb), 0.35);
+  border: var(--advanced-card-border);
+  border-radius: var(--advanced-card-radius);
+  background: var(--advanced-card-background);
   overflow: hidden;
   transition: border-color 0.2s ease;
 }
@@ -851,9 +851,10 @@
 .advanced-rule-input,
 .advanced-rule-textarea {
   width: 100%;
-  background: rgba(0, 0, 0, 0.2) !important;
-  border: 1px solid rgba(var(--accent-color-rgb), 0.08) !important;
-  border-radius: 10px !important;
+  background: var(--advanced-input-background) !important;
+  color: var(--text-primary);
+  border: var(--advanced-input-border) !important;
+  border-radius: var(--advanced-input-radius) !important;
   padding: 12px 16px !important;
   font-size: 14px;
   transition: all 0.2s ease;
@@ -861,8 +862,9 @@
 
 .advanced-rule-input:focus,
 .advanced-rule-textarea:focus {
-  border-color: rgba(var(--accent-color-rgb), 0.2) !important;
-  background: rgba(0, 0, 0, 0.25) !important;
+  border-color: var(--input-focus-border-color) !important;
+  background: var(--bg-input) !important;
+  box-shadow: var(--input-focus-shadow);
   outline: none;
 }
 
@@ -1054,10 +1056,8 @@
   text-align: center;
 }
 
-body.theme-mica .settings-view select.search-input,
-body.theme-acrylic .settings-view select.search-input,
-body.theme-mica .settings-view input.search-input,
-body.theme-acrylic .settings-view input.search-input {
+.settings-view select.search-input,
+.settings-view input.search-input {
   background: var(--bg-input) !important;
   color: var(--text-primary) !important;
   border: var(--input-border) !important;
@@ -1067,8 +1067,7 @@ body.theme-acrylic .settings-view input.search-input {
   backdrop-filter: saturate(135%);
 }
 
-body.theme-mica .settings-view select.search-input,
-body.theme-acrylic .settings-view select.search-input {
+.settings-view select.search-input {
   appearance: none;
   -webkit-appearance: none;
   padding-right: 28px !important;
@@ -1082,8 +1081,7 @@ body.theme-acrylic .settings-view select.search-input {
   background-repeat: no-repeat !important;
 }
 
-body.theme-mica .settings-view select.search-input option,
-body.theme-acrylic .settings-view select.search-input option {
+.settings-view select.search-input option {
   background: var(--bg-window);
   color: var(--text-primary);
 }
@@ -1207,7 +1205,7 @@ body.theme-acrylic .settings-view select.search-input option {
   content: "";
   width: 100%;
   height: 100%;
-  background-color: rgb(206, 206, 206);
+  background-color: color-mix(in srgb, var(--bg-element) 78%, var(--line-strong));
   transform-origin: center right;
   transform: rotateY(-90deg);
   z-index: -1;

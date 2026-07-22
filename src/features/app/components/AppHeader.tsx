@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { CSSProperties, RefObject } from "react";
 import {
   ChevronLeft,
   MessageSquare,
@@ -146,7 +146,7 @@ const AppHeader = ({
         <div className="header-actions">
           {/* Pin Button */}
           <button
-            className={`btn-icon ${isWindowPinned ? 'active' : ''}`}
+            className={`btn-icon header-pin-btn ${isWindowPinned ? 'active' : ''}`}
             title={t('pin')}
             onClick={() => {
               const newVal = !isWindowPinned;
@@ -180,12 +180,10 @@ const AppHeader = ({
           {fileServerEnabled && (
             <button
               className={`btn-icon header-chat-btn ${chatMode && showSettings ? 'active' : ''}`}
-              title="Chat"
+              title={t('file_transfer')}
               onClick={onToggleChat}
             >
-              <div style={{ position: 'relative' }}>
-                <MessageSquare size={16} />
-              </div>
+              <MessageSquare size={16} />
             </button>
           )}
 
@@ -219,7 +217,7 @@ const AppHeader = ({
                     <input
                     ref={searchInputRef}
                     type="text"
-                    className={`search-input ${showTagFilter && searchIsFocused && allTags.length > 0 ? 'dropdown-open' : ''}`}
+                    className={`search-input ${showTagFilter && searchIsFocused && search.trim().length === 0 && allTags.length > 0 ? 'dropdown-open' : ''}`}
                     placeholder={
                       theme === "terminal"
                         ? (t("search_placeholder_terminal") || "search history…")
@@ -233,10 +231,6 @@ const AppHeader = ({
                     }}
                     onChange={(e) => {
                       setSearch(e.target.value);
-                    }}
-                    onMouseDown={() => {
-                      // Ensure NSPanel is key before the input focuses.
-                      invoke("activate_window_focus").catch(console.error);
                     }}
                     onClick={() => { setShowTagFilter(true); setEditingTagsId(null); }}
                     onFocus={() => {
@@ -255,7 +249,7 @@ const AppHeader = ({
                     style={{ color: colorMode === 'dark' ? '#ffffff' : undefined }}
                   />
                   </div>
-                  {showTagFilter && searchIsFocused && allTags.length > 0 && (
+                  {showTagFilter && searchIsFocused && search.trim().length === 0 && allTags.length > 0 && (
                     <div className="tags-dropdown">
                       <div className="tags-list">
                         {allTags.map(tag => {
@@ -270,7 +264,11 @@ const AppHeader = ({
                                 setShowTagFilter(false);
                               }}
                               data-tag={tag}
-                              style={{ background: tagBackground, color: getTagTextColor(tagBackground, theme) }}
+                              style={{
+                                background: tagBackground,
+                                color: getTagTextColor(tagBackground, theme),
+                                '--tag-color': tagBackground
+                              } as CSSProperties}
                             >
                               {tag}
                             </span>

@@ -11,6 +11,28 @@ interface UseNavigationSyncOptions {
   showEmojiPanel: boolean;
 }
 
+const blurStaleActionFocus = () => {
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) return;
+
+  const isEditable =
+    activeElement.matches("input, textarea, select") ||
+    activeElement.isContentEditable ||
+    Boolean(activeElement.closest("[contenteditable='true']"));
+  if (isEditable) return;
+
+  if (activeElement.matches("button, a[href], [role='button'], [tabindex]")) {
+    activeElement.blur();
+  }
+};
+
+const clearRestoredActionFocus = () => {
+  // WebKit can restore the previous control focus while the NSPanel is being
+  // ordered to the front, so clear once now and once after the next paint.
+  blurStaleActionFocus();
+  requestAnimationFrame(blurStaleActionFocus);
+};
+
 export const useNavigationSync = ({
   showSettings,
   showTagManager,
@@ -42,6 +64,7 @@ export const useNavigationSync = ({
 
     const onClipboardShown = () => {
       if (!isTauriRuntime()) return;
+      clearRestoredActionFocus();
       const shouldDisableNavigation =
         showSettings || showTagManager || chatMode || showEmojiPanel;
       if (shouldDisableNavigation) {
@@ -55,7 +78,10 @@ export const useNavigationSync = ({
     syncNavigationEnabled();
 
     const appWindow = getCurrentWindow();
-    const unlistenShow = appWindow.listen("tauri://show", syncNavigationEnabled);
+    const unlistenShow = appWindow.listen("tauri://show", () => {
+      clearRestoredActionFocus();
+      syncNavigationEnabled();
+    });
     const unlistenClipboardShown = listen("clipboard-shown", onClipboardShown);
     const unlistenHide = appWindow.listen("tauri://hide", () => {
       invoke("set_navigation_enabled", { enabled: false }).catch(console.error);

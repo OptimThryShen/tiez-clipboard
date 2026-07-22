@@ -17,6 +17,15 @@
   --accent-color: #2f6fed;
   --accent-color-rgb: 47, 111, 237;
   --accent-hover: #245dce;
+  --on-accent: #ffffff;
+  --status-info: var(--accent-color);
+  --status-info-rgb: var(--accent-color-rgb);
+  --status-success: #10b981;
+  --status-success-rgb: 16, 185, 129;
+  --status-warning: #f59e0b;
+  --status-warning-rgb: 245, 158, 11;
+  --status-danger: #ef4444;
+  --status-danger-rgb: 239, 68, 68;
   --border-dark: #24364d;
   --border-light: rgba(255, 255, 255, 0.78);
   --shadow-color: rgba(24, 34, 53, 0.18);
@@ -236,6 +245,62 @@
   --menu-item-hover-background: var(--accent-color);
   --menu-item-hover-color: #ffffff;
 
+  /* Shared sub-surface tokens. Keep component CSS theme-neutral by deriving
+     these from the active theme's existing button/card/menu language. */
+  --popover-background: var(--bg-panel);
+  --popover-color: var(--text-primary);
+  --popover-border: var(--menu-border);
+  --popover-radius: var(--menu-radius);
+  --popover-shadow: var(--menu-shadow);
+  --popover-backdrop-filter: none;
+
+  --toast-background: var(--bg-panel);
+  --toast-color: var(--text-primary);
+  --toast-border: var(--menu-border);
+  --toast-radius: var(--menu-radius);
+  --toast-shadow: var(--menu-shadow);
+  --toast-font-family: var(--font-main);
+
+  --emoji-tabs-background: var(--bg-element);
+  --emoji-tabs-border: var(--segmented-border);
+  --emoji-tabs-radius: var(--segmented-radius);
+  --emoji-tabs-shadow: var(--segmented-shadow);
+  --emoji-tab-radius: var(--segment-radius);
+  --emoji-active-background: var(--segment-active-background);
+  --emoji-active-color: var(--segment-active-color);
+  --emoji-active-shadow: var(--segment-active-shadow);
+  --emoji-button-background: var(--bg-button);
+  --emoji-button-border: var(--button-border);
+  --emoji-button-radius: var(--button-radius);
+  --emoji-button-shadow: var(--button-shadow);
+  --emoji-card-background: var(--bg-element);
+  --emoji-card-border: var(--card-border);
+  --emoji-card-radius: var(--card-radius);
+  --emoji-card-shadow: var(--card-shadow);
+
+  --advanced-surface-background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  --advanced-card-background: color-mix(in srgb, var(--bg-panel) 58%, transparent);
+  --advanced-card-border: var(--panel-border);
+  --advanced-card-radius: var(--panel-radius);
+  --advanced-input-background: var(--bg-input);
+  --advanced-input-border: var(--input-border);
+  --advanced-input-radius: var(--input-radius);
+
+  --compact-action-background: var(--bg-button);
+  --compact-action-color: var(--text-primary);
+  --compact-action-border: var(--button-border);
+  --compact-action-radius: var(--button-radius);
+  --compact-action-shadow: var(--button-shadow);
+  --compact-action-backdrop-filter: none;
+  --compact-action-hover-background: var(--bg-input);
+  --compact-action-hover-border-color: var(--button-hover-border-color);
+  --compact-action-hover-shadow: var(--button-hover-shadow);
+  --compact-action-hover-transform: var(--button-hover-transform);
+  --compact-action-active-background: var(--button-active-filled-background);
+  --compact-action-active-color: var(--button-active-filled-color);
+  --compact-action-active-border-color: var(--button-active-filled-border-color);
+  --compact-action-active-shadow: var(--button-active-filled-shadow);
+
   --scrollbar-size: 10px;
   --scrollbar-size-thin: 4px;
   --scrollbar-radius: var(--radius-pill);
@@ -263,10 +328,17 @@
   --queue-action-shadow: var(--shadow-xs);
   --queue-button-text-transform: none;
 
-  --reset-button-border: 1px solid rgba(255, 99, 99, 0.14);
-  --reset-button-radius: 14px;
-  --reset-button-shadow: var(--shadow-xs);
-  --reset-button-text-transform: none;
+  --reset-button-border: var(--button-border);
+  --reset-button-radius: var(--button-radius);
+  --reset-button-shadow: var(--button-shadow);
+  --reset-button-text-transform: var(--button-text-transform);
+  --reset-button-hover-background: rgba(var(--status-danger-rgb), 0.1);
+  --reset-button-hover-color: var(--status-danger);
+  --reset-button-hover-border-color: rgba(var(--status-danger-rgb), 0.28);
+  --reset-button-hover-shadow: var(--button-hover-shadow);
+  --reset-button-hover-transform: var(--button-hover-transform);
+  --reset-button-active-shadow: var(--button-active-shadow);
+  --reset-button-active-transform: var(--button-active-transform);
 }
 
 @media (prefers-color-scheme: dark) {

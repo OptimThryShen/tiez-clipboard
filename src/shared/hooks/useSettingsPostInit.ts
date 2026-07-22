@@ -59,6 +59,7 @@ interface UseSettingsPostInitOptions {
   setRegistryWinVEnabled: (val: boolean) => void;
   setPasteMethod: (val: string) => void;
   setShowSourceAppIcon: (val: boolean) => void;
+  setHideUnselectedItemActions: (val: boolean) => void;
 
   setDeleteAfterPaste: (val: boolean) => void;
   setMoveToTopAfterPaste: (val: boolean) => void;
@@ -145,6 +146,7 @@ export const useSettingsPostInit = ({
   setRegistryWinVEnabled,
   setPasteMethod,
   setShowSourceAppIcon,
+  setHideUnselectedItemActions,
 
   setDeleteAfterPaste,
   setMoveToTopAfterPaste,
@@ -320,6 +322,7 @@ export const useSettingsPostInit = ({
     setRegistryWinVEnabled(settings["app.use_win_v_shortcut"] === "true");
     setPasteMethod(settings["app.paste_method"] || "shift_insert");
     setShowSourceAppIcon(settings["app.show_source_app_icon"] !== "false");
+    setHideUnselectedItemActions(settings["app.hide_unselected_item_actions"] === "true");
 
 
     // These have false as default, so check for 'true'
@@ -526,6 +529,7 @@ export const useSettingsPostInit = ({
     setRegistryWinVEnabled,
     setPasteMethod,
     setShowSourceAppIcon,
+    setHideUnselectedItemActions,
 
     setDeleteAfterPaste,
     setMoveToTopAfterPaste,

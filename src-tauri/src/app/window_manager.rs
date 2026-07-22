@@ -632,6 +632,24 @@ pub fn set_navigation_mode(active: bool) -> Result<(), String> {
 #[tauri::command]
 pub fn activate_window_focus(app_handle: AppHandle) -> Result<(), String> {
     if let Some(window) = app_handle.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::NSApplication;
+
+            // A non-activating NSPanel can become key without making the process
+            // active. Native dialogs then remain hidden/no-op, especially in a
+            // debug binary that is not launched from an .app bundle.
+            if let Some(mtm) = MainThreadMarker::new() {
+                #[allow(deprecated)]
+                NSApplication::sharedApplication(mtm).activateIgnoringOtherApps(true);
+            } else {
+                crate::infrastructure::macos_api::apps::activate_app_by_pid(
+                    std::process::id() as i32,
+                );
+            }
+        }
+
         crate::infrastructure::macos_api::window::set_window_focusable(&window, true);
 
         #[cfg(windows)]

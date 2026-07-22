@@ -252,9 +252,11 @@ body.theme-terminal {
 }
 
 body.theme-terminal .app-container {
-  border-radius: 0;
-  -webkit-clip-path: none;
-  clip-path: none;
+  /* Keep the terminal's square inner controls, but clip content to the
+     rounded desktop shell so full-bleed panes cannot square off its corners. */
+  border-radius: inherit;
+  -webkit-clip-path: inset(0 round var(--shell-radius));
+  clip-path: inset(0 round var(--shell-radius));
   overflow: hidden;
 }
 

@@ -139,7 +139,7 @@
 }
 
 .tag-target-action-btn.danger:hover {
-  color: #ff4d4f;
+  color: var(--status-danger);
 }
 
 .inline-tag-edit {
@@ -207,7 +207,7 @@
   gap: 4px;
   padding: 2px;
   border-radius: var(--button-radius);
-  background: rgba(var(--bg-panel-rgb), 0.55);
+  background: color-mix(in srgb, var(--bg-panel) 68%, transparent);
   border: 1px solid rgba(var(--accent-color-rgb), 0.08);
 }
 
@@ -237,7 +237,7 @@
 }
 
 .tag-manager-sort-btn.danger {
-  color: #ff4d4f;
+  color: var(--status-danger);
 }
 
 .tag-manager-view-toggle {
@@ -246,7 +246,7 @@
   gap: 2px;
   padding: 2px;
   border-radius: var(--button-radius);
-  background: rgba(var(--bg-panel-rgb), 0.55);
+  background: color-mix(in srgb, var(--bg-panel) 68%, transparent);
   border: 1px solid rgba(var(--accent-color-rgb), 0.08);
 }
 
@@ -271,7 +271,7 @@
 
 .tag-manager-view-toggle .toggle-btn.active {
   background: var(--accent-color);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .tag-manager-items {
@@ -294,9 +294,9 @@
 
 .tag-manager-card {
   flex-shrink: 0;
-  border: 1px solid rgba(var(--accent-color-rgb), 0.1);
-  border-radius: 14px;
-  background: rgba(var(--bg-panel-rgb), 0.35);
+  border: var(--advanced-card-border);
+  border-radius: var(--advanced-card-radius);
+  background: var(--advanced-card-background);
   padding: 12px;
   cursor: pointer;
   position: relative;
@@ -353,7 +353,7 @@
 }
 
 .tag-manager-card .del-btn:hover {
-  color: #ff4d4f;
+  color: var(--status-danger);
 }
 
 .tag-manager-card .card-media img {
@@ -482,7 +482,7 @@
   top: 2px;
   width: 4px;
   height: 8px;
-  border: solid white;
+  border: solid var(--on-accent);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
   display: none;

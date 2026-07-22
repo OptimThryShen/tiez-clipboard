@@ -196,7 +196,7 @@ body:has(.modal-overlay) #root {
 .modal-button.primary,
 .confirm-dialog-button.primary {
   background: var(--accent-color);
-  color: #ffffff;
+  color: var(--on-accent);
   border-color: var(--accent-color);
   box-shadow: var(--button-shadow);
 }
@@ -319,9 +319,9 @@ body:has(.modal-overlay) #root {
 }
 
 .modal-button.success {
-  background: #10b981;
-  border-color: #10b981;
-  color: #fff;
+  background: var(--status-success);
+  border-color: var(--status-success);
+  color: var(--on-accent);
 }
 
 .modal-button.success:hover {

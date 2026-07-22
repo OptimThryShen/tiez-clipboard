@@ -64,18 +64,18 @@ body.theme-sticky-note {
   --button-active-filled-border-color: rgba(240, 167, 11, 0.85);
   --button-active-filled-shadow: 0 4px 14px rgba(240, 167, 11, 0.28);
 
-  --card-border: none;
+  --card-border: 1px solid rgba(199, 163, 93, 0.2);
   --card-radius: 8px;
-  --card-shadow: 0 4px 16px rgba(93, 64, 55, 0.08);
-  --card-hover-shadow: 0 12px 24px rgba(93, 64, 55, 0.14);
-  --card-hover-transform: translateY(-2px) rotate(0deg);
+  --card-shadow: 0 2px 6px rgba(93, 64, 55, 0.05);
+  --card-hover-shadow: 0 5px 12px rgba(93, 64, 55, 0.09);
+  --card-hover-transform: translateY(-1px);
   --card-active-transform: translateY(0);
   --card-active-shadow: 0 8px 16px rgba(93, 64, 55, 0.12);
-  --card-selected-background: rgba(255, 236, 179, 0.95);
-  --card-selected-border-color: rgba(240, 167, 11, 0.75);
-  --card-selected-shadow: 0 10px 22px rgba(240, 167, 11, 0.22);
-  --card-selected-outline: 2px solid rgba(240, 167, 11, 0.55);
-  --card-selected-outline-offset: 1px;
+  --card-selected-background: #fff4c7;
+  --card-selected-border-color: rgba(240, 167, 11, 0.62);
+  --card-selected-shadow: 0 4px 10px rgba(93, 64, 55, 0.12);
+  --card-selected-outline: none;
+  --card-selected-outline-offset: 0;
 
   --panel-border: 1px solid rgba(199, 163, 93, 0.28);
   --panel-radius: 14px;
@@ -135,19 +135,6 @@ body.theme-sticky-note {
 
 .theme-sticky-note .history-item {
   background: #fffde7 !important;
-  transform: rotate(var(--rotate, -0.6deg));
-}
-
-.theme-sticky-note .history-item:nth-child(even) {
-  --rotate: 0.9deg;
-}
-
-.theme-sticky-note .history-item:nth-child(3n) {
-  --rotate: -1.1deg;
-}
-
-.theme-sticky-note .history-item:nth-child(5n) {
-  --rotate: 0.4deg;
 }
 
 .theme-sticky-note .search-input {
@@ -168,7 +155,7 @@ body.theme-sticky-note {
 
 .theme-sticky-note .history-item.selected {
   background: var(--card-selected-background) !important;
-  transform: rotate(0deg) scale(1.01) !important;
+  transform: none !important;
   z-index: 12;
 }
 
@@ -216,11 +203,12 @@ body.theme-sticky-note {
     --shadow-lg: 0 24px 50px rgba(0, 0, 0, 0.38);
     --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-    --card-selected-background: rgba(255, 212, 77, 0.22);
+    --card-selected-background: rgba(255, 212, 77, 0.14);
+    --card-border: 1px solid rgba(255, 255, 255, 0.08);
     --card-selected-border-color: rgba(255, 212, 77, 0.55);
-    --card-selected-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
-    --card-selected-outline: 2px solid rgba(255, 212, 77, 0.5);
-    --card-selected-outline-offset: 1px;
+    --card-selected-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+    --card-selected-outline: none;
+    --card-selected-outline-offset: 0;
 
     --button-active-filled-background: #4a4638;
     --button-active-filled-color: #fff8dc;
@@ -271,11 +259,12 @@ body.dark-mode.theme-sticky-note {
   --shadow-lg: 0 24px 50px rgba(0, 0, 0, 0.38);
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
-  --card-selected-background: rgba(255, 212, 77, 0.22);
+  --card-selected-background: rgba(255, 212, 77, 0.14);
+  --card-border: 1px solid rgba(255, 255, 255, 0.08);
   --card-selected-border-color: rgba(255, 212, 77, 0.55);
-  --card-selected-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
-  --card-selected-outline: 2px solid rgba(255, 212, 77, 0.5);
-  --card-selected-outline-offset: 1px;
+  --card-selected-shadow: 0 3px 8px rgba(0, 0, 0, 0.24);
+  --card-selected-outline: none;
+  --card-selected-outline-offset: 0;
 
   --button-active-filled-background: #4a4638;
   --button-active-filled-color: #fff8dc;

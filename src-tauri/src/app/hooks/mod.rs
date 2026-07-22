@@ -424,7 +424,7 @@ pub unsafe extern "system" fn mouse_proc(n_code: i32, w_param: WPARAM, l_param: 
             if msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN {
                 if let Some(handle) = GLOBAL_APP_HANDLE.get() {
                     if let Some(window) = handle.get_webview_window("main") {
-                        if !IGNORE_BLUR.load(Ordering::Relaxed) {
+                        if !is_blur_ignored() {
                             let mouse_struct = *(l_param.0 as *const MSLLHOOKSTRUCT);
                             let point = mouse_struct.pt;
 

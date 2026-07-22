@@ -1,9 +1,10 @@
 /* AI Assistant Styles */
 .ai-options-menu {
-  background: var(--bg-element) !important;
-  border: 2px solid var(--border-dark) !important;
-  box-shadow: 4px 4px 0 0 var(--shadow-color) !important;
-  border-radius: 4px !important;
+  background: var(--popover-background) !important;
+  color: var(--popover-color);
+  border: var(--popover-border) !important;
+  box-shadow: var(--popover-shadow) !important;
+  border-radius: var(--popover-radius) !important;
 }
 
 .ai-option-item {
@@ -12,8 +13,8 @@
 }
 
 .ai-option-item:hover {
-  background: var(--accent-color) !important;
-  color: white !important;
+  background: var(--menu-item-hover-background) !important;
+  color: var(--menu-item-hover-color) !important;
 }
 
 .animate-spin {
@@ -40,7 +41,7 @@
 .ai-profile-card {
   padding: 10px 12px;
   background: transparent;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid var(--panel-divider-color);
   color: var(--text-primary);
   display: flex;
   justify-content: space-between;
@@ -53,7 +54,7 @@
 }
 
 .ai-profile-card:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(var(--accent-color-rgb), 0.06);
 }
 
 .ai-profile-card::before {
@@ -73,7 +74,7 @@
   font-size: 9px;
   font-family: var(--font-mono);
   color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(var(--accent-color-rgb), 0.08);
   padding: 1px 4px;
   display: inline-block;
 }
@@ -88,16 +89,6 @@
   margin-bottom: 8px;
   border-left: 3px solid var(--accent-color);
   padding-left: 8px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not(.light-mode) .ai-profile-card {
-    border-bottom-color: rgba(255, 255, 255, 0.1);
-  }
-
-  :root:not(.light-mode) .ai-profile-sub {
-    background: rgba(255, 255, 255, 0.1);
-  }
 }
 
 /* AI Skeleton Loading */

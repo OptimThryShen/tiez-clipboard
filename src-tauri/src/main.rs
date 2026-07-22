@@ -83,6 +83,8 @@ fn main() -> AppResult<()> {
             app::commands::set_deduplication,
             app::commands::save_setting,
             app::commands::set_ignore_blur,
+            app::commands::acquire_blur_guard,
+            app::commands::release_blur_guard,
             app::commands::set_window_pinned,
             app::commands::get_settings,
             app::commands::set_file_server_auto_close,

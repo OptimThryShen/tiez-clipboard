@@ -130,8 +130,8 @@ const SettingsFooter = ({
                     style={{
                         border: 'none',
                         background: 'transparent',
-                        color: (updateStatus && (updateStatus === t('checking_failed'))) ? '#ff4d4f' : 
-                               (updateStatus === t('up_to_date')) ? '#52c41a' : 'var(--accent-color)',
+                        color: (updateStatus && (updateStatus === t('checking_failed'))) ? 'var(--status-danger)' :
+                               (updateStatus === t('up_to_date')) ? 'var(--status-success)' : 'var(--accent-color)',
                         cursor: updateStatus ? 'default' : 'pointer',
                         fontSize: '11px',
                         padding: '2px 6px',

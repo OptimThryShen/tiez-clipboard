@@ -94,7 +94,7 @@ const MacAccessibilityPermission = ({ t, LabelWithHint }: MacAccessibilityPermis
             style={{
               fontSize: "12px",
               fontWeight: 600,
-              color: "#34c759",
+              color: "var(--status-success)",
               whiteSpace: "nowrap"
             }}
           >
@@ -109,7 +109,7 @@ const MacAccessibilityPermission = ({ t, LabelWithHint }: MacAccessibilityPermis
             style={{
               fontSize: "12px",
               fontWeight: 600,
-              color: "#ff9f0a",
+              color: "var(--status-warning)",
               background: "none",
               border: "none",
               padding: 0,

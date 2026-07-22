@@ -28,6 +28,7 @@ interface AppMainContentProps {
   chatMode: boolean;
   localIp: string;
   actualPort: string;
+  fileTransferAccessToken: string;
   settingsPanelProps: SettingsPanelProps;
   emojiFavorites: string[];
   setEmojiFavorites: (val: string[] | ((prev: string[]) => string[])) => void;
@@ -105,6 +106,7 @@ const AppMainContent = ({
   chatMode,
   localIp,
   actualPort,
+  fileTransferAccessToken,
   settingsPanelProps,
   emojiFavorites,
   setEmojiFavorites,
@@ -173,7 +175,12 @@ const AppMainContent = ({
           animate={{ opacity: 1 }}
           style={{ height: "100%", overflow: "hidden" }}
         >
-          <FileTransferChatView t={t} localIp={localIp} actualPort={actualPort} />
+          <FileTransferChatView
+            t={t}
+            localIp={localIp}
+            actualPort={actualPort}
+            accessToken={fileTransferAccessToken}
+          />
         </motion.div>
       );
     }
@@ -272,7 +279,11 @@ const AppMainContent = ({
             <button
               type="button"
               className="btn-icon scroll-top-button"
-              onClick={onScrollTop}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onScrollTop();
+              }}
               aria-label={t("scroll_to_top")}
               title={t("scroll_to_top")}
             >

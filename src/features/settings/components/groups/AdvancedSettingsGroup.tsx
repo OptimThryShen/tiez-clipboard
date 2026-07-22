@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ChevronDown, ChevronRight, Plus, Trash2 } from "lucide-react";
 import type { InstalledAppOption } from "../../../app/types";
 import type { AppCleanupPolicy, AppCleanupPolicyAction } from "../../types";
@@ -87,16 +86,6 @@ const serializeRules = (rules: EditableRule[]): string =>
             return lines.join("\n");
         })
         .join("\n\n");
-
-const focusEditorWindow = () => {
-    // Prefer gentle key-window activation so focused fields keep the caret.
-    invoke("activate_window_focus")
-        .catch(() =>
-            getCurrentWindow()
-                .setFocus()
-                .catch(() => invoke("focus_clipboard_window").catch(console.error))
-        );
-};
 
 const AdvancedSettingsGroup = ({
     t,
@@ -381,7 +370,6 @@ const AdvancedSettingsGroup = ({
                             className="search-input advanced-search-input"
                             placeholder={t("search_apps_placeholder")}
                             value={searchText}
-                            onFocus={focusEditorWindow}
                             onChange={(e) => setSearchText(e.target.value)}
                         />
                         {searchResults.length > 0 && (
@@ -545,7 +533,6 @@ const AdvancedSettingsGroup = ({
                                                             value={rule.match}
                                                             style={{ minHeight: "80px" }}
                                                             placeholder={t("advanced_match_placeholder") || "输入正则匹配，例如：(?i)(token\\s*[:=]\\s*)\\S+"}
-                                                            onFocus={focusEditorWindow}
                                                             onChange={(e) => updateRule(index, { match: e.target.value })}
                                                         />
                                                     </div>
@@ -580,7 +567,6 @@ const AdvancedSettingsGroup = ({
                                                                 value={rule.replace}
                                                                 style={{ minHeight: "80px" }}
                                                                 placeholder={t("advanced_replace_placeholder") || "输入替换文本，例如：$1[REDACTED]"}
-                                                                onFocus={focusEditorWindow}
                                                                 onChange={(e) => updateRule(index, { replace: e.target.value })}
                                                             />
                                                         </div>

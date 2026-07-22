@@ -144,6 +144,7 @@ export const useSettingsPanelProps = ({
     availableIps,
     setLocalIp,
     actualPort,
+    fileTransferAccessToken,
     fileTransferAutoOpen,
     soundVolume,
     setSoundVolume,
@@ -180,6 +181,8 @@ export const useSettingsPanelProps = ({
     setLanguage,
     showSourceAppIcon,
     setShowSourceAppIcon,
+    hideUnselectedItemActions,
+    setHideUnselectedItemActions,
 
     compactMode,
     setCompactMode,
@@ -334,6 +337,7 @@ export const useSettingsPanelProps = ({
     availableIps,
     setLocalIp,
     actualPort,
+    fileTransferAccessToken,
     fileTransferAutoOpen,
     soundVolume,
     setSoundVolume,
@@ -378,6 +382,8 @@ export const useSettingsPanelProps = ({
     setLanguage,
     showSourceAppIcon,
     setShowSourceAppIcon,
+    hideUnselectedItemActions,
+    setHideUnselectedItemActions,
 
     compactMode,
     setCompactMode,

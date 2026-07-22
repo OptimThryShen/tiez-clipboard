@@ -47,14 +47,16 @@ body.theme-acrylic {
   --button-hover-shadow: 0 8px 22px rgba(15, 23, 42, 0.12);
   --button-active-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
   --button-active-filled-shadow: 0 14px 26px rgba(79, 125, 255, 0.24);
+  --compact-action-backdrop-filter: blur(14px) saturate(165%);
+  --popover-backdrop-filter: blur(16px) saturate(175%);
 
   --card-border: 1px solid rgba(255, 255, 255, 0.26);
   --card-radius: 14px;
   --card-shadow: none;
   --card-hover-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
-  --card-selected-background: rgba(79, 125, 255, 0.12);
-  --card-selected-border-color: rgba(79, 125, 255, 0.34);
-  --card-selected-shadow: 0 14px 30px rgba(79, 125, 255, 0.18);
+  --card-selected-background: rgba(255, 255, 255, 0.3);
+  --card-selected-border-color: rgba(255, 255, 255, 0.52);
+  --card-selected-shadow: none;
 
   --panel-border: 1px solid rgba(255, 255, 255, 0.28);
   --panel-radius: 14px;
@@ -185,6 +187,9 @@ body.theme-acrylic #root > * {
     --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
     --panel-border: 1px solid rgba(255, 255, 255, 0.1);
     --menu-border: 1px solid rgba(255, 255, 255, 0.1);
+    --card-selected-background: rgba(255, 255, 255, 0.08);
+    --card-selected-border-color: rgba(255, 255, 255, 0.18);
+    --card-selected-shadow: none;
   }
 
   body.theme-acrylic:not(.light-mode) #root::before {
@@ -227,6 +232,9 @@ body.dark-mode.theme-acrylic {
   --toolbar-border: 1px solid rgba(255, 255, 255, 0.08);
   --panel-border: 1px solid rgba(255, 255, 255, 0.1);
   --menu-border: 1px solid rgba(255, 255, 255, 0.1);
+  --card-selected-background: rgba(255, 255, 255, 0.08);
+  --card-selected-border-color: rgba(255, 255, 255, 0.18);
+  --card-selected-shadow: none;
 }
 
 body.compact-preview.theme-acrylic #root,

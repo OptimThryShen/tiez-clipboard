@@ -777,14 +777,14 @@ body.dark-mode.theme-sakura .tags-dropdown,
 .theme-mica .tags-dropdown,
 .theme-acrylic .tags-dropdown {
     margin-top: 0 !important;
-    padding: 8px 10px 10px !important;
-    border: 1px solid rgba(128, 128, 128, 0.2) !important;
+    padding: 5px 6px 6px !important;
+    border: 1px solid var(--line-soft) !important;
     border-top: none !important;
     border-radius: 0 0 12px 12px !important;
-    background: rgba(255, 255, 255, 0.75) !important;
-    backdrop-filter: blur(12px) saturate(140%);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08) !important;
+    background: var(--bg-panel) !important;
+    backdrop-filter: blur(8px) saturate(110%);
+    -webkit-backdrop-filter: blur(8px) saturate(110%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08) !important;
 }
 
 :root.dark-mode .theme-mica .tags-dropdown,
@@ -797,21 +797,41 @@ body.dark-mode.theme-sakura .tags-dropdown,
 .theme-mica .tags-dropdown .tags-list,
 .theme-acrylic .tags-dropdown .tags-list {
     flex-direction: column;
-    gap: 4px;
+    gap: 1px;
 }
 
 .theme-mica .tags-dropdown .tag-chip,
 .theme-acrylic .tags-dropdown .tag-chip {
     width: 100%;
     justify-content: flex-start;
-    border-radius: 8px !important;
+    gap: 8px;
+    padding: 6px 8px;
+    border: 1px solid transparent;
+    border-radius: 7px !important;
+    background: transparent !important;
+    color: var(--text-primary) !important;
+    font-weight: 550;
+    box-shadow: none !important;
     transform: none !important;
+}
+
+.theme-mica .tags-dropdown .tag-chip::before,
+.theme-acrylic .tags-dropdown .tag-chip::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    border-radius: 50%;
+    background: var(--tag-color, var(--accent-color));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--tag-color, var(--accent-color)) 16%, transparent);
 }
 
 .theme-mica .tags-dropdown .tag-chip:hover,
 .theme-acrylic .tags-dropdown .tag-chip:hover {
     transform: none !important;
-    filter: brightness(1.05);
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent) !important;
+    border-color: var(--line-soft);
+    filter: none;
 }
 
 /* --- Receipt: tighten input + dropdown seam --- */

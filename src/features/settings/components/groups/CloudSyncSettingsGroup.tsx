@@ -48,10 +48,10 @@ interface CloudSyncSettingsGroupProps {
 }
 
 const statusColor = (state: string) => {
-    if (state === "syncing") return "#FF9800";
-    if (state === "idle") return "#4CAF50";
-    if (state === "error") return "#F44336";
-    return "#9E9E9E";
+    if (state === "syncing") return "var(--status-warning)";
+    if (state === "idle") return "var(--status-success)";
+    if (state === "error") return "var(--status-danger)";
+    return "var(--text-muted)";
 };
 
 const statusLabel = (t: (key: string) => string, state: string) => {
@@ -143,9 +143,9 @@ const CloudSyncSettingsGroup = ({
                         style={{
                             marginBottom: "12px",
                             padding: "8px 12px",
-                            background: "rgba(72, 123, 219, 0.1)",
-                            border: "1px solid rgba(72, 123, 219, 0.2)",
-                            borderRadius: "4px",
+                            background: "rgba(var(--accent-color-rgb), 0.1)",
+                            border: "1px solid rgba(var(--accent-color-rgb), 0.2)",
+                            borderRadius: "var(--button-radius)",
                             display: "flex",
                             flexDirection: "row",
                             justifyContent: "space-between",
@@ -295,7 +295,6 @@ const CloudSyncSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: "4px", padding: "4px 8px", width: "70px", textAlign: "right" }}
                                 value={cloudSyncIntervalSec}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={(e) => setCloudSyncIntervalSec(e.target.value)}
                                 onBlur={() => {
                                     const next = normalizeInterval(cloudSyncIntervalSec);
@@ -318,7 +317,6 @@ const CloudSyncSettingsGroup = ({
                                 className="search-input"
                                 style={{ borderRadius: "4px", padding: "4px 8px", width: "70px", textAlign: "right" }}
                                 value={cloudSyncSnapshotIntervalMin}
-                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                                 onChange={(e) => setCloudSyncSnapshotIntervalMin(e.target.value)}
                                 onBlur={() => {
                                     const next = normalizeSnapshotIntervalMin(cloudSyncSnapshotIntervalMin);
@@ -339,7 +337,6 @@ const CloudSyncSettingsGroup = ({
                             className="search-input"
                             style={{ borderRadius: "4px", padding: "4px 8px", width: "140px" }}
                             value={cloudSyncWebdavUrl}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={(e) => setCloudSyncWebdavUrl(e.target.value)}
                             onBlur={() => saveCloudSync("cloud_sync_webdav_url", cloudSyncWebdavUrl.trim())}
                             placeholder="https://dav.example.com/remote.php/dav/files/user"
@@ -354,7 +351,6 @@ const CloudSyncSettingsGroup = ({
                             className="search-input"
                             style={{ borderRadius: "4px", padding: "4px 8px", width: "140px" }}
                             value={cloudSyncWebdavUsername}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={(e) => setCloudSyncWebdavUsername(e.target.value)}
                             onBlur={() => saveCloudSync("cloud_sync_webdav_username", cloudSyncWebdavUsername.trim())}
                             placeholder="username"
@@ -372,7 +368,6 @@ const CloudSyncSettingsGroup = ({
                             type="password"
                             style={{ borderRadius: "4px", padding: "4px 8px", width: "140px" }}
                             value={cloudSyncWebdavPassword}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={(e) => setCloudSyncWebdavPassword(e.target.value)}
                             onBlur={() => saveCloudSync("cloud_sync_webdav_password", cloudSyncWebdavPassword)}
                             placeholder={t("cloud_sync_api_key_placeholder")}
@@ -389,7 +384,6 @@ const CloudSyncSettingsGroup = ({
                             className="search-input"
                             style={{ borderRadius: "4px", padding: "4px 8px", width: "140px" }}
                             value={cloudSyncWebdavBasePath}
-                            onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
                             onChange={(e) => setCloudSyncWebdavBasePath(e.target.value)}
                             onBlur={() => saveCloudSync("cloud_sync_webdav_base_path", cloudSyncWebdavBasePath.trim() || "tiez-sync")}
                             placeholder="tiez-sync"
@@ -417,7 +411,7 @@ const CloudSyncSettingsGroup = ({
                             {t("cloud_sync_last_sync")}: {status.last_sync_at ? new Date(status.last_sync_at).toLocaleString() : "-"}
                         </div>
                         {status.last_error && (
-                            <div style={{ marginTop: "4px", fontSize: "11px", color: "#F44336" }}>
+                            <div style={{ marginTop: "4px", fontSize: "11px", color: "var(--status-danger)" }}>
                                 {t("cloud_sync_last_error")}: {status.last_error}
                             </div>
                         )}

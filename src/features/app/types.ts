@@ -144,6 +144,8 @@ export interface AppState {
   setColorMode: StateSetter<string>;
   showSourceAppIcon: boolean;
   setShowSourceAppIcon: StateSetter<boolean>;
+  hideUnselectedItemActions: boolean;
+  setHideUnselectedItemActions: StateSetter<boolean>;
 
   compactMode: boolean;
   setCompactMode: StateSetter<boolean>;
@@ -247,6 +249,8 @@ export interface AppState {
   setAvailableIps: StateSetter<string[]>;
   actualPort: string;
   setActualPort: StateSetter<string>;
+  fileTransferAccessToken: string;
+  setFileTransferAccessToken: StateSetter<string>;
   fileTransferPath: string;
   setFileTransferPath: StateSetter<string>;
   fileTransferAutoOpen: boolean;

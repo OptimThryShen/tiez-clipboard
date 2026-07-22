@@ -30,6 +30,8 @@ interface SettingsPanelProps {
     colorMode: string;
     showSourceAppIcon: boolean;
     setShowSourceAppIcon: (val: boolean) => void;
+    hideUnselectedItemActions: boolean;
+    setHideUnselectedItemActions: (val: boolean) => void;
     clipboardItemFontSize: number;
     setClipboardItemFontSize: (val: number) => void;
     clipboardTagFontSize: number;
@@ -142,6 +144,7 @@ interface SettingsPanelProps {
     availableIps?: string[];
     setLocalIp?: (val: string) => void;
     actualPort: string;
+    fileTransferAccessToken: string;
     fileTransferAutoOpen: boolean;
     showAutoCloseHint: boolean;
     fileServerAutoClose: boolean;
@@ -248,7 +251,7 @@ interface SettingsPanelProps {
 
 const SettingsPanel = (props: SettingsPanelProps) => {
     const {
-        t, theme, language, colorMode, showSourceAppIcon, setShowSourceAppIcon,
+        t, theme, language, colorMode, showSourceAppIcon, setShowSourceAppIcon, hideUnselectedItemActions, setHideUnselectedItemActions,
         collapsedGroups, settingsSubpage, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, deleteAfterPaste, moveToTopAfterPaste, pasteMethod, setPasteMethod, registryWinVEnabled, setRegistryWinVEnabled,
         sequentialMode, sequentialHotkey, isRecordingSequential,
         richPasteHotkey, isRecordingRich, searchHotkey, isRecordingSearch, quickPasteModifier, setQuickPasteModifier,
@@ -264,7 +267,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         surfaceOpacity, setSurfaceOpacity,
         mqttEnabled, mqttServer, mqttPort, mqttUser, mqttPass, mqttTopic, mqttProtocol, mqttWsPath, mqttNotificationEnabled,
         cloudSyncEnabled, cloudSyncAuto, cloudSyncIntervalSec, cloudSyncSnapshotIntervalMin, cloudSyncWebdavUrl, cloudSyncWebdavUsername, cloudSyncWebdavPassword, cloudSyncWebdavBasePath, cloudSyncContentPrefs,
-        fileServerEnabled, fileServerPort, localIp, availableIps, setLocalIp, actualPort, fileTransferAutoOpen, showAutoCloseHint, fileServerAutoClose, fileTransferAutoCopy, fileTransferPath,
+        fileServerEnabled, fileServerPort, localIp, availableIps, setLocalIp, actualPort, fileTransferAccessToken, fileTransferAutoOpen, showAutoCloseHint, fileServerAutoClose, fileTransferAutoCopy, fileTransferPath,
         installedApps, appSettings, defaultApps, showAppSelector, dataPath,
 
         toggleGroup, setSettingsSubpage, setAutoStart, setSilentStart, setPersistent, setPersistentLimitEnabled, setPersistentLimit, setDeduplicate, setCaptureFiles, setCaptureRichText, setRichTextSnapshotPreview, setDeleteAfterPaste, setMoveToTopAfterPaste, saveAppSetting,
@@ -619,6 +622,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setLanguage={setLanguage}
                 showSourceAppIcon={showSourceAppIcon}
                 setShowSourceAppIcon={setShowSourceAppIcon}
+                hideUnselectedItemActions={hideUnselectedItemActions}
+                setHideUnselectedItemActions={setHideUnselectedItemActions}
                 compactMode={compactMode}
                 setCompactMode={setCompactMode}
                 clipboardItemFontSize={clipboardItemFontSize}
@@ -733,6 +738,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 availableIps={availableIps}
                 setLocalIp={setLocalIp}
                 actualPort={actualPort}
+                accessToken={fileTransferAccessToken}
                 fileTransferAutoOpen={fileTransferAutoOpen}
                 setFileTransferAutoOpen={setFileTransferAutoOpen}
                 showAutoCloseHint={showAutoCloseHint}

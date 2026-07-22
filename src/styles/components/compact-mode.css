@@ -56,13 +56,11 @@
     position: fixed;
     width: 320px;
     max-width: 80vw;
-    background: var(--bg-element);
-    /* Remove retro 2px border and offset shadow */
-    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-    /* Softer modern shadow */
-    border-radius: var(--radius-window, 8px);
-    /* Use theme radius or default 8px */
+    background: var(--popover-background);
+    color: var(--popover-color);
+    border: var(--popover-border);
+    box-shadow: var(--popover-shadow);
+    border-radius: var(--popover-radius);
     padding: 12px;
     z-index: 99999;
     line-height: 1.5;
@@ -71,12 +69,9 @@
 
 /* Explicit standard dark mode fix (non-retro) */
 .compact-popover-portal.dark-mode {
-    background: #2c2c2c;
-    /* fallback or specific dark surface */
-    background: var(--bg-element);
-    /* should work if var is correct, but let's be explicit */
-    border-color: #444;
-    color: #ededed;
+    background: var(--popover-background);
+    border-color: var(--line-strong);
+    color: var(--popover-color);
 }
 
 
@@ -260,257 +255,63 @@
     transform: translateY(0);
 }
 
-/* Button Icons - Default/Modern Style */
+body.hide-unselected-item-actions .history-item.compact:not(.selected) .item-actions {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    transform: none !important;
+    pointer-events: none !important;
+}
+
+body.hide-unselected-item-actions .history-item.compact.selected .item-actions {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    pointer-events: auto;
+}
+
+
 .history-item.compact .item-actions .btn-icon {
     width: 20px !important;
     height: 20px !important;
     padding: 3px !important;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.7);
-    /* Semi-transparent for glass effect */
-    color: #444;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    transition: all 0.2s ease;
+    background: var(--compact-action-background) !important;
+    color: var(--compact-action-color) !important;
+    border: var(--compact-action-border) !important;
+    border-radius: var(--compact-action-radius) !important;
+    box-shadow: var(--compact-action-shadow) !important;
+    backdrop-filter: var(--compact-action-backdrop-filter);
+    -webkit-backdrop-filter: var(--compact-action-backdrop-filter);
+    transition:
+        background 0.14s ease,
+        border-color 0.14s ease,
+        color 0.14s ease,
+        box-shadow 0.14s ease,
+        transform 0.14s ease;
 }
 
-/* Dark Mode - Glass effect */
-.dark-mode .history-item.compact .item-actions .btn-icon {
-    background: rgba(60, 60, 60, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2) !important;
-}
-
-/* Modern/Mica Theme - Enhanced glass effect */
-body.theme-mica .history-item.compact .item-actions .btn-icon,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon,
-html.theme-mica .history-item.compact .item-actions .btn-icon,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon {
-    background: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.5) !important;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1) !important;
-    backdrop-filter: blur(12px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
-    border-radius: 8px !important;
-}
-
-body.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon,
-body.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon,
-html.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon,
-html.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon {
-    background: rgba(45, 45, 45, 0.7) !important;
-    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* Retro/Non-Modern Theme Overrides for Buttons */
-/* Apply mechanical style to all non-modern themes (retro, default, etc.) */
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact .item-actions .btn-icon,
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact:hover .item-actions .btn-icon {
-    border-radius: 0 !important;
-    border: 2px solid var(--border-dark) !important;
-    box-shadow: 2px 2px 0 0 var(--shadow-color) !important;
-    background: var(--bg-button) !important;
-    color: var(--text-primary) !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-}
-
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact .item-actions .btn-icon:hover,
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact:hover .item-actions .btn-icon:hover {
-    transform: translate(-1px, -1px) !important;
-    box-shadow: 3px 3px 0 0 var(--shadow-color) !important;
-    background: var(--bg-input) !important;
-    border-color: var(--border-dark) !important;
-}
-
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact .item-actions .btn-icon:active {
-    transform: translate(1px, 1px) !important;
-    box-shadow: 1px 1px 0 0 var(--shadow-color) !important;
-}
-
-/* Hover effects - Glass style */
 .history-item.compact .item-actions .btn-icon:hover {
-    background: rgba(255, 255, 255, 0.95);
-    color: var(--accent-color);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+    background: var(--compact-action-hover-background) !important;
+    color: var(--accent-color) !important;
+    border-color: var(--compact-action-hover-border-color) !important;
+    box-shadow: var(--compact-action-hover-shadow) !important;
+    transform: var(--compact-action-hover-transform) !important;
 }
 
-.dark-mode .history-item.compact .item-actions .btn-icon:hover {
-    background: rgba(80, 80, 80, 0.8);
-    color: var(--accent-color);
+.history-item.compact .item-actions .btn-icon:active {
+    box-shadow: var(--button-active-shadow) !important;
+    transform: var(--button-active-transform) !important;
 }
 
-/* Modern/Mica hover - Enhanced */
-body.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon:hover,
-html.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon:hover {
-    background: rgba(255, 255, 255, 0.95) !important;
-    transform: translateY(-2px) !important;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15) !important;
-}
-
-body.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-body.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon:hover,
-html.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-html.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon:hover {
-    background: rgba(60, 60, 60, 0.85) !important;
-}
-
-/* Active/Selected State - Glass style */
 .history-item.compact .item-actions .btn-icon.active {
-    color: var(--accent-color);
-    background: rgba(var(--accent-color-rgb), 0.2);
-    border-color: rgba(var(--accent-color-rgb), 0.5);
-    box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.3), 0 2px 8px rgba(var(--accent-color-rgb), 0.2) !important;
-    backdrop-filter: blur(10px);
+    background: var(--compact-action-active-background) !important;
+    color: var(--compact-action-active-color) !important;
+    border-color: var(--compact-action-active-border-color) !important;
+    box-shadow: var(--compact-action-active-shadow) !important;
 }
 
-.dark-mode .history-item.compact .item-actions .btn-icon.active {
-    background: rgba(var(--accent-color-rgb), 0.3);
-    border-color: rgba(var(--accent-color-rgb), 0.6);
-    box-shadow: 0 0 0 1px rgba(var(--accent-color-rgb), 0.4), 0 2px 12px rgba(var(--accent-color-rgb), 0.25) !important;
-}
-
-/* Modern/Mica active - Enhanced glass */
-body.theme-mica .history-item.compact .item-actions .btn-icon.active,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon.active,
-html.theme-mica .history-item.compact .item-actions .btn-icon.active,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon.active {
-    background: rgba(var(--accent-color-rgb), 0.25) !important;
-    border-color: rgba(var(--accent-color-rgb), 0.6) !important;
-    box-shadow: 0 0 0 2px rgba(var(--accent-color-rgb), 0.3), 0 4px 12px rgba(var(--accent-color-rgb), 0.25) !important;
-}
-
-body.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon.active,
-body.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon.active,
-html.dark-mode.theme-mica .history-item.compact .item-actions .btn-icon.active,
-html.dark-mode.theme-acrylic .history-item.compact .item-actions .btn-icon.active {
-    background: rgba(var(--accent-color-rgb), 0.35) !important;
-    border-color: rgba(var(--accent-color-rgb), 0.7) !important;
-}
-
-/* Non-Modern Theme Active State - Mechanical style */
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact .item-actions .btn-icon.active {
-    background: var(--accent-color) !important;
-    color: #fff !important;
-    border-color: var(--accent-color) !important;
-    box-shadow: 2px 2px 0 0 rgba(0, 0, 0, 0.3) !important;
-    border-radius: 0 !important;
-}
-
-body:not(.theme-mica):not(.theme-acrylic) .history-item.compact .item-actions .btn-icon.active:hover {
-    background: var(--accent-color) !important;
-    color: #fff !important;
-    transform: translate(-1px, -1px) !important;
-    box-shadow: 3px 3px 0 0 rgba(0, 0, 0, 0.3) !important;
-}
-
-/* Softer themes look cleaner without button outlines on item quick actions. */
-body.theme-mica .history-item.compact .item-actions .btn-icon,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon,
-body.theme-paper .history-item.compact .item-actions .btn-icon,
-body.theme-sakura .history-item.compact .item-actions .btn-icon,
-body.theme-sticky-note .history-item.compact .item-actions .btn-icon,
-body.theme-ink .history-item.compact .item-actions .btn-icon,
-body.theme-receipt .history-item.compact .item-actions .btn-icon,
-html.theme-mica .history-item.compact .item-actions .btn-icon,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon,
-html.theme-paper .history-item.compact .item-actions .btn-icon,
-html.theme-sakura .history-item.compact .item-actions .btn-icon,
-html.theme-sticky-note .history-item.compact .item-actions .btn-icon,
-html.theme-ink .history-item.compact .item-actions .btn-icon,
-html.theme-receipt .history-item.compact .item-actions .btn-icon {
-    border: none !important;
-}
-
-body.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon:hover,
-body.theme-paper .history-item.compact .item-actions .btn-icon:hover,
-body.theme-sakura .history-item.compact .item-actions .btn-icon:hover,
-body.theme-sticky-note .history-item.compact .item-actions .btn-icon:hover,
-body.theme-ink .history-item.compact .item-actions .btn-icon:hover,
-body.theme-receipt .history-item.compact .item-actions .btn-icon:hover,
-html.theme-mica .history-item.compact .item-actions .btn-icon:hover,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon:hover,
-html.theme-paper .history-item.compact .item-actions .btn-icon:hover,
-html.theme-sakura .history-item.compact .item-actions .btn-icon:hover,
-html.theme-sticky-note .history-item.compact .item-actions .btn-icon:hover,
-html.theme-ink .history-item.compact .item-actions .btn-icon:hover,
-html.theme-receipt .history-item.compact .item-actions .btn-icon:hover,
-body.theme-mica .history-item.compact .item-actions .btn-icon.active,
-body.theme-acrylic .history-item.compact .item-actions .btn-icon.active,
-body.theme-paper .history-item.compact .item-actions .btn-icon.active,
-body.theme-sakura .history-item.compact .item-actions .btn-icon.active,
-body.theme-sticky-note .history-item.compact .item-actions .btn-icon.active,
-body.theme-ink .history-item.compact .item-actions .btn-icon.active,
-body.theme-receipt .history-item.compact .item-actions .btn-icon.active,
-html.theme-mica .history-item.compact .item-actions .btn-icon.active,
-html.theme-acrylic .history-item.compact .item-actions .btn-icon.active,
-html.theme-paper .history-item.compact .item-actions .btn-icon.active,
-html.theme-sakura .history-item.compact .item-actions .btn-icon.active,
-html.theme-sticky-note .history-item.compact .item-actions .btn-icon.active,
-html.theme-ink .history-item.compact .item-actions .btn-icon.active,
-html.theme-receipt .history-item.compact .item-actions .btn-icon.active {
-    border-color: transparent !important;
-}
-
-/* Higher-specificity override: non-modern mechanical rules also use !important. */
-body.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-body.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon,
-html.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon {
-    border: 0 !important;
-    border-width: 0 !important;
-    border-color: transparent !important;
-}
-
-body.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-html.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon:hover,
-body.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-body.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-mica:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-acrylic:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-paper:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-sakura:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-sticky-note:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-ink:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active,
-html.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-actions .btn-icon.active {
-    border: 0 !important;
-    border-width: 0 !important;
-    border-color: transparent !important;
+.history-item.compact .item-actions .btn-icon:focus-visible {
+    outline: 2px solid var(--accent-color);
+    outline-offset: 2px;
 }
 
 .history-item.compact .item-actions .btn-icon svg {
@@ -518,51 +319,28 @@ html.theme-receipt:not(.theme-retro):not(.theme-terminal) .history-item .item-ac
     height: 14px !important;
 }
 
-/* AI Dropdown Panel - Theme Adaptation */
-/* Modern/Mica/Acrylic Theme - Glass effect */
-body.theme-mica .history-item.compact .ai-options-dropdown,
-body.theme-acrylic .history-item.compact .ai-options-dropdown {
-    background: rgba(255, 255, 255, 0.85) !important;
-    border: 1px solid rgba(255, 255, 255, 0.5) !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
-    backdrop-filter: blur(12px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
-    border-radius: 8px !important;
+
+.history-item.compact .ai-options-dropdown {
+    background: var(--popover-background) !important;
+    color: var(--popover-color) !important;
+    border: var(--popover-border) !important;
+    border-radius: var(--popover-radius) !important;
+    box-shadow: var(--popover-shadow) !important;
+    backdrop-filter: var(--popover-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--popover-backdrop-filter) !important;
 }
 
-body.dark-mode.theme-mica .history-item.compact .ai-options-dropdown,
-body.dark-mode.theme-acrylic .history-item.compact .ai-options-dropdown {
-    background: rgba(45, 45, 45, 0.8) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
+.history-item.compact .ai-options-dropdown button {
+    background: var(--bg-button) !important;
+    color: var(--text-primary) !important;
+    border: var(--button-border) !important;
+    border-radius: var(--button-radius) !important;
+    box-shadow: var(--button-shadow) !important;
 }
 
-/* AI Dropdown Buttons in Modern Theme */
-body.theme-mica .history-item.compact .ai-options-dropdown button,
-body.theme-acrylic .history-item.compact .ai-options-dropdown button {
-    background: rgba(255, 255, 255, 0.5) !important;
-    border: 1px solid rgba(128, 128, 128, 0.2) !important;
-    box-shadow: none !important;
-    border-radius: 6px !important;
-}
-
-body.dark-mode.theme-mica .history-item.compact .ai-options-dropdown button,
-body.dark-mode.theme-acrylic .history-item.compact .ai-options-dropdown button {
-    background: rgba(255, 255, 255, 0.1) !important;
-    border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}
-
-/* Retro Theme - Keep mechanical style */
-body.theme-retro .history-item.compact .ai-options-dropdown {
-    background: var(--bg-element) !important;
-    border: 2px solid var(--border-dark) !important;
-    box-shadow: 4px 4px 0 0 var(--shadow-color) !important;
-    border-radius: 0 !important;
-}
-
-body.theme-retro .history-item.compact .ai-options-dropdown button {
-    box-shadow: 2px 2px 0 0 var(--shadow-color) !important;
-    border-radius: 0 !important;
+.history-item.compact .ai-options-dropdown button:hover {
+    background: var(--menu-item-hover-background) !important;
+    color: var(--menu-item-hover-color) !important;
 }
 
 /* Hide Timestamp */
@@ -717,7 +495,7 @@ body.theme-retro .history-item.compact .ai-options-dropdown button {
     left: 0;
     bottom: 0;
     width: 3px;
-    background: #007bff;
+    background: var(--accent-color);
     z-index: 10;
     pointer-events: none;
 }
@@ -798,4 +576,10 @@ html.theme-acrylic .history-item.compact {
     padding-top: 1px !important;
     padding-bottom: 1px !important;
     border-radius: 10px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .history-item.compact .item-actions .btn-icon {
+        transition: none;
+    }
 }

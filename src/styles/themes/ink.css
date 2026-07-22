@@ -20,7 +20,9 @@ body.theme-ink {
   --spacing-lg: 24px;
 
   --shell-backdrop-filter: none;
-  --shell-radius: 2px;
+  /* Paper panels remain almost square; the desktop shell needs a visible
+     edge radius to avoid looking like an unframed WebView. */
+  --shell-radius: 8px;
 
   --content-font-family: var(--font-main);
   --content-line-height: 1.75;
@@ -194,8 +196,9 @@ body.theme-ink {
 }
 
 body.theme-ink .app-container {
-  clip-path: none;
-  -webkit-clip-path: none;
+  border-radius: inherit;
+  clip-path: inset(0 round var(--shell-radius));
+  -webkit-clip-path: inset(0 round var(--shell-radius));
 }
 
 body.theme-ink #root::before,
@@ -341,15 +344,6 @@ body.dark-mode.theme-ink .search-container:has(.search-input.dropdown-open) {
 .theme-ink .history-item.selected {
   transform: none !important;
   background: var(--ink-mist) !important;
-}
-
-.theme-ink .history-item.selected .item-meta::before {
-  content: "·";
-  color: var(--ink-seal);
-  font-size: 18px;
-  line-height: 0;
-  margin-right: 4px;
-  vertical-align: middle;
 }
 
 .theme-ink .btn-icon {

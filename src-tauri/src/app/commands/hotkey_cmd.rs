@@ -83,13 +83,18 @@ fn register_unique_shortcut(
     app_handle: &AppHandle,
     hotkey: &str,
     registered: &mut HashSet<String>,
-) {
-    if let Some(shortcut) = parse_shortcut(hotkey) {
-        let key = format!("{shortcut:?}");
-        if registered.insert(key) {
-            let _ = app_handle.global_shortcut().register(shortcut);
-        }
+) -> AppResult<()> {
+    let shortcut = parse_shortcut(hotkey).ok_or_else(|| {
+        AppError::Validation(format!("快捷键格式无效: {hotkey}"))
+    })?;
+    let key = format!("{shortcut:?}");
+    if registered.insert(key) {
+        app_handle
+            .global_shortcut()
+            .register(shortcut)
+            .map_err(|e| AppError::Internal(format!("快捷键 {hotkey} 注册失败: {e}")))?;
     }
+    Ok(())
 }
 
 pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
@@ -105,22 +110,26 @@ pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
     let mut registered = HashSet::new();
 
     if !main_hotkey.is_empty() && !is_win_v_hotkey(&main_hotkey) {
-        register_unique_shortcut(app_handle, &main_hotkey, &mut registered);
+        register_unique_shortcut(app_handle, &main_hotkey, &mut registered)?;
     }
 
     // Only bind sequential paste while the mode is enabled (#125).
     // Do not keep Alt+V registered for stale queue items after the mode is turned off.
     if sequential_mode {
-        register_unique_shortcut(app_handle, &sequential_hotkey, &mut registered);
+        register_unique_shortcut(app_handle, &sequential_hotkey, &mut registered)?;
     }
 
-    register_unique_shortcut(app_handle, &rich_hotkey, &mut registered);
-    register_unique_shortcut(app_handle, &search_hotkey, &mut registered);
+    if !rich_hotkey.is_empty() {
+        register_unique_shortcut(app_handle, &rich_hotkey, &mut registered)?;
+    }
+    if !search_hotkey.is_empty() {
+        register_unique_shortcut(app_handle, &search_hotkey, &mut registered)?;
+    }
 
     for index in 0..QUICK_PASTE_KEYS.len() {
         if let Some(prefix) = quick_paste_modifier_prefix(&quick_paste_modifier) {
             let hotkey = format!("{prefix}+{}", QUICK_PASTE_KEYS[index]);
-            register_unique_shortcut(app_handle, &hotkey, &mut registered);
+            register_unique_shortcut(app_handle, &hotkey, &mut registered)?;
         }
     }
 

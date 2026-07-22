@@ -8,6 +8,7 @@ interface UseSettingsApplyOptions {
   colorMode: string;
 
   compactMode: boolean;
+  hideUnselectedItemActions: boolean;
   settingsLoaded: boolean;
   clipboardItemFontSize: number;
   clipboardTagFontSize: number;
@@ -20,6 +21,7 @@ export const useSettingsApply = ({
   colorMode,
 
   compactMode,
+  hideUnselectedItemActions,
   settingsLoaded,
   clipboardItemFontSize,
   clipboardTagFontSize,
@@ -68,6 +70,8 @@ export const useSettingsApply = ({
     } else {
       body.classList.remove("compact-mode");
     }
+
+    body.classList.toggle("hide-unselected-item-actions", hideUnselectedItemActions);
 
     if (colorMode === "light") {
       applyExplicitMode("light");
@@ -122,7 +126,7 @@ export const useSettingsApply = ({
       if (unlisten) unlisten();
       if (cleanupMedia) cleanupMedia();
     };
-  }, [theme, colorMode, settingsLoaded, compactMode]);
+  }, [theme, colorMode, settingsLoaded, compactMode, hideUnselectedItemActions]);
 
   useEffect(() => {
     if (!settingsLoaded) return;
