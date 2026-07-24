@@ -18,7 +18,6 @@ export interface FileTransferMessage {
   file_path?: string;
   _preparing?: boolean;
   _fileName?: string;
-  _fallbackSrc?: string;
 }
 
 export type FileTransferDragPayload = string[] | { paths: string[] };

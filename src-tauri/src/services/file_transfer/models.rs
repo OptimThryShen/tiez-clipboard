@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Mutex;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 use tauri::AppHandle;
 use tokio::sync::broadcast;
 
@@ -81,7 +81,26 @@ impl Default for UploadSessions {
     }
 }
 
-pub struct SharedFileState(pub Mutex<HashMap<String, String>>);
+#[derive(Clone)]
+pub struct SharedFileEntry {
+    pub path: String,
+    pub expires_at: Instant,
+}
+
+impl SharedFileEntry {
+    pub fn new(path: String, lifetime: Duration) -> Self {
+        Self {
+            path,
+            expires_at: Instant::now() + lifetime,
+        }
+    }
+
+    pub fn is_expired(&self) -> bool {
+        Instant::now() >= self.expires_at
+    }
+}
+
+pub struct SharedFileState(pub Mutex<HashMap<String, SharedFileEntry>>);
 
 pub struct ServerInfo {
     pub port: std::sync::atomic::AtomicU16,

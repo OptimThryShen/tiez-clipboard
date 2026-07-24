@@ -27,7 +27,7 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use super::models::*;
 use super::utils::*;
 use super::web_ui::render_index;
-use super::{append_message, register_received_file};
+use super::{append_message, register_received_file, register_shared_file};
 
 const TRANSFER_CHUNK_SIZE: usize = 512 * 1024;
 const MIN_DISK_RESERVE: u64 = 512 * 1024 * 1024;
@@ -113,6 +113,38 @@ fn validate_chunk(meta: &ChunkMetadata, data_len: usize) -> Result<(), &'static 
     Ok(())
 }
 
+fn parse_single_byte_range(value: &str, total_size: u64) -> Option<(u64, u64)> {
+    if total_size == 0 {
+        return None;
+    }
+
+    let value = value.strip_prefix("bytes=")?;
+    if value.contains(',') {
+        return None;
+    }
+    let (start, end) = value.split_once('-')?;
+
+    if start.is_empty() {
+        let suffix_length = end.parse::<u64>().ok()?;
+        if suffix_length == 0 {
+            return None;
+        }
+        let length = suffix_length.min(total_size);
+        return Some((total_size - length, total_size - 1));
+    }
+
+    let start = start.parse::<u64>().ok()?;
+    if start >= total_size {
+        return None;
+    }
+    let end = if end.is_empty() {
+        total_size - 1
+    } else {
+        end.parse::<u64>().ok()?.min(total_size - 1)
+    };
+    (end >= start).then_some((start, end))
+}
+
 fn request_token(request: &Request) -> Option<String> {
     if let Some(value) = request
         .headers()
@@ -166,6 +198,12 @@ fn apply_security_headers(response: &mut Response) {
             "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         ),
     );
+}
+
+pub async fn apply_download_security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    apply_security_headers(&mut response);
+    response
 }
 
 pub async fn require_session(
@@ -264,26 +302,41 @@ pub async fn poll_messages(
                 .filter(|m| m.id > last_id)
                 .map(|m| {
                     let mut m_clone = m.clone();
-                    if m.msg_type == "image"
+                    if matches!(m.msg_type.as_str(), "image" | "video" | "file")
                         && !m.content.starts_with("data:")
-                        && !m.content.starts_with("/download/")
                     {
-                        let token = format!("temp_{}", m.id);
-                        let mut filename = "image.png".to_string();
-                        let path = std::path::Path::new(&m.content);
-                        if let Some(name) = path.file_name() {
-                            filename = name.to_string_lossy().to_string();
-                        }
+                        if let Some(shared_path) = m.file_path.as_deref() {
+                            let path = std::path::Path::new(shared_path);
+                            let filename = path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy();
 
-                        let shared_files = state.app_handle.state::<SharedFileState>();
-                        if let Ok(mut map) = shared_files.0.lock() {
-                            map.insert(token.clone(), m.content.clone());
+                            if let Some(token) =
+                                register_shared_file(&state.app_handle, shared_path.to_string())
+                            {
+                                m_clone.content = format!(
+                                    "/download/{}?name={}",
+                                    token,
+                                    urlencoding::encode(&filename)
+                                );
+                            }
+                        } else if !m.content.starts_with("/download/") {
+                            let path = std::path::Path::new(&m.content);
+                            let filename = path
+                                .file_name()
+                                .unwrap_or_default()
+                                .to_string_lossy();
+                            if let Some(token) =
+                                register_shared_file(&state.app_handle, m.content.clone())
+                            {
+                                m_clone.content = format!(
+                                    "/download/{}?name={}",
+                                    token,
+                                    urlencoding::encode(&filename)
+                                );
+                            }
                         }
-                        m_clone.content = format!(
-                            "/download/{}?name={}",
-                            token,
-                            urlencoding::encode(&filename)
-                        );
                     }
                     m_clone.file_path = None;
                     m_clone
@@ -900,10 +953,10 @@ pub async fn handle_file_download_proxy(
     update_activity(app_handle);
     let shared_state = app_handle.state::<SharedFileState>();
 
-    let file_path = {
-        let guard = shared_state.0.lock().unwrap();
-        guard.get(&token).cloned()
-    };
+    let file_path = shared_state.0.lock().ok().and_then(|mut guard| {
+        guard.retain(|_, entry| !entry.is_expired());
+        guard.get(&token).map(|entry| entry.path.clone())
+    });
 
     if let Some(path_str) = file_path {
         let path = std::path::PathBuf::from(&path_str);
@@ -945,48 +998,37 @@ pub async fn handle_file_download_proxy(
                     }
                 };
                 let total_size = metadata.len();
-                let range_header = headers.get(header::RANGE).and_then(|h| h.to_str().ok());
+                if let Some(range) = headers.get(header::RANGE).and_then(|h| h.to_str().ok()) {
+                    let Some((start, end)) = parse_single_byte_range(range, total_size) else {
+                        return (
+                            StatusCode::RANGE_NOT_SATISFIABLE,
+                            [(header::CONTENT_RANGE, format!("bytes */{}", total_size))],
+                            Body::empty(),
+                        )
+                            .into_response();
+                    };
+                    let content_length = end - start + 1;
 
-                if let Some(range) = range_header {
-                    if let Some(r) = range.strip_prefix("bytes=") {
-                        let parts: Vec<&str> = r.split('-').collect();
-                        if parts.len() == 2 {
-                            let start = parts[0].parse::<u64>().unwrap_or(0);
-                            let end = parts[1].parse::<u64>().unwrap_or(total_size - 1);
+                    if file.seek(SeekFrom::Start(start)).await.is_ok() {
+                        let stream =
+                            ReaderStream::with_capacity(file.take(content_length), 64 * 1024);
+                        let body = Body::from_stream(stream);
 
-                            if start < total_size {
-                                let end = if end >= total_size {
-                                    total_size - 1
-                                } else {
-                                    end
-                                };
-                                let content_length = end - start + 1;
-
-                                if let Ok(_) = file.seek(SeekFrom::Start(start)).await {
-                                    let stream = ReaderStream::with_capacity(
-                                        file.take(content_length),
-                                        64 * 1024,
-                                    );
-                                    let body = Body::from_stream(stream);
-
-                                    return (
-                                        StatusCode::PARTIAL_CONTENT,
-                                        [
-                                            (header::CONTENT_TYPE, mime),
-                                            (header::CONTENT_DISPOSITION, disposition),
-                                            (header::ACCEPT_RANGES, "bytes".to_string()),
-                                            (
-                                                header::CONTENT_RANGE,
-                                                format!("bytes {}-{}/{}", start, end, total_size),
-                                            ),
-                                            (header::CONTENT_LENGTH, content_length.to_string()),
-                                        ],
-                                        body,
-                                    )
-                                        .into_response();
-                                }
-                            }
-                        }
+                        return (
+                            StatusCode::PARTIAL_CONTENT,
+                            [
+                                (header::CONTENT_TYPE, mime),
+                                (header::CONTENT_DISPOSITION, disposition),
+                                (header::ACCEPT_RANGES, "bytes".to_string()),
+                                (
+                                    header::CONTENT_RANGE,
+                                    format!("bytes {}-{}/{}", start, end, total_size),
+                                ),
+                                (header::CONTENT_LENGTH, content_length.to_string()),
+                            ],
+                            body,
+                        )
+                            .into_response();
                     }
                 }
 
@@ -1086,5 +1128,18 @@ mod tests {
             content_type: Some("application/octet-stream".to_string()),
         };
         assert!(validate_chunk(&large_metadata, TRANSFER_CHUNK_SIZE).is_ok());
+    }
+
+    #[test]
+    fn byte_ranges_handle_open_ended_suffix_and_invalid_inputs() {
+        assert_eq!(parse_single_byte_range("bytes=10-19", 100), Some((10, 19)));
+        assert_eq!(parse_single_byte_range("bytes=90-", 100), Some((90, 99)));
+        assert_eq!(parse_single_byte_range("bytes=-10", 100), Some((90, 99)));
+        assert_eq!(parse_single_byte_range("bytes=-200", 100), Some((0, 99)));
+        assert_eq!(parse_single_byte_range("bytes=90-200", 100), Some((90, 99)));
+        assert_eq!(parse_single_byte_range("bytes=20-10", 100), None);
+        assert_eq!(parse_single_byte_range("bytes=100-", 100), None);
+        assert_eq!(parse_single_byte_range("bytes=0-1,4-5", 100), None);
+        assert_eq!(parse_single_byte_range("bytes=0-", 0), None);
     }
 }

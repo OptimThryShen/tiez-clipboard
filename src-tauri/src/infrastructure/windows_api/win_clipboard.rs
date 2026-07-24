@@ -31,58 +31,45 @@ fn read_u32_le(raw_data: &[u8], offset: usize) -> Option<u32> {
     Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
-fn detect_appended_bitfields_masks(
+fn read_u16_le(raw_data: &[u8], offset: usize) -> Option<u16> {
+    let bytes = raw_data.get(offset..offset + 2)?;
+    Some(u16::from_le_bytes([bytes[0], bytes[1]]))
+}
+
+fn read_i32_le(raw_data: &[u8], offset: usize) -> Option<i32> {
+    read_u32_le(raw_data, offset).map(|value| i32::from_le_bytes(value.to_le_bytes()))
+}
+
+fn masked_component(pixel: u32, mask: u32) -> u8 {
+    if mask == 0 {
+        return 0;
+    }
+    let shift = mask.trailing_zeros();
+    let max_value = mask >> shift;
+    let value = (pixel & mask) >> shift;
+    if max_value == 0 {
+        0
+    } else {
+        (((u64::from(value) * 255) + u64::from(max_value) / 2) / u64::from(max_value)) as u8
+    }
+}
+
+fn redundant_extended_masks_size(
     raw_data: &[u8],
-    pixel_data_offset: usize,
-    bit_count: usize,
-    compression: u32,
+    offset: usize,
+    red_mask: u32,
+    green_mask: u32,
+    blue_mask: u32,
+    alpha_mask: u32,
 ) -> usize {
-    const BI_BITFIELDS: u32 = 3;
-    const BI_ALPHABITFIELDS: u32 = 6;
-
-    if compression != BI_BITFIELDS && compression != BI_ALPHABITFIELDS {
+    if read_u32_le(raw_data, offset) != Some(red_mask)
+        || read_u32_le(raw_data, offset + 4) != Some(green_mask)
+        || read_u32_le(raw_data, offset + 8) != Some(blue_mask)
+    {
         return 0;
     }
 
-    if bit_count != 16 && bit_count != 24 && bit_count != 32 {
-        return 0;
-    }
-
-    let Some(red_mask) = read_u32_le(raw_data, pixel_data_offset) else {
-        return 0;
-    };
-    let Some(green_mask) = read_u32_le(raw_data, pixel_data_offset + 4) else {
-        return 0;
-    };
-    let Some(blue_mask) = read_u32_le(raw_data, pixel_data_offset + 8) else {
-        return 0;
-    };
-
-    let looks_like_known_rgb_masks = matches!(
-        (red_mask, green_mask, blue_mask),
-        (0x00ff0000, 0x0000ff00, 0x000000ff)
-            | (0x000000ff, 0x0000ff00, 0x00ff0000)
-            | (0x00007c00, 0x000003e0, 0x0000001f)
-            | (0x0000f800, 0x000007e0, 0x0000001f)
-    );
-
-    if !looks_like_known_rgb_masks {
-        return 0;
-    }
-
-    let alpha_mask = read_u32_le(raw_data, pixel_data_offset + 12);
-    let looks_like_known_alpha_mask = matches!(
-        alpha_mask,
-        Some(0x00000000) | Some(0xff000000) | Some(0x00008000)
-    );
-
-    if compression == BI_ALPHABITFIELDS {
-        if looks_like_known_alpha_mask {
-            16
-        } else {
-            0
-        }
-    } else if looks_like_known_alpha_mask {
+    if alpha_mask != 0 && read_u32_le(raw_data, offset + 12) == Some(alpha_mask) {
         16
     } else {
         12
@@ -103,6 +90,8 @@ pub struct NamedClipboardFormat {
 }
 
 unsafe fn copy_hglobal_bytes(h_data: windows::Win32::Foundation::HANDLE) -> Option<Vec<u8>> {
+    const MAX_CLIPBOARD_GLOBAL_BYTES: usize = 256 * 1024 * 1024;
+
     if h_data.is_invalid() {
         return None;
     }
@@ -114,6 +103,10 @@ unsafe fn copy_hglobal_bytes(h_data: windows::Win32::Foundation::HANDLE) -> Opti
     }
 
     let data_size = GlobalSize(h_global);
+    if data_size == 0 || data_size > MAX_CLIPBOARD_GLOBAL_BYTES {
+        let _ = GlobalUnlock(h_global);
+        return None;
+    }
     let mut buffer = vec![0u8; data_size];
     std::ptr::copy_nonoverlapping(p_data as *const u8, buffer.as_mut_ptr(), data_size);
     let _ = GlobalUnlock(h_global);
@@ -152,242 +145,354 @@ unsafe fn set_named_clipboard_format_bytes(format_id: u32, data: &[u8]) -> Resul
     Ok(())
 }
 
-/// Try to get image from Windows clipboard using native API
+const MAX_CLIPBOARD_IMAGE_PIXELS: usize = 32 * 1024 * 1024;
+const MAX_CLIPBOARD_IMAGE_DIMENSION: usize = 32_768;
+
+fn decode_dib_bytes(raw_data: &[u8]) -> Option<ImageData> {
+    const BI_RGB: u32 = 0;
+    const BI_BITFIELDS: u32 = 3;
+    const BI_ALPHABITFIELDS: u32 = 6;
+
+    if raw_data.len() < std::mem::size_of::<BITMAPINFOHEADER>() {
+        return None;
+    }
+
+    let header_size = read_u32_le(raw_data, 0)? as usize;
+    if header_size < std::mem::size_of::<BITMAPINFOHEADER>() || header_size > raw_data.len() {
+        return None;
+    }
+
+    let width_raw = read_i32_le(raw_data, 4)?;
+    let height_raw = read_i32_le(raw_data, 8)?;
+    if width_raw <= 0 || height_raw == 0 {
+        return None;
+    }
+    let width = usize::try_from(width_raw).ok()?;
+    let height = usize::try_from(height_raw.checked_abs()?).ok()?;
+    if width > MAX_CLIPBOARD_IMAGE_DIMENSION || height > MAX_CLIPBOARD_IMAGE_DIMENSION {
+        return None;
+    }
+    let pixel_count = width.checked_mul(height)?;
+    if pixel_count == 0 || pixel_count > MAX_CLIPBOARD_IMAGE_PIXELS {
+        return None;
+    }
+
+    if read_u16_le(raw_data, 12)? != 1 {
+        return None;
+    }
+    let bit_count = usize::from(read_u16_le(raw_data, 14)?);
+    if !matches!(bit_count, 1 | 4 | 8 | 16 | 24 | 32) {
+        return None;
+    }
+    let compression = read_u32_le(raw_data, 16)?;
+    if !matches!(compression, BI_RGB | BI_BITFIELDS | BI_ALPHABITFIELDS)
+        || (bit_count <= 8 && compression != BI_RGB)
+    {
+        return None;
+    }
+
+    let mut external_mask_size = 0usize;
+    let (red_mask, green_mask, blue_mask, alpha_mask) =
+        if matches!(compression, BI_BITFIELDS | BI_ALPHABITFIELDS) {
+            if !matches!(bit_count, 16 | 24 | 32) {
+                return None;
+            }
+
+            if header_size >= 52 {
+                (
+                    read_u32_le(raw_data, 40)?,
+                    read_u32_le(raw_data, 44)?,
+                    read_u32_le(raw_data, 48)?,
+                    if header_size >= 56 {
+                        read_u32_le(raw_data, 52).unwrap_or(0)
+                    } else {
+                        0
+                    },
+                )
+            } else if header_size == 40 {
+                let red = read_u32_le(raw_data, header_size)?;
+                let green = read_u32_le(raw_data, header_size + 4)?;
+                let blue = read_u32_le(raw_data, header_size + 8)?;
+                let has_alpha = compression == BI_ALPHABITFIELDS;
+                let possible_alpha = if has_alpha {
+                    read_u32_le(raw_data, header_size + 12)?
+                } else {
+                    0
+                };
+                external_mask_size = if has_alpha { 16 } else { 12 };
+                (red, green, blue, if has_alpha { possible_alpha } else { 0 })
+            } else {
+                return None;
+            }
+        } else {
+            match bit_count {
+                16 => (0x00007c00, 0x000003e0, 0x0000001f, 0),
+                24 | 32 => (0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000),
+                _ => (0, 0, 0, 0),
+            }
+        };
+
+    if matches!(compression, BI_BITFIELDS | BI_ALPHABITFIELDS)
+        && (red_mask == 0 || green_mask == 0 || blue_mask == 0)
+    {
+        return None;
+    }
+
+    let redundant_mask_size =
+        if header_size > 40 && matches!(compression, BI_BITFIELDS | BI_ALPHABITFIELDS) {
+            redundant_extended_masks_size(
+                raw_data,
+                header_size,
+                red_mask,
+                green_mask,
+                blue_mask,
+                alpha_mask,
+            )
+        } else {
+            0
+        };
+
+    let palette_entries = if bit_count <= 8 {
+        let declared = read_u32_le(raw_data, 32)? as usize;
+        let maximum = 1usize.checked_shl(bit_count as u32)?;
+        if declared == 0 {
+            maximum
+        } else if declared <= maximum {
+            declared
+        } else {
+            return None;
+        }
+    } else {
+        0
+    };
+    let palette_size = palette_entries.checked_mul(4)?;
+    let palette_offset = header_size
+        .checked_add(external_mask_size)?
+        .checked_add(redundant_mask_size)?;
+    let pixel_data_offset = palette_offset.checked_add(palette_size)?;
+    if pixel_data_offset > raw_data.len() {
+        return None;
+    }
+
+    let row_bits = width.checked_mul(bit_count)?;
+    let row_stride_formula = row_bits.checked_add(31)?.checked_div(32)?.checked_mul(4)?;
+    let available = raw_data.len().checked_sub(pixel_data_offset)?;
+    let size_image = read_u32_le(raw_data, 20)? as usize;
+    let row_stride_from_header = if size_image > 0 && size_image % height == 0 {
+        let candidate = size_image / height;
+        let candidate_size = candidate.checked_mul(height)?;
+        if candidate >= row_stride_formula
+            && candidate <= row_stride_formula.saturating_add(4096)
+            && candidate_size <= available
+        {
+            Some(candidate)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let row_stride = row_stride_from_header.unwrap_or(row_stride_formula);
+    let required_pixel_bytes = row_stride.checked_mul(height)?;
+    if required_pixel_bytes > available {
+        return None;
+    }
+
+    let rgba_len = pixel_count.checked_mul(4)?;
+    let mut rgba_data = vec![0u8; rgba_len];
+    let raw_bi_rgb_alpha = bit_count == 32 && compression == BI_RGB;
+    let mut alpha_non_zero = false;
+
+    for y in 0..height {
+        let source_y = if height_raw > 0 { height - 1 - y } else { y };
+        let row_start = pixel_data_offset.checked_add(source_y.checked_mul(row_stride)?)?;
+        let row_end = row_start.checked_add(row_stride)?;
+        let row = raw_data.get(row_start..row_end)?;
+
+        for x in 0..width {
+            let destination = y.checked_mul(width)?.checked_add(x)?.checked_mul(4)?;
+            let (red, green, blue, alpha) = match bit_count {
+                1 | 4 | 8 => {
+                    let palette_index = match bit_count {
+                        1 => (row.get(x / 8)? >> (7 - (x % 8))) & 0x01,
+                        4 => {
+                            let byte = *row.get(x / 2)?;
+                            if x % 2 == 0 {
+                                byte >> 4
+                            } else {
+                                byte & 0x0f
+                            }
+                        }
+                        8 => *row.get(x)?,
+                        _ => unreachable!(),
+                    } as usize;
+                    if palette_index >= palette_entries {
+                        return None;
+                    }
+                    let color_offset = palette_offset.checked_add(palette_index.checked_mul(4)?)?;
+                    let color = raw_data.get(color_offset..color_offset + 4)?;
+                    (color[2], color[1], color[0], 255)
+                }
+                16 => {
+                    let offset = x.checked_mul(2)?;
+                    let bytes = row.get(offset..offset + 2)?;
+                    let pixel = u16::from_le_bytes([bytes[0], bytes[1]]) as u32;
+                    (
+                        masked_component(pixel, red_mask),
+                        masked_component(pixel, green_mask),
+                        masked_component(pixel, blue_mask),
+                        if alpha_mask == 0 {
+                            255
+                        } else {
+                            masked_component(pixel, alpha_mask)
+                        },
+                    )
+                }
+                24 => {
+                    let offset = x.checked_mul(3)?;
+                    let bytes = row.get(offset..offset + 3)?;
+                    if compression == BI_RGB {
+                        (bytes[2], bytes[1], bytes[0], 255)
+                    } else {
+                        let pixel = u32::from(bytes[0])
+                            | (u32::from(bytes[1]) << 8)
+                            | (u32::from(bytes[2]) << 16);
+                        (
+                            masked_component(pixel, red_mask),
+                            masked_component(pixel, green_mask),
+                            masked_component(pixel, blue_mask),
+                            if alpha_mask == 0 {
+                                255
+                            } else {
+                                masked_component(pixel, alpha_mask)
+                            },
+                        )
+                    }
+                }
+                32 => {
+                    let offset = x.checked_mul(4)?;
+                    let bytes = row.get(offset..offset + 4)?;
+                    let pixel = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                    let alpha = if raw_bi_rgb_alpha {
+                        bytes[3]
+                    } else if alpha_mask == 0 {
+                        255
+                    } else {
+                        masked_component(pixel, alpha_mask)
+                    };
+                    (
+                        masked_component(pixel, red_mask),
+                        masked_component(pixel, green_mask),
+                        masked_component(pixel, blue_mask),
+                        alpha,
+                    )
+                }
+                _ => return None,
+            };
+
+            rgba_data[destination] = red;
+            rgba_data[destination + 1] = green;
+            rgba_data[destination + 2] = blue;
+            rgba_data[destination + 3] = alpha;
+            alpha_non_zero |= alpha != 0;
+        }
+    }
+
+    if raw_bi_rgb_alpha && !alpha_non_zero {
+        for alpha in rgba_data.iter_mut().skip(3).step_by(4) {
+            *alpha = 255;
+        }
+    }
+
+    Some(ImageData {
+        width,
+        height,
+        bytes: rgba_data,
+    })
+}
+
+/// Try to get image from Windows clipboard using native API.
 pub unsafe fn get_clipboard_image() -> Option<ImageData> {
-    // Try to open clipboard
     if OpenClipboard(None).is_err() {
         return None;
     }
 
-    // Try CF_DIBV5 first (newer format), then CF_DIB
-    let h_dib = match GetClipboardData(CF_DIBV5) {
-        Ok(handle) if !handle.is_invalid() => handle,
-        _ => match GetClipboardData(CF_DIB) {
+    let raw_data = (|| {
+        let handle = match GetClipboardData(CF_DIBV5) {
             Ok(handle) if !handle.is_invalid() => handle,
-            _ => {
-                let _ = CloseClipboard();
-                return None;
-            }
-        },
-    };
-
-    // Lock the data
-    let h_global = HGLOBAL(h_dib.0 as *mut _);
-    let p_dib = GlobalLock(h_global);
-    if p_dib.is_null() {
-        let _ = CloseClipboard();
-        return None;
-    }
-
-    // Get size and copy raw data to local buffer to minimize lock time
-    let data_size = GlobalSize(h_global);
-    let mut raw_data = vec![0u8; data_size];
-    std::ptr::copy_nonoverlapping(p_dib as *const u8, raw_data.as_mut_ptr(), data_size);
-
-    // Unlock and Close Clipboard IMMEDIATELY
-    let _ = GlobalUnlock(h_global);
+            _ => match GetClipboardData(CF_DIB) {
+                Ok(handle) if !handle.is_invalid() => handle,
+                _ => return None,
+            },
+        };
+        copy_hglobal_bytes(handle)
+    })();
     let _ = CloseClipboard();
 
-    // Process the data offline (without holding clipboard lock)
-    // Wrap in closure just to use ? or early return logic easily
-    let result = (|| {
-        // Read BITMAPINFOHEADER
-        if raw_data.len() < std::mem::size_of::<BITMAPINFOHEADER>() {
-            return None;
-        }
-        let p_raw = raw_data.as_ptr();
-        let header = *(p_raw as *const BITMAPINFOHEADER);
-
-        let width = header.bi_width.abs() as usize;
-        let height = header.bi_height.abs() as usize;
-        let bit_count = header.bi_bit_count as usize;
-
-        // Calculate sizes
-        let header_size = header.bi_size as usize;
-
-        // Safety check for header size
-        if header_size > raw_data.len() {
-            return None;
-        }
-
-        let color_table_size = if bit_count <= 8 {
-            let num_colors = if header.bi_clr_used != 0 {
-                header.bi_clr_used as usize
-            } else {
-                1 << bit_count
-            };
-            num_colors * 4 // Each color is 4 bytes (RGBQUAD)
-        } else {
-            0
-        };
-
-        // For BITMAPINFOHEADER (40 bytes), BI_BITFIELDS/BI_ALPHABITFIELDS store
-        // channel masks immediately after the header. If we don't skip them,
-        // pixel data starts with mask bytes -> image appears horizontally shifted.
-        const BI_BITFIELDS: u32 = 3;
-        const BI_ALPHABITFIELDS: u32 = 6;
-        let bitfields_mask_size = if header.bi_size == 40 {
-            match header.bi_compression {
-                BI_BITFIELDS => 12,      // R/G/B masks (3 * DWORD)
-                BI_ALPHABITFIELDS => 16, // R/G/B/A masks (4 * DWORD)
-                _ => 0,
-            }
-        } else {
-            0
-        };
-
-        // Pointer to pixel data
-        let base_pixel_data_offset = header_size + color_table_size + bitfields_mask_size;
-        let extra_mask_size = detect_appended_bitfields_masks(
-            &raw_data,
-            base_pixel_data_offset,
-            bit_count,
-            header.bi_compression,
-        );
-        let pixel_data_offset = base_pixel_data_offset + extra_mask_size;
-
-        if pixel_data_offset > raw_data.len() {
-            return None;
-        }
-
-        let pixel_data_ptr = p_raw.add(pixel_data_offset);
-
-        // Calculate row stride.
-        // Prefer header-reported / buffer-derived stride when valid, because some producers
-        // (e.g. Office clipboard) may use wider row alignment than the classic formula.
-        let row_stride_formula = ((width * bit_count + 31) / 32) * 4;
-        let row_stride_from_header = if header.bi_size_image > 0 && height > 0 {
-            let img_size = header.bi_size_image as usize;
-            if img_size % height == 0 {
-                let candidate = img_size / height;
-                if candidate >= row_stride_formula {
-                    Some(candidate)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let row_stride_from_buffer = if height > 0 {
-            let available = raw_data.len().saturating_sub(pixel_data_offset);
-            let candidate = (available / height) & !3usize; // keep DWORD alignment
-                                                            // Keep candidate in a sane range to avoid accidental over-read due to oversized HGLOBAL.
-            if candidate >= row_stride_formula && candidate <= row_stride_formula + 256 {
-                Some(candidate)
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-        let row_stride = row_stride_from_header
-            .or(row_stride_from_buffer)
-            .unwrap_or(row_stride_formula);
-        let required_pixel_data_size = row_stride * height;
-
-        if pixel_data_offset + required_pixel_data_size > raw_data.len() {
-            // Incomplete data
-            return None;
-        }
-
-        // Convert to RGBA
-        let mut rgba_data = vec![0u8; width * height * 4];
-
-        if bit_count == 32 {
-            // 32-bit BGRA
-            let mut alpha_non_zero = 0usize;
-            for y in 0..height {
-                // DIB is bottom-up, so flip vertically
-                let src_y = if header.bi_height > 0 {
-                    height - 1 - y
-                } else {
-                    y
-                };
-                let src_row = pixel_data_ptr.add(src_y * row_stride);
-                let dst_row = (width * 4) * y;
-
-                for x in 0..width {
-                    let src_pixel = src_row.add(x * 4);
-                    let dst_pixel = dst_row + x * 4;
-
-                    rgba_data[dst_pixel] = *src_pixel.add(2); // R
-                    rgba_data[dst_pixel + 1] = *src_pixel.add(1); // G
-                    rgba_data[dst_pixel + 2] = *src_pixel; // B
-                    let alpha = *src_pixel.add(3);
-                    rgba_data[dst_pixel + 3] = alpha; // A
-                    if alpha != 0 {
-                        alpha_non_zero += 1;
-                    }
-                }
-            }
-
-            // Some producers (notably Office clipboard formats) put valid RGB data
-            // with an all-zero alpha channel. Force opaque alpha in that case.
-            if alpha_non_zero == 0 {
-                for i in (3..rgba_data.len()).step_by(4) {
-                    rgba_data[i] = 255;
-                }
-            }
-        } else if bit_count == 24 {
-            // 24-bit BGR
-            for y in 0..height {
-                let src_y = if header.bi_height > 0 {
-                    height - 1 - y
-                } else {
-                    y
-                };
-                let src_row = pixel_data_ptr.add(src_y * row_stride);
-                let dst_row = (width * 4) * y;
-
-                for x in 0..width {
-                    let src_pixel = src_row.add(x * 3);
-                    let dst_pixel = dst_row + x * 4;
-
-                    rgba_data[dst_pixel] = *src_pixel.add(2); // R
-                    rgba_data[dst_pixel + 1] = *src_pixel.add(1); // G
-                    rgba_data[dst_pixel + 2] = *src_pixel; // B
-                    rgba_data[dst_pixel + 3] = 255; // A (opaque)
-                }
-            }
-        } else {
-            // println!("❌ Unsupported bit depth: {}", bit_count); // Fail silently or log
-            return None;
-        }
-
-        Some(ImageData {
-            width,
-            height,
-            bytes: rgba_data,
-        })
-    })();
-
-    result
+    raw_data.as_deref().and_then(decode_dib_bytes)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::detect_appended_bitfields_masks;
+    use super::decode_dib_bytes;
 
-    #[test]
-    fn detects_extra_32bit_masks_after_extended_header() {
-        let mut raw = vec![0u8; 124 + 16 + 64];
-        raw[124..128].copy_from_slice(&0x00ff0000u32.to_le_bytes());
-        raw[128..132].copy_from_slice(&0x0000ff00u32.to_le_bytes());
-        raw[132..136].copy_from_slice(&0x000000ffu32.to_le_bytes());
-        raw[136..140].copy_from_slice(&0xff000000u32.to_le_bytes());
-
-        let extra = detect_appended_bitfields_masks(&raw, 124, 32, 3);
-        assert_eq!(extra, 16);
+    fn dib_header(
+        width: i32,
+        height: i32,
+        bit_count: u16,
+        compression: u32,
+        image_size: u32,
+        color_count: u32,
+    ) -> Vec<u8> {
+        let mut header = vec![0u8; 40];
+        header[0..4].copy_from_slice(&40u32.to_le_bytes());
+        header[4..8].copy_from_slice(&width.to_le_bytes());
+        header[8..12].copy_from_slice(&height.to_le_bytes());
+        header[12..14].copy_from_slice(&1u16.to_le_bytes());
+        header[14..16].copy_from_slice(&bit_count.to_le_bytes());
+        header[16..20].copy_from_slice(&compression.to_le_bytes());
+        header[20..24].copy_from_slice(&image_size.to_le_bytes());
+        header[32..36].copy_from_slice(&color_count.to_le_bytes());
+        header
     }
 
     #[test]
-    fn ignores_normal_pixel_bytes() {
-        let raw = vec![0x11u8; 128];
-        let extra = detect_appended_bitfields_masks(&raw, 40, 32, 3);
-        assert_eq!(extra, 0);
+    fn decodes_32bit_bi_rgb_and_repairs_zero_alpha() {
+        let mut dib = dib_header(2, 1, 32, 0, 8, 0);
+        dib.extend_from_slice(&[0, 0, 255, 0, 0, 255, 0, 0]);
+
+        let image = decode_dib_bytes(&dib).expect("32-bit DIB should decode");
+        assert_eq!((image.width, image.height), (2, 1));
+        assert_eq!(image.bytes, vec![255, 0, 0, 255, 0, 255, 0, 255]);
+    }
+
+    #[test]
+    fn decodes_top_down_24bit_rows_with_padding() {
+        let mut dib = dib_header(1, -2, 24, 0, 8, 0);
+        dib.extend_from_slice(&[0, 0, 255, 0, 255, 0, 0, 0]);
+
+        let image = decode_dib_bytes(&dib).expect("24-bit DIB should decode");
+        assert_eq!((image.width, image.height), (1, 2));
+        assert_eq!(image.bytes, vec![255, 0, 0, 255, 0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn decodes_16bit_bitfields() {
+        let mut dib = dib_header(1, 1, 16, 3, 4, 0);
+        dib.extend_from_slice(&0x0000f800u32.to_le_bytes());
+        dib.extend_from_slice(&0x000007e0u32.to_le_bytes());
+        dib.extend_from_slice(&0x0000001fu32.to_le_bytes());
+        dib.extend_from_slice(&[0x00, 0xf8, 0x00, 0x00]);
+
+        let image = decode_dib_bytes(&dib).expect("16-bit bitfields DIB should decode");
+        assert_eq!(image.bytes, vec![255, 0, 0, 255]);
+    }
+
+    #[test]
+    fn rejects_invalid_or_oversized_dimensions() {
+        assert!(decode_dib_bytes(&dib_header(0, 1, 32, 0, 0, 0)).is_none());
+        assert!(decode_dib_bytes(&dib_header(i32::MAX, 1, 32, 0, 0, 0)).is_none());
+        assert!(decode_dib_bytes(&dib_header(1, i32::MIN, 32, 0, 0, 0)).is_none());
     }
 }
 const CF_HDROP: u32 = 15;

@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [master, macos, refactor/unified-platform]
   pull_request:
     branches: [master, macos, refactor/unified-platform]
   workflow_dispatch:

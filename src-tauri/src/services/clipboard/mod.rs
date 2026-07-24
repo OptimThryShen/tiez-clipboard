@@ -237,6 +237,27 @@ fn encode_clipboard_image_to_png(
     Some(bytes)
 }
 
+#[cfg(target_os = "windows")]
+fn capture_native_windows_image_png() -> Option<(Vec<u8>, u64)> {
+    for attempt in 0..3 {
+        let image =
+            unsafe { crate::infrastructure::windows_api::win_clipboard::get_clipboard_image() };
+        if let Some(image) = image {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            use std::hash::{Hash, Hasher};
+            image.bytes.hash(&mut hasher);
+            let hash = hasher.finish();
+            let png = encode_clipboard_image_to_png(image.width, image.height, &image.bytes)?;
+            return Some((png, hash));
+        }
+
+        if attempt < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(35));
+        }
+    }
+    None
+}
+
 pub fn start_clipboard_monitor(app_handle: AppHandle) {
     use std::sync::{Arc, Mutex};
 
@@ -288,7 +309,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         let clipboard_files_snapshot =
             crate::infrastructure::macos_api::clipboard::get_clipboard_files();
         #[cfg(target_os = "windows")]
-        let clipboard_files_snapshot = unsafe {
+        let mut clipboard_files_snapshot = unsafe {
             crate::infrastructure::windows_api::win_clipboard::get_clipboard_files()
         };
 
@@ -306,6 +327,11 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                 100
             };
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            // Explorer may notify listeners before CF_HDROP can be opened. Retry
+            // after the existing stabilization delay so file copies are not lost.
+            clipboard_files_snapshot = unsafe {
+                crate::infrastructure::windows_api::win_clipboard::get_clipboard_files()
+            };
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -327,6 +353,14 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             .and_then(|cb| cb.get_image().ok());
         #[cfg(not(target_os = "macos"))]
         let clipboard_image = clipboard.get_image().ok();
+        #[cfg(target_os = "windows")]
+        let native_clipboard_image = if clipboard_files_snapshot.is_none()
+            && clipboard_image.is_none()
+        {
+            capture_native_windows_image_png()
+        } else {
+            None
+        };
 
         // Calculate hash of current clipboard content
         let current_content_hash = {
@@ -388,6 +422,10 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
 
             if let Some(image) = &clipboard_image {
                 image.bytes.hash(&mut hasher);
+            }
+            #[cfg(target_os = "windows")]
+            if let Some((_, hash)) = &native_clipboard_image {
+                hash.hash(&mut hasher);
             }
 
             hasher.finish()
@@ -683,6 +721,29 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                                 handled = true;
                             }
                             monitor_state.last_image_hash = hash;
+                        }
+                    }
+
+                    #[cfg(target_os = "windows")]
+                    if !handled && clipboard_image.is_none() {
+                        if let Some((png_bytes, hash)) = native_clipboard_image {
+                            if hash != monitor_state.last_image_hash {
+                                if recent_image_echo(hash) {
+                                    crate::LAST_APP_SET_HASH.store(0, Ordering::SeqCst);
+                                    crate::LAST_APP_SET_HASH_ALT.store(0, Ordering::SeqCst);
+                                } else {
+                                    process_new_entry_with_source(
+                                        &app,
+                                        ClipboardData::Image {
+                                            bytes: png_bytes,
+                                            extension: "png".to_string(),
+                                        },
+                                        source_snapshot.clone(),
+                                    );
+                                    handled = true;
+                                }
+                                monitor_state.last_image_hash = hash;
+                            }
                         }
                     }
                 }

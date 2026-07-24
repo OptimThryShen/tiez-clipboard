@@ -12,7 +12,7 @@ use axum::{
 use base64::Engine;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::broadcast;
 use tokio::task::JoinHandle;
@@ -26,6 +26,32 @@ pub use models::*;
 pub use utils::*;
 
 pub static SERVER_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
+const SHARED_FILE_TOKEN_LIFETIME: Duration = Duration::from_secs(8 * 60 * 60);
+
+pub(super) fn register_shared_file(app_handle: &AppHandle, file_path: String) -> Option<String> {
+    if !std::path::Path::new(&file_path).is_file() {
+        return None;
+    }
+
+    let shared_state = app_handle.state::<SharedFileState>();
+    let mut files = shared_state.0.lock().ok()?;
+    files.retain(|_, entry| !entry.is_expired());
+
+    let token = uuid::Uuid::new_v4().to_string();
+    files.insert(
+        token.clone(),
+        SharedFileEntry::new(file_path, SHARED_FILE_TOKEN_LIFETIME),
+    );
+    Some(token)
+}
+
+fn clear_shared_files(app_handle: &AppHandle) {
+    if let Some(shared_state) = app_handle.try_state::<SharedFileState>() {
+        if let Ok(mut files) = shared_state.0.lock() {
+            files.clear();
+        }
+    }
+}
 
 #[tauri::command]
 pub fn get_local_ip_addr(app_handle: AppHandle) -> String {
@@ -95,13 +121,11 @@ pub fn get_chat_history(app_handle: AppHandle) -> Vec<Message> {
 
 #[tauri::command]
 pub fn send_file_to_client(app_handle: AppHandle, file_path: String) -> Result<(), String> {
-    let shared_state = app_handle.state::<SharedFileState>();
-    update_activity(&app_handle);
-
-    let token = uuid::Uuid::new_v4().to_string();
-    if let Ok(mut map) = shared_state.0.lock() {
-        map.insert(token.clone(), file_path.clone());
+    if !std::path::Path::new(&file_path).is_file() {
+        return Err("File does not exist or is not a regular file".to_string());
     }
+
+    update_activity(&app_handle);
 
     let server_info = app_handle.state::<ServerInfo>();
     let port = server_info.port.load(Ordering::Relaxed);
@@ -178,6 +202,10 @@ pub fn save_temp_image(app_handle: AppHandle, base64_data: String) -> Result<Str
 
 #[tauri::command]
 pub async fn get_download_url(app_handle: AppHandle, file_path: String) -> Result<String, String> {
+    if !std::path::Path::new(&file_path).is_file() {
+        return Err("File does not exist or is not a regular file".to_string());
+    }
+
     let port = {
         let server_info = app_handle.state::<ServerInfo>();
         let p = server_info.port.load(Ordering::Relaxed);
@@ -193,11 +221,8 @@ pub async fn get_download_url(app_handle: AppHandle, file_path: String) -> Resul
     if port == 0 {
         return Err("Failed to start server".to_string());
     }
-    let shared_state = app_handle.state::<SharedFileState>();
-    let token = format!("fallback_{}", uuid::Uuid::new_v4());
-    if let Ok(mut map) = shared_state.0.lock() {
-        map.insert(token.clone(), file_path.clone());
-    }
+    let token = register_shared_file(&app_handle, file_path.clone())
+        .ok_or_else(|| "Failed to register shared file".to_string())?;
     let filename = std::path::Path::new(&file_path)
         .file_name()
         .unwrap_or_default()
@@ -283,6 +308,7 @@ pub async fn toggle_file_server(
                 let mut token_guard = server_info.access_token.lock().unwrap();
                 *token_guard = String::new();
             }
+            clear_shared_files(&app_handle);
             let _ = app_handle.emit(
                 "file-server-status-changed",
                 StatusPayload {
@@ -311,7 +337,7 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         app_handle: app_handle.clone(),
         ws_tx: ws_tx.clone(),
     });
-    let app = Router::new()
+    let protected_routes = Router::new()
         .route("/", get(handlers::index))
         .route("/ws", get(handlers::ws_handler))
         .route("/poll", get(handlers::poll_messages))
@@ -324,16 +350,27 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         .route("/share-chunk", options(handlers::share_chunk_options))
         .route("/send_text", post(handlers::handle_text))
         .route("/send-text", post(handlers::handle_text))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            handlers::require_session,
+        ));
+
+    // A download token is an unguessable, path-scoped capability with its own expiry.
+    // Keeping this route outside the session middleware lets native <img>/<video>
+    // elements load previews without exposing the broader transfer-session secret.
+    let download_route = Router::new()
         .route(
             "/download/{token}",
             get(handlers::handle_file_download_proxy),
         )
-        .with_state(state.clone())
-        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
-        .layer(middleware::from_fn_with_state(
-            state,
-            handlers::require_session,
+        .layer(middleware::from_fn(
+            handlers::apply_download_security_headers,
         ));
+    let app = Router::new()
+        .merge(download_route)
+        .merge(protected_routes)
+        .with_state(state.clone())
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024));
 
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("Server error: {}", e);
@@ -349,6 +386,7 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         let mut token_guard = server_info.access_token.lock().unwrap();
         *token_guard = String::new();
     }
+    clear_shared_files(&app_handle);
     let _ = app_handle.emit(
         "file-server-status-changed",
         StatusPayload {
@@ -381,25 +419,18 @@ pub fn append_message(
         && !final_content.starts_with("/download/")
     {
         if let Some(path) = file_path {
-            let token = format!(
-                "{}_{}",
-                chrono::Utc::now().timestamp_millis(),
-                uuid::Uuid::new_v4()
-            );
-            let shared_files = app.state::<SharedFileState>();
-            if let Ok(mut map) = shared_files.0.lock() {
-                map.insert(token.clone(), path.to_string());
+            if let Some(token) = register_shared_file(app, path.to_string()) {
+                let filename = std::path::Path::new(path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                final_content = format!(
+                    "/download/{}?name={}",
+                    token,
+                    urlencoding::encode(&filename)
+                );
             }
-            let filename = std::path::Path::new(path)
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            final_content = format!(
-                "/download/{}?name={}",
-                token,
-                urlencoding::encode(&filename)
-            );
         }
     }
     let msg = Message {

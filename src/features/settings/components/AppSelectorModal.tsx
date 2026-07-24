@@ -20,7 +20,7 @@ const AppSelectorModal = ({ show, installedApps, theme, colorMode, t, onClose, o
         open={Boolean(show)}
         onClose={onClose}
         theme={theme}
-        panelClassName="modal-panel modal-panel-form modal-panel-wide"
+        panelClassName="modal-panel modal-panel-form modal-panel-wide modal-panel-app-selector"
     >
         <div className="modal-panel-header">
             <h3 className="modal-title">{t("select_app_title")}</h3>

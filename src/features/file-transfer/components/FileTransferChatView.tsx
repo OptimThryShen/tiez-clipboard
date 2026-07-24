@@ -121,9 +121,12 @@ const TransferFileTypeIcon = ({
     return <span className={`wt-file-fallback-icon is-${kind}`}>{iconByKind[kind]}</span>;
 };
 
-const isLocalTransferPath = (path?: string) => (
-    Boolean(path) && !/^(?:https?:|data:|blob:|\/download\/)/i.test(path || '')
-);
+const isLocalTransferPath = (path?: string) => {
+    if (!path || /^(?:https?:|data:|blob:|asset:|file:|\/download\/)/i.test(path)) {
+        return false;
+    }
+    return /^[a-z]:[\\/]/i.test(path) || /^\\\\/.test(path) || path.startsWith('/');
+};
 
 const decodeFileName = (value: string) => {
     try {
@@ -167,6 +170,7 @@ const FileTransferChatView = ({
     const composerMinHeight = 32;
     const connectionUrl = `http://${localIp}:${actualPort}/?auth=${encodeURIComponent(accessToken)}`;
     const [messages, setMessages] = useState<FileTransferMessage[]>([]);
+    const [mediaFallbackSources, setMediaFallbackSources] = useState<Record<string, string>>({});
     const [input, setInput] = useState("");
     const [appLogo, setAppLogo] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -347,20 +351,67 @@ const FileTransferChatView = ({
         return `http://${raw}`;
     };
 
-    const resolveServerDownloadUrl = (content: string) => {
+    const formatHttpHost = (host: string) => (
+        host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+    );
+
+    const resolveShareableDownloadUrl = (content: string) => {
         if (!content.startsWith('/download/')) return content;
         if (localIp && actualPort) {
-            return `http://${localIp}:${actualPort}${content}`;
+            return `http://${formatHttpHost(localIp)}:${actualPort}${content}`;
         }
         return content;
     };
 
+    const resolveDesktopDownloadUrl = (content: string) => {
+        if (!content.startsWith('/download/') || !actualPort) return content;
+        return `http://127.0.0.1:${actualPort}${content}`;
+    };
+
+    const mediaFallbackKey = (message: FileTransferMessage) => (
+        `${message.id}:${message.content}:${message.file_path || ''}`
+    );
+
     const getMessageMediaSrc = (message: FileTransferMessage) => {
-        if (message._fallbackSrc) return message._fallbackSrc;
+        const fallback = mediaFallbackSources[mediaFallbackKey(message)];
+        if (fallback) return fallback;
         if (message.content.startsWith('data:')) return message.content;
-        if (message.content.startsWith('/download/')) return resolveServerDownloadUrl(message.content);
-        if (message.file_path) return convertFileSrc(message.file_path);
-        return convertFileSrc(message.content);
+        if (isLocalTransferPath(message.file_path)) return convertFileSrc(message.file_path!);
+        if (message.content.startsWith('/download/')) {
+            return resolveDesktopDownloadUrl(message.content);
+        }
+        if (isLocalTransferPath(message.content)) return convertFileSrc(message.content);
+        return message.content;
+    };
+
+    const handleMediaPreviewError = async (
+        message: FileTransferMessage,
+        target: HTMLImageElement | HTMLVideoElement
+    ) => {
+        if (target.dataset.fallbackAttempted === 'true') return;
+        target.dataset.fallbackAttempted = 'true';
+
+        let fallbackPath = message.content.startsWith('/download/')
+            ? message.content
+            : undefined;
+        if (!fallbackPath) {
+            const localPath = [message.file_path, message.content]
+                .find((value) => isLocalTransferPath(value));
+            if (!localPath) return;
+            try {
+                fallbackPath = await invoke<string>('get_download_url', { filePath: localPath });
+            } catch (error) {
+                console.error('Failed to create media preview URL', error);
+                return;
+            }
+        }
+
+        const fallbackSource = resolveDesktopDownloadUrl(fallbackPath);
+        if (!/^http:\/\/127\.0\.0\.1:/i.test(fallbackSource)) return;
+        setMediaFallbackSources((current) => ({
+            ...current,
+            [mediaFallbackKey(message)]: fallbackSource
+        }));
     };
 
     const openTransferContent = async ({
@@ -380,7 +431,7 @@ const FileTransferChatView = ({
         }
 
         const isRemoteTarget = !localTarget && /^(?:https?:|\/download\/)/i.test(rawTarget);
-        const target = isRemoteTarget ? resolveServerDownloadUrl(rawTarget) : rawTarget;
+        const target = isRemoteTarget ? resolveShareableDownloadUrl(rawTarget) : rawTarget;
 
         try {
             // File-transfer message IDs are session-local sequence numbers, not
@@ -1077,23 +1128,8 @@ const FileTransferChatView = ({
                                                     type: 'image'
                                                 });
                                             }}
-                                            onError={(e) => {
-                                                const target = e.currentTarget;
-                                                const filePath = m.file_path || m.content;
-                                                if (!filePath || filePath.startsWith('data:') || target.getAttribute('data-tried-fallback') === 'true') return;
-
-                                                target.setAttribute('data-tried-fallback', 'true');
-                                                // Try to get a server token URL as fallback
-                                                invoke<string>('get_download_url', { filePath }).then((url) => {
-                                                    if (url && localIp && actualPort) {
-                                                        const fullUrl = `http://${localIp}:${actualPort}${url}`;
-                                                        // Force react to re-render with new src or direct DOM manipulation?
-                                                        // Direct manipulation is faster for error handling
-                                                        target.src = fullUrl;
-                                                        // Also update message object to avoid flicker on rerender
-                                                        m._fallbackSrc = fullUrl;
-                                                    }
-                                                }).catch(err => console.error("Fallback image load failed", err));
+                                            onError={(event) => {
+                                                void handleMediaPreviewError(m, event.currentTarget);
                                             }}
                                             onContextMenu={(e) => openContextMenu(e, {
                                                     filePath: m.file_path || m.content,
@@ -1114,6 +1150,9 @@ const FileTransferChatView = ({
                                             src={getMessageMediaSrc(m)}
                                             className="wt-video-preview"
                                             controls
+                                            onError={(event) => {
+                                                void handleMediaPreviewError(m, event.currentTarget);
+                                            }}
                                             onContextMenu={(e) => openContextMenu(e, {
                                                     filePath: m.file_path || m.content,
                                                     content: m.content,
@@ -1399,7 +1438,7 @@ const FileTransferChatView = ({
                                     onClick={async () => {
                                         const selected = contextMenu;
                                         setContextMenu(null);
-                                        const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                        const link = resolveShareableDownloadUrl(selected.content || selected.filePath || '');
                                         if (link) await navigator.clipboard.writeText(link);
                                     }}
                                 >
@@ -1459,7 +1498,7 @@ const FileTransferChatView = ({
                                     onClick={async () => {
                                         const selected = contextMenu;
                                         setContextMenu(null);
-                                        const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                        const link = resolveShareableDownloadUrl(selected.content || selected.filePath || '');
                                         if (link) await navigator.clipboard.writeText(link);
                                     }}
                                 >
@@ -1493,7 +1532,7 @@ const FileTransferChatView = ({
                                 onClick={async () => {
                                     const selected = contextMenu;
                                     setContextMenu(null);
-                                    const link = resolveServerDownloadUrl(selected.content || selected.filePath || '');
+                                    const link = resolveShareableDownloadUrl(selected.content || selected.filePath || '');
                                     if (link) await navigator.clipboard.writeText(link);
                                 }}
                             >
