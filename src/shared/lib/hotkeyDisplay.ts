@@ -81,7 +81,7 @@ const toToken = (part: string, isMac: boolean): HotkeyDisplayToken => {
 
   const plain = PLAIN_LABELS[key];
   if (plain) return { raw, label: plain, isSymbol: false };
-  return { raw, label: key, isSymbol: false };
+  return { raw, label: raw, isSymbol: false };
 };
 
 export const getHotkeyDisplayTokens = (

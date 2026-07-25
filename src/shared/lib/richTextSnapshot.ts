@@ -7,7 +7,7 @@ import {
 } from "./repairHtmlFragment";
 
 const SNAPSHOT_CACHE_LIMIT = 240;
-const SNAPSHOT_CACHE_VERSION = "v6";
+const SNAPSHOT_CACHE_VERSION = "v7";
 const snapshotCache = new Map<string, string>();
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
@@ -348,7 +348,7 @@ export const getRichTextSnapshotDataUrl = (
       "width:100%",
       "height:100%",
       "overflow:hidden",
-      "background:transparent",
+      "background:#ffffff",
       "font-family:'Segoe UI','Microsoft YaHei',sans-serif",
       "font-size:13px",
       "color:#111",
@@ -365,10 +365,20 @@ export const getRichTextSnapshotDataUrl = (
       snapshotStyle,
       '">',
       `<style>
-      * { box-sizing: border-box; font-size: inherit !important; line-height: inherit; }
+      * {
+        box-sizing: border-box;
+        font-size: inherit !important;
+        line-height: inherit;
+        color: #111827 !important;
+        background-color: transparent !important;
+      }
       table { border-collapse: collapse; border-spacing: 0; }
       img, video { max-width: 100%; height: auto; }
-      td, th { vertical-align: top; }
+      td, th {
+        vertical-align: top;
+        background-color: #f8fafc !important;
+      }
+      a { color: #1d4ed8 !important; }
     </style>`,
       xmlSafeBodyHtml,
       "</div>",

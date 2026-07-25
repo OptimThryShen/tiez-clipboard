@@ -1,10 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { isMacPlatform } from "../../../../shared/lib/platform";
 import MacAccessibilityPermission from "./MacAccessibilityPermission";
-
-const isMacPlatform =
-    /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
 
 interface LabelWithHintProps {
     label: string;
@@ -128,7 +126,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
-                {isMacPlatform && (
+                {isMacPlatform() && (
                     <div className="setting-item">
                         <LabelWithHint
                             label={t('hide_dock_icon')}
@@ -193,7 +191,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
-                {isMacPlatform && (
+                {isMacPlatform() && (
                     <MacAccessibilityPermission t={t} LabelWithHint={LabelWithHint} />
                 )}
 
@@ -401,7 +399,26 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
-                {/* macOS cleanup: Removed Restart as Admin */}
+                {!isMacPlatform() && (
+                    <div className="setting-item">
+                        <LabelWithHint
+                            label={t('restart_as_admin')}
+                            hint={t('restart_as_admin_hint')}
+                            hintKey="restart_as_admin"
+                        />
+                        <button
+                            type="button"
+                            className="settings-action-button"
+                            onClick={() => {
+                                invoke("restart_as_admin").catch((error) => {
+                                    console.error("Failed to restart as administrator:", error);
+                                });
+                            }}
+                        >
+                            {t('restart')}
+                        </button>
+                    </div>
+                )}
             </div>
         )}
     </div>

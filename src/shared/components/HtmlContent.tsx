@@ -26,6 +26,19 @@ const stripFontSizeFromCssText = (cssText: string): string => {
     .trim();
 };
 
+/** Preview colors inherit the active app theme; source HTML remains untouched. */
+const stripPreviewColorFromCssText = (cssText: string): string => {
+  return cssText
+    .replace(/(^|[;{])\s*(?:color|background-color)\s*:\s*[^;}]+;?/gi, "$1")
+    .replace(
+      /(^|[;{])\s*background\s*:\s*([^;}]+);?/gi,
+      (full, prefix: string, value: string) =>
+        /(?:url|gradient)\s*\(/i.test(value) ? full : prefix
+    )
+    .replace(/;\s*;/g, ";")
+    .trim();
+};
+
 const resolveImgSource = (el: Element): string | null => {
   const src = el.getAttribute("src")?.trim() || "";
   const lazyAttrs = [
@@ -107,7 +120,11 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       return;
     }
     if (preview && style.textContent) {
-      style.textContent = stripFontSizeFromCssText(style.textContent);
+      style.textContent = stripPreviewColorFromCssText(
+        stripFontSizeFromCssText(style.textContent)
+      );
+    } else if (style.textContent) {
+      style.textContent = stripPreviewColorFromCssText(style.textContent);
     }
   });
   doc.querySelectorAll("meta, link, xml").forEach((el) => el.remove());
@@ -158,6 +175,7 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
           .replace(/(?:^|;)\s*(?:transform|writing-mode|rotate|scale)\s*:[^;]*/gi, "")
           .trim()
           .replace(/^;+|;+$/g, "");
+        cleanedStyle = stripPreviewColorFromCssText(cleanedStyle);
         if (preview) {
           cleanedStyle = stripFontSizeFromCssText(cleanedStyle);
         }
@@ -169,6 +187,9 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       }
       // Presentational <font size="..."> from older HTML / Office paste
       if (preview && el.tagName.toLowerCase() === "font" && name === "size") {
+        el.removeAttribute(attr.name);
+      }
+      if (name === "color" || name === "bgcolor") {
         el.removeAttribute(attr.name);
       }
     });

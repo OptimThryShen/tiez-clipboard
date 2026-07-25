@@ -149,8 +149,9 @@ const getRelativeLuminance = ([r, g, b]: [number, number, number]) => {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 };
 
-// Helper function to generate a consistent color from a string based on theme
-export const getTagColor = (tag: string, theme: string) => {
+// Generate one stable fallback color per tag. Theme styling may change the
+// chip's shape and decoration, but the tag identity must not change with it.
+export const getTagColor = (tag: string, _theme: string) => {
   let hash = 0;
   for (let i = 0; i < tag.length; i++) {
     hash = tag.charCodeAt(i) + ((hash << 5) - hash);
@@ -160,38 +161,10 @@ export const getTagColor = (tag: string, theme: string) => {
   // (like "tag1" and "tag2") produce very different hues.
   const hue = Math.abs((hash * 137.508 + (hash >> 3)) % 360);
 
-  if (theme === "retro") {
-    // Retro: Slightly desaturated, lower lightness for mechanical look
-    return `hsl(${hue}, 60%, 40%)`;
-  }
-
-  if (theme === "receipt") {
-    // Thermal ticket: warm gray wash, almost no chroma
-    const lightness = 88 + (hue % 7);
-    const saturation = 3 + (hue % 4);
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-  }
-
-  if (theme === "ink") {
-    // Ink wash: barely tinted paper tones
-    const lightness = 90 + (hue % 5);
-    const saturation = 4 + (hue % 5);
-    return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-  }
-
-  // Modern: Vibrant for Mica/Acrylic
   return `hsl(${hue}, 80%, 55%)`;
 };
 
-export const getTagTextColor = (backgroundColor: string, theme?: string) => {
-  if (theme === "receipt") {
-    return "var(--rc-ink-fade, #6a6a6a)";
-  }
-
-  if (theme === "ink") {
-    return "var(--ink-dim, var(--text-secondary))";
-  }
-
+export const getTagTextColor = (backgroundColor: string, _theme?: string) => {
   const rgb = parseColor(backgroundColor);
   if (!rgb) return "#ffffff";
   return getRelativeLuminance(rgb) > 0.6 ? "#111827" : "#ffffff";

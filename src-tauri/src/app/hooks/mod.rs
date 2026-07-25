@@ -22,6 +22,11 @@ use crate::infrastructure::windows_ext::WindowExt;
 // Store registered hotkey IDs for cleanup
 static BLOCKED_HOTKEY_IDS: std::sync::Mutex<Vec<i32>> = std::sync::Mutex::new(Vec::new());
 
+#[cfg(any(target_os = "windows", test))]
+fn is_recording_clear_key(vk: u32) -> bool {
+    matches!(vk, 0x08 | 0x2E)
+}
+
 #[cfg(target_os = "windows")]
 fn quick_paste_index_from_vk(vk: u32) -> Option<usize> {
     match vk {
@@ -185,12 +190,16 @@ pub unsafe extern "system" fn keyboard_proc(
 
             if !is_win && is_down {
                 if let Some(handle) = GLOBAL_APP_HANDLE.get() {
+                    if is_recording_clear_key(vk) {
+                        let _ = handle.emit("hotkey-recorded", String::new());
+                        IS_RECORDING.store(false, Ordering::SeqCst);
+                        return LRESULT(1);
+                    }
+
                     let key_name = match vk {
                         0x20 => "Space".to_string(),
                         0x0D => "Enter".to_string(),
                         0x09 => "Tab".to_string(),
-                        0x08 => "Backspace".to_string(),
-                        0x2E => "Delete".to_string(),
                         0x2D => "Insert".to_string(),
                         0x21 => "PageUp".to_string(),
                         0x22 => "PageDown".to_string(),
@@ -580,4 +589,17 @@ pub fn is_win_v_hotkey(hotkey: &str) -> bool {
     }
 
     has_win && has_v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_recording_clear_key;
+
+    #[test]
+    fn recording_clear_keys_are_not_registered_as_shortcuts() {
+        assert!(is_recording_clear_key(0x08));
+        assert!(is_recording_clear_key(0x2E));
+        assert!(!is_recording_clear_key(0x2D));
+        assert!(!is_recording_clear_key(0x41));
+    }
 }

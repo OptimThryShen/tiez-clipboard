@@ -16,6 +16,8 @@
 .rich-text-preview *:not(style):not(script) {
   font-size: inherit !important;
   line-height: inherit;
+  color: inherit !important;
+  background-color: transparent !important;
 }
 
 .rich-text-preview table {
@@ -29,7 +31,8 @@
 .rich-text-preview th {
   border: 1px solid var(--border-dark);
   padding: 2px 4px;
-  background-color: var(--bg-element);
+  background-color: var(--bg-element) !important;
+  color: var(--text-primary) !important;
   opacity: 0.9;
 }
 
@@ -65,6 +68,6 @@
 }
 
 .rich-text-preview a {
-  color: var(--accent-color);
+  color: var(--accent-color) !important;
   text-decoration: underline;
 }

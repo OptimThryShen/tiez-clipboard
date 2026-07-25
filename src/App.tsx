@@ -1138,6 +1138,7 @@ const App = () => {
         showTagFilter={showTagFilter}
         setShowTagFilter={setShowTagFilter}
         allTags={allTags}
+        tagColors={tagColors}
         searchIsFocused={searchIsFocused}
         setSearchIsFocused={setSearchIsFocused}
         setEditingTagsId={setEditingTagsId}

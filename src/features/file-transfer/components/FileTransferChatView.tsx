@@ -376,10 +376,10 @@ const FileTransferChatView = ({
         const fallback = mediaFallbackSources[mediaFallbackKey(message)];
         if (fallback) return fallback;
         if (message.content.startsWith('data:')) return message.content;
-        if (isLocalTransferPath(message.file_path)) return convertFileSrc(message.file_path!);
         if (message.content.startsWith('/download/')) {
             return resolveDesktopDownloadUrl(message.content);
         }
+        if (isLocalTransferPath(message.file_path)) return convertFileSrc(message.file_path!);
         if (isLocalTransferPath(message.content)) return convertFileSrc(message.content);
         return message.content;
     };
@@ -391,20 +391,24 @@ const FileTransferChatView = ({
         if (target.dataset.fallbackAttempted === 'true') return;
         target.dataset.fallbackAttempted = 'true';
 
-        let fallbackPath = message.content.startsWith('/download/')
-            ? message.content
-            : undefined;
-        if (!fallbackPath) {
-            const localPath = [message.file_path, message.content]
-                .find((value) => isLocalTransferPath(value));
-            if (!localPath) return;
+        const localPath = [message.file_path, message.content]
+            .find((value) => isLocalTransferPath(value));
+        let fallbackPath: string | undefined;
+
+        // Refresh the capability URL when a local path is available. Besides
+        // avoiding Windows asset-protocol path quirks, this also repairs stale
+        // preview tokens after the transfer server has restarted.
+        if (localPath) {
             try {
                 fallbackPath = await invoke<string>('get_download_url', { filePath: localPath });
             } catch (error) {
                 console.error('Failed to create media preview URL', error);
-                return;
             }
         }
+        fallbackPath ||= message.content.startsWith('/download/')
+            ? message.content
+            : undefined;
+        if (!fallbackPath) return;
 
         const fallbackSource = resolveDesktopDownloadUrl(fallbackPath);
         if (!/^http:\/\/127\.0\.0\.1:/i.test(fallbackSource)) return;

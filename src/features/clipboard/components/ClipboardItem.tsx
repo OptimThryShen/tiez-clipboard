@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState, useMemo, memo } from "react";
+import type { CSSProperties } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { currentMonitor, getCurrentWindow, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
@@ -1371,7 +1372,9 @@ const ClipboardItem = ({
                         style={{
                             background: tagBackground,
                             color: tagTextColor,
-                        }}
+                            '--tag-color': tagBackground,
+                            '--tag-text-color': tagTextColor,
+                        } as CSSProperties}
                     >
                         {tag}
                         {isEditingTags && (

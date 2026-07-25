@@ -39,6 +39,7 @@ interface AppHeaderProps {
   showTagFilter: boolean;
   setShowTagFilter: (val: boolean) => void;
   allTags: string[];
+  tagColors: Record<string, string>;
   searchIsFocused: boolean;
   setSearchIsFocused: (val: boolean) => void;
   setEditingTagsId: (val: number | null) => void;
@@ -74,6 +75,7 @@ const AppHeader = ({
   showTagFilter,
   setShowTagFilter,
   allTags,
+  tagColors,
   searchIsFocused,
   setSearchIsFocused,
   setEditingTagsId,
@@ -273,7 +275,8 @@ const AppHeader = ({
                     <div className="tags-dropdown">
                       <div className="tags-list">
                         {allTags.map(tag => {
-                          const tagBackground = getTagColor(tag, theme);
+                          const tagBackground = tagColors[tag] || getTagColor(tag, theme);
+                          const tagTextColor = getTagTextColor(tagBackground, theme);
                           return (
                             <span
                               className="tag-chip"
@@ -286,8 +289,9 @@ const AppHeader = ({
                               data-tag={tag}
                               style={{
                                 background: tagBackground,
-                                color: getTagTextColor(tagBackground, theme),
-                                '--tag-color': tagBackground
+                                color: tagTextColor,
+                                '--tag-color': tagBackground,
+                                '--tag-text-color': tagTextColor
                               } as CSSProperties}
                             >
                               {tag}

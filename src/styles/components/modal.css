@@ -206,6 +206,11 @@ body:has(.modal-overlay) #root {
   text-transform: uppercase;
 }
 
+.dark-mode .app-selector-list,
+.dark-mode .app-selector-section-label {
+  background: color-mix(in srgb, var(--bg-window) 78%, #000 22%);
+}
+
 .app-selector-option {
   width: 100%;
   padding: 10px 12px;

@@ -71,7 +71,7 @@ body.theme-terminal {
   --layout-tag-chip-padding: 1px 7px;
   --layout-overlay-tag-padding: 1px 8px;
   --layout-overlay-tag-min-height: 18px;
-  --layout-overlay-tag-font-size: 10px;
+  --layout-overlay-tag-font-size: var(--clipboard-tag-font-size);
   --layout-overlay-tag-line-height: 1.1;
   --layout-overlay-tag-reserve: 22px;
   --tag-chip-font-weight: 600;
