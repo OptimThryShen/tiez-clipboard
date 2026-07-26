@@ -305,7 +305,7 @@ fn toggle_window_windows(app: &AppHandle) {
 
         if is_visible && !is_hidden_by_edge {
             #[cfg(target_os = "windows")]
-            WindowExt::release_win_keys();
+            WindowExt::release_modifier_keys();
             let _ = window.set_focusable(false);
             let _ = window.hide();
 
@@ -503,7 +503,7 @@ fn toggle_window_windows(app: &AppHandle) {
         }
 
         #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
+        WindowExt::release_modifier_keys();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -700,7 +700,7 @@ fn hide_window(app_handle: AppHandle, restore_focus: bool) -> Result<(), String>
             let _ = compact_preview.hide();
         }
         #[cfg(target_os = "windows")]
-        WindowExt::release_win_keys();
+        WindowExt::release_modifier_keys();
         IS_HIDDEN.store(false, Ordering::Relaxed);
         CURRENT_DOCK.store(0, Ordering::Relaxed);
         let pinned = WINDOW_PINNED.load(Ordering::Relaxed);
@@ -847,7 +847,7 @@ pub fn restore_last_focus(_app_handle: AppHandle) -> Result<(), String> {
 
 pub fn release_modifier_keys() {
     #[cfg(target_os = "windows")]
-    WindowExt::release_win_keys();
+    WindowExt::release_modifier_keys();
 }
 
 pub fn release_win_keys() {
