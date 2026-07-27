@@ -2,6 +2,11 @@ name: Release Beta (macOS)
 
 on:
   workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Branch or tag to build
+        required: true
+        default: beta/1.0.0-beta.1
 
 jobs:
   release:
@@ -29,6 +34,8 @@ jobs:
       TIEZ_UPDATER_PUBLIC_KEY: ${{ vars.TIEZ_UPDATER_PUBLIC_KEY }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.git_ref }}
 
       - name: setup node
         uses: actions/setup-node@v5
