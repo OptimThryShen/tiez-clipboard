@@ -1,12 +1,19 @@
 import { Github, MessageSquare, RotateCcw } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { emit, listen } from "@tauri-apps/api/event";
+import {
+    CHECK_RESULT_EVENT,
+    type UpdateCheckResult
+} from "../../../shared/hooks/useAutoUpdate";
+import type { ReleaseChannel } from "../../../shared/lib/releaseBuild";
 
 interface SettingsFooterProps {
     t: (key: string) => string;
     appVersion: string;
+    releaseChannel: ReleaseChannel;
+    portable: boolean;
     updateStatus: string;
     setUpdateStatus: (val: string) => void;
-    // Removed setUpdateModalData
     onResetSettings: () => void;
     emailCopied: boolean;
     setEmailCopied: (val: boolean) => void;
@@ -15,6 +22,8 @@ interface SettingsFooterProps {
 const SettingsFooter = ({
     t,
     appVersion,
+    releaseChannel,
+    portable,
     updateStatus,
     setUpdateStatus,
     onResetSettings,
@@ -100,31 +109,45 @@ const SettingsFooter = ({
                 gap: '8px'
             }}>
                 <span>TieZ {appVersion ? `v${appVersion}` : "v0.2.0"}</span>
+                {releaseChannel === "beta" && (
+                    <span className="settings-version-badge beta">Beta</span>
+                )}
+                {portable && (
+                    <span className="settings-version-badge portable">Portable</span>
+                )}
                 <button
                     onClick={async () => {
                         if (updateStatus) return;
                         setUpdateStatus(t('checking'));
-                        
-                        const { emit, listen } = await import("@tauri-apps/api/event");
-                        
-                        // Listen for result
-                        const unlisten = await listen("update-not-available", () => {
-                            setUpdateStatus(t('up_to_date'));
-                            setTimeout(() => {
-                                setUpdateStatus('');
-                                unlisten();
-                            }, 2000);
+
+                        const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                        let settled = false;
+                        let timeoutId: number | undefined;
+                        const unlisten = await listen<UpdateCheckResult>(CHECK_RESULT_EVENT, (event) => {
+                            if (event.payload.requestId !== requestId || settled) return;
+                            settled = true;
+                            if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+                            unlisten();
+
+                            const labels: Record<UpdateCheckResult["status"], string> = {
+                                available: t('new_version_found'),
+                                "up-to-date": t('up_to_date'),
+                                error: t('checking_failed'),
+                                portable: t('portable_manual_update')
+                            };
+                            setUpdateStatus(labels[event.payload.status]);
+                            window.setTimeout(() => setUpdateStatus(''), event.payload.status === "portable" ? 4000 : 2000);
                         });
 
-                        emit("check-update-manually");
-                        
-                        // Fallback timeout in case of general failure
-                        setTimeout(() => {
-                            if (updateStatus === t('checking')) {
-                                setUpdateStatus('');
-                                unlisten();
-                            }
-                        }, 5000);
+                        timeoutId = window.setTimeout(() => {
+                            if (settled) return;
+                            settled = true;
+                            unlisten();
+                            setUpdateStatus(t('checking_failed'));
+                            window.setTimeout(() => setUpdateStatus(''), 2000);
+                        }, 12000);
+
+                        await emit("check-update-manually", { requestId });
                     }}
                     disabled={!!updateStatus}
                     style={{

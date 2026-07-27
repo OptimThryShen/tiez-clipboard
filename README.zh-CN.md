@@ -5,6 +5,8 @@
 
 ---
 
+> 维护者发布正式版或群测试版时，请参阅 [客户端发布流程](docs/RELEASES.md)。
+
 <div align="center">
   <img src="docs/images/logo.png" alt="TieZ Hero Logo" width="300" />
 

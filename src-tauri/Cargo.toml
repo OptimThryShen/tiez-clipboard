@@ -1,6 +1,6 @@
 [package]
 name = "tiez-app"
-version = "0.3.4"
+version = "1.0.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -68,6 +68,7 @@ windows-version = "0.1.1"
 dotenvy = "0.15"
 aes-gcm = "0.10"
 rand = "0.8"
+zip = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

@@ -20,6 +20,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Validate stable and beta release metadata
+        run: npm run validate-release-matrix
       - name: Type-check and build frontend
         run: npm run build
 

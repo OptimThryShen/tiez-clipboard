@@ -28,7 +28,7 @@ fn get_platform_clipboard_html() -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-const MAX_MACOS_TEXT_BYTES: usize = 128 * 1024;
+const MAX_MACOS_TEXT_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(target_os = "windows")]
 const RICH_TEXT_RETRY_DELAYS_MS: [u64; 7] = [0, 40, 80, 140, 220, 360, 560];
 #[cfg(target_os = "windows")]
@@ -1133,8 +1133,8 @@ pub use utils::{
     truncate_html_for_preview, app_likely_word_processor,
 };
 
-const MAX_PIPELINE_TEXT_BYTES: usize = 128 * 1024;
-const MAX_PIPELINE_HTML_BYTES: usize = 512 * 1024;
+const MAX_PIPELINE_TEXT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PIPELINE_HTML_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn process_new_entry(
     app_handle: &AppHandle,

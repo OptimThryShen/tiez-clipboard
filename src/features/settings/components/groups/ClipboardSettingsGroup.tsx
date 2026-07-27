@@ -5,7 +5,7 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { withNativeDialog } from "../../../../shared/lib/focus";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { getHotkeyDisplayTokens } from "../../../../shared/lib/hotkeyDisplay";
-import { isMacPlatform } from "../../../../shared/lib/platform";
+import { isMacPlatform, isWindowsPlatform } from "../../../../shared/lib/platform";
 import type { QuickPasteModifier } from "../../../app/types";
 
 interface LabelWithHintProps {
@@ -87,7 +87,8 @@ interface ClipboardSettingsGroupProps {
 
 const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
     const isMac = isMacPlatform();
-    const isWinVManaged = !isMac && props.registryWinVEnabled;
+    const isWindows = isWindowsPlatform();
+    const isWinVManaged = isWindows && props.registryWinVEnabled;
     const quickPasteOptions: Array<{ value: QuickPasteModifier; label: string }> = isMac
         ? [
             { value: "disabled", label: props.t("quick_paste_modifier_disabled") },
@@ -150,7 +151,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
 
         return (
             <>
-                {!isMac && <span className="hotkey-warning">{props.t('win_key_not_recommended')}</span>}
+                {isWindows && <span className="hotkey-warning">{props.t('win_key_not_recommended')}</span>}
                 <span>{props.t('hotkey_recording_esc')}</span>
             </>
         );
@@ -461,7 +462,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                             <div className="toggle"><div className="left" /><div className="right" /></div>
                         </label>
                     </div>
-                    {!isMac && (
+                    {isWindows && (
                         <div className="setting-item">
                             <props.LabelWithHint
                                 label={props.t('paste_method')}
@@ -782,7 +783,7 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                         </div>
                     </div>
 
-                    {!isMac && (
+                    {isWindows && (
                         <div className="setting-item">
                             <props.LabelWithHint
                                 label={props.t('use_win_v_shortcut')}
@@ -796,13 +797,15 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                     checked={props.registryWinVEnabled}
                                     onChange={async (e) => {
                                         const enabled = e.target.checked;
+                                        const previousEnabled = props.registryWinVEnabled;
+                                        const previousHotkey = props.hotkey;
                                         props.setRegistryWinVEnabled(enabled);
                                         if (enabled) {
                                             props.setIsRecording(false);
                                         }
                                         try {
-                                            await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(enabled) });
                                             const changed = await invoke<boolean>("trigger_registry_win_v_optimization", { enable: enabled });
+                                            await invoke("save_setting", { key: 'app.use_win_v_shortcut', value: String(enabled) });
                                             let targetHotkey = "Alt+C";
                                             if (enabled) {
                                                 if (props.hotkey && props.hotkey !== "Win+V") {
@@ -848,6 +851,17 @@ const ClipboardSettingsGroup = (props: ClipboardSettingsGroupProps) => {
                                             }
                                         } catch (err) {
                                             console.error("Failed to configure Win+V shortcut:", err);
+                                            props.setRegistryWinVEnabled(previousEnabled);
+                                            await invoke("trigger_registry_win_v_optimization", {
+                                                enable: previousEnabled
+                                            }).catch(console.error);
+                                            await invoke("save_setting", {
+                                                key: 'app.use_win_v_shortcut',
+                                                value: String(previousEnabled)
+                                            }).catch(console.error);
+                                            if (previousHotkey) {
+                                                await props.updateHotkey(previousHotkey);
+                                            }
                                         }
                                     }}
                                 />

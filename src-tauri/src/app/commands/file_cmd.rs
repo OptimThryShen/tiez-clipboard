@@ -30,6 +30,103 @@ pub async fn save_file_copy(source_path: String, target_path: String) -> AppResu
     Ok(())
 }
 
+#[tauri::command]
+pub async fn save_file_batch(
+    source_paths: Vec<String>,
+    target_dir: String,
+    batch_name: String,
+) -> AppResult<String> {
+    if source_paths.len() < 2 || source_paths.len() > 2_000 {
+        return Err(AppError::Validation(
+            "文件包必须包含 2–2000 个文件".to_string(),
+        ));
+    }
+    let target_root = PathBuf::from(target_dir);
+    if !target_root.is_dir() {
+        return Err(AppError::Validation("目标文件夹无效".to_string()));
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let safe_batch_name = sanitize_copy_name(&batch_name, "TieZ 文件包");
+        let package_dir = unique_copy_path(&target_root, &safe_batch_name, true);
+        std::fs::create_dir(&package_dir).map_err(AppError::from)?;
+
+        for source in source_paths {
+            let source = PathBuf::from(source);
+            if !source.is_file() {
+                let _ = std::fs::remove_dir_all(&package_dir);
+                return Err(AppError::Validation(format!(
+                    "源文件不存在：{}",
+                    source.to_string_lossy()
+                )));
+            }
+            let requested_name = source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("文件");
+            let safe_name = sanitize_copy_name(requested_name, "文件");
+            let target = unique_copy_path(&package_dir, &safe_name, false);
+            if let Err(error) = std::fs::copy(&source, &target) {
+                let _ = std::fs::remove_dir_all(&package_dir);
+                return Err(AppError::from(error));
+            }
+        }
+
+        Ok(package_dir.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
+}
+
+fn sanitize_copy_name(value: &str, fallback: &str) -> String {
+    let cleaned = value
+        .chars()
+        .filter(|character| !character.is_control())
+        .map(|character| {
+            if matches!(character, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                character
+            }
+        })
+        .take(120)
+        .collect::<String>();
+    let cleaned = cleaned.trim().trim_matches('.').trim();
+    if cleaned.is_empty() {
+        fallback.to_string()
+    } else {
+        cleaned.to_string()
+    }
+}
+
+fn unique_copy_path(root: &Path, requested_name: &str, directory: bool) -> PathBuf {
+    let initial = root.join(requested_name);
+    if !initial.exists() {
+        return initial;
+    }
+    let requested = Path::new(requested_name);
+    let stem = requested
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("文件");
+    let extension = if directory {
+        None
+    } else {
+        requested.extension().and_then(|value| value.to_str())
+    };
+    for suffix in 2..=10_000 {
+        let candidate_name = match extension {
+            Some(extension) => format!("{stem} ({suffix}).{extension}"),
+            None => format!("{stem} ({suffix})"),
+        };
+        let candidate = root.join(candidate_name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    root.join(format!("{}-{}", stem, uuid::Uuid::new_v4()))
+}
+
 fn normalize_image_ext(ext: &str) -> Option<&'static str> {
     match ext.to_lowercase().as_str() {
         "png" => Some("png"),

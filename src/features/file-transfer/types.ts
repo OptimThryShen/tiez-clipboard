@@ -16,6 +16,12 @@ export interface FileTransferMessage {
   sender_id?: string;
   sender_name?: string;
   file_path?: string;
+  batch_id?: string;
+  batch_name?: string;
+  batch_index?: number;
+  batch_total?: number;
+  batch_size?: number;
+  file_size?: number;
   _preparing?: boolean;
   _fileName?: string;
 }
@@ -35,4 +41,6 @@ export interface FileTransferContextMenu {
   content?: string;
   id?: number;
   type?: string;
+  batchId?: string;
+  batchMessages?: FileTransferMessage[];
 }

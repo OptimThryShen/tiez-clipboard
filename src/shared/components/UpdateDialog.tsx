@@ -6,7 +6,9 @@ interface UpdateDialogProps {
   isOpen: boolean;
   version: string;
   notes: string;
-  downloadProgress: number;
+  important: boolean;
+  releaseChannel: "stable" | "beta";
+  downloadProgress: number | null;
   status: "idle" | "checking" | "downloading" | "ready" | "error";
   onUpdate: () => void;
   onClose: () => void;
@@ -16,6 +18,8 @@ const UpdateDialog = ({
   isOpen,
   version,
   notes,
+  important,
+  releaseChannel,
   downloadProgress,
   status,
   onUpdate,
@@ -36,8 +40,16 @@ const UpdateDialog = ({
         <div className="modal-update-header-info">
           <h3 className="modal-update-title">发现新版本</h3>
           <span className="modal-update-version">v{version}</span>
+          {releaseChannel === "beta" && <span className="modal-update-badge beta">Beta</span>}
+          {important && <span className="modal-update-badge important">重要更新</span>}
         </div>
-        <button type="button" onClick={onClose} className="modal-button icon-only" aria-label="关闭">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={status === "downloading"}
+          className="modal-button icon-only"
+          aria-label="关闭"
+        >
           <X size={16} />
         </button>
       </div>
@@ -55,10 +67,13 @@ const UpdateDialog = ({
           <div className="modal-update-progress">
             <div className="modal-update-progress-labels">
               <span>{status === "ready" ? "下载完成" : "正在下载更新..."}</span>
-              <span>{Math.round(downloadProgress)}%</span>
+              <span>{downloadProgress === null ? "计算中" : `${Math.round(downloadProgress)}%`}</span>
             </div>
             <div className="modal-update-progress-track">
-              <div className="modal-update-progress-bar" style={{ width: `${downloadProgress}%` }} />
+              <div
+                className={`modal-update-progress-bar${downloadProgress === null ? " indeterminate" : ""}`}
+                style={downloadProgress === null ? undefined : { width: `${downloadProgress}%` }}
+              />
             </div>
           </div>
         )}

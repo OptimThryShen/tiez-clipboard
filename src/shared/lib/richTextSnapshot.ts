@@ -6,17 +6,23 @@ import {
   stripRichStorageMarkers
 } from "./repairHtmlFragment";
 
-const SNAPSHOT_CACHE_LIMIT = 240;
-const SNAPSHOT_CACHE_VERSION = "v7";
-const snapshotCache = new Map<string, string>();
+const SNAPSHOT_CACHE_LIMIT = 120;
+const SNAPSHOT_CACHE_BYTE_LIMIT = 24 * 1024 * 1024;
+const SNAPSHOT_CACHE_VERSION = "v8";
+const snapshotCache = new Map<string, { dataUrl: string; bytes: number }>();
+let snapshotCacheBytes = 0;
 
 const RICH_IMAGE_FALLBACK_PREFIX = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX = "-->";
 
 const trimCache = () => {
-  while (snapshotCache.size > SNAPSHOT_CACHE_LIMIT) {
+  while (
+    snapshotCache.size > SNAPSHOT_CACHE_LIMIT ||
+    snapshotCacheBytes > SNAPSHOT_CACHE_BYTE_LIMIT
+  ) {
     const first = snapshotCache.keys().next();
     if (first.done) return;
+    snapshotCacheBytes -= snapshotCache.get(first.value)?.bytes ?? 0;
     snapshotCache.delete(first.value);
   }
 };
@@ -300,6 +306,21 @@ export const getRichTextSnapshotDataUrl = (
   const maxHeight = Math.max(220, Math.min(3200, Math.round(options.maxHeight ?? 1600)));
 
   try {
+    const themeStyles = getComputedStyle(document.body);
+    const snapshotBackground =
+      themeStyles.getPropertyValue("--bg-element").trim() || "#ffffff";
+    const snapshotText =
+      themeStyles.getPropertyValue("--text-primary").trim() || "#111827";
+    const snapshotAccent =
+      themeStyles.getPropertyValue("--accent-color").trim() || "#1d4ed8";
+    const snapshotBorder =
+      themeStyles.getPropertyValue("--border-dark").trim() || "rgba(128,128,128,.25)";
+    const themeSignature = [
+      snapshotBackground,
+      snapshotText,
+      snapshotAccent,
+      snapshotBorder
+    ].join("|");
     const trimmedLength = sourceHtml.trim().length;
     if (!trimmedLength) {
       logSnapshotFailure("empty_html", {
@@ -310,9 +331,9 @@ export const getRichTextSnapshotDataUrl = (
       return null;
     }
 
-    const key = `${SNAPSHOT_CACHE_VERSION}:${hashString(sourceHtml)}:${sourceHtml.length}:${width}:${maxHeight}`;
+    const key = `${SNAPSHOT_CACHE_VERSION}:${hashString(sourceHtml)}:${sourceHtml.length}:${width}:${maxHeight}:${hashString(themeSignature)}`;
     const cached = snapshotCache.get(key);
-    if (cached) return cached;
+    if (cached) return cached.dataUrl;
 
     const normalized = normalizeRichHtml(sourceHtml);
     if (!normalized) {
@@ -348,10 +369,10 @@ export const getRichTextSnapshotDataUrl = (
       "width:100%",
       "height:100%",
       "overflow:hidden",
-      "background:#ffffff",
+      `background:${snapshotBackground}`,
       "font-family:'Segoe UI','Microsoft YaHei',sans-serif",
       "font-size:13px",
-      "color:#111",
+      `color:${snapshotText}`,
       "line-height:1.4"
     ].join(";");
 
@@ -364,23 +385,24 @@ export const getRichTextSnapshotDataUrl = (
       '<div xmlns="http://www.w3.org/1999/xhtml" style="',
       snapshotStyle,
       '">',
+      xmlSafeBodyHtml,
       `<style>
       * {
         box-sizing: border-box;
         font-size: inherit !important;
         line-height: inherit;
-        color: #111827 !important;
+        color: ${snapshotText} !important;
         background-color: transparent !important;
       }
       table { border-collapse: collapse; border-spacing: 0; }
       img, video { max-width: 100%; height: auto; }
       td, th {
         vertical-align: top;
-        background-color: #f8fafc !important;
+        border-color: ${snapshotBorder} !important;
+        background-color: ${snapshotBackground} !important;
       }
-      a { color: #1d4ed8 !important; }
+      a { color: ${snapshotAccent} !important; }
     </style>`,
-      xmlSafeBodyHtml,
       "</div>",
       "</foreignObject>",
       "</svg>"
@@ -415,7 +437,9 @@ export const getRichTextSnapshotDataUrl = (
       return null;
     }
 
-    snapshotCache.set(key, dataUrl);
+    const cacheBytes = dataUrl.length * 2;
+    snapshotCache.set(key, { dataUrl, bytes: cacheBytes });
+    snapshotCacheBytes += cacheBytes;
     trimCache();
     return dataUrl;
   } catch (error) {

@@ -1,8 +1,6 @@
-name: Release macOS
+name: Release Beta (macOS)
+
 on:
-  push:
-    tags:
-      - 'mac-v*'
   workflow_dispatch:
 
 jobs:
@@ -17,13 +15,13 @@ jobs:
           - platform: macos-15-intel
             display_name: Intel
           - platform: macos-14
-            display_name: Apple Silicon
+            display_name: Apple-Silicon
 
     runs-on: ${{ matrix.platform }}
     env:
       VITE_AI_DEFAULT_API_KEY: ${{ secrets.VITE_AI_DEFAULT_API_KEY }}
       TIEZ_PLATFORM: macos
-      TIEZ_RELEASE_CHANNEL: stable
+      TIEZ_RELEASE_CHANNEL: beta
       TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
       VITE_TIEZ_ANNOUNCEMENT_PING_URL: ${{ vars.TIEZ_ANNOUNCEMENT_PING_URL }}
       TIEZ_UPDATE_ENDPOINT: ${{ vars.TIEZ_UPDATE_ENDPOINT }}
@@ -42,12 +40,6 @@ jobs:
         with:
           toolchain: stable
 
-      - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libnm-dev libsoup2.4-dev curl wget libappindicator3-dev librsvg2-dev patchelf
-      
       - name: install frontend dependencies
         run: npm ci
 
@@ -58,6 +50,7 @@ jobs:
         run: npm run validate-release
 
       - uses: tauri-apps/tauri-action@v0
+        id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -69,8 +62,18 @@ jobs:
           VITE_TIEZ_UPDATE_ENDPOINT: ${{ vars.VITE_TIEZ_UPDATE_ENDPOINT }}
           TIEZ_UPDATER_PUBLIC_KEY: ${{ vars.TIEZ_UPDATER_PUBLIC_KEY }}
         with:
-          tagName: mac-v__VERSION__ # tauri-action 会自动替换 __VERSION__
-          releaseName: 'TieZ macOS v__VERSION__'
-          releaseBody: 'See the assets to download and install this version.'
+          tagName: beta-mac-v__VERSION__
+          releaseName: TieZ macOS beta v__VERSION__
+          releaseBody: Beta build for community testing. Channel=beta; can update to newer beta or stable when published.
           releaseDraft: true
-          prerelease: false
+          prerelease: true
+
+      - name: Upload beta bundles
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-beta-${{ matrix.display_name }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/macos/*.tar.gz
+            src-tauri/target/**/bundle/macos/*.sig

@@ -27,6 +27,8 @@ import {
     FileSpreadsheet,
     Presentation,
     File as FileIcon,
+    ChevronDown,
+    ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeCanvas } from "qrcode.react";
@@ -160,6 +162,17 @@ const getTransferFileIconPath = (message: FileTransferMessage) => {
     return undefined;
 };
 
+const formatTransferBytes = (bytes?: number) => {
+    if (!bytes || bytes <= 0) return '';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, unitIndex);
+    return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+};
+
+type MultiFileSendMode = 'package' | 'separate';
+const MULTI_FILE_SEND_MODE_KEY = 'tiez.file-transfer.multi-file-send-mode';
+
 // File Transfer Chat View Component
 const FileTransferChatView = ({
     t,
@@ -184,8 +197,28 @@ const FileTransferChatView = ({
     const [contextMenu, setContextMenu] = useState<FileTransferContextMenu | null>(null);
     const [onlineDevices, setOnlineDevices] = useState<FileTransferDevice[]>([]);
     const [isDragging, setIsDragging] = useState(false);
+    const isDraggingRef = useRef(false);
+    const setDragging = (value: boolean) => {
+        isDraggingRef.current = value;
+        setIsDragging(value);
+    };
+    const isExternalFileDrag = (dataTransfer: DataTransfer | null | undefined) => {
+        if (!dataTransfer) return false;
+        return Array.from(dataTransfer.types).includes('Files');
+    };
     const [showQrCode, setShowQrCode] = useState(false);
     const [isChoosingFiles, setIsChoosingFiles] = useState(false);
+    const [showFileSendOptions, setShowFileSendOptions] = useState(false);
+    const [multiFileSendMode, setMultiFileSendMode] = useState<MultiFileSendMode>(() => {
+        try {
+            return localStorage.getItem(MULTI_FILE_SEND_MODE_KEY) === 'separate' ? 'separate' : 'package';
+        } catch {
+            return 'package';
+        }
+    });
+    const fileSendOptionsRef = useRef<HTMLDivElement>(null);
+    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(() => new Set());
+    const [savingBatchId, setSavingBatchId] = useState<string | null>(null);
     const hasOnlineDevices = onlineDevices.length > 0;
     const primaryDeviceName = typeof onlineDevices[0]?.name === 'string' && onlineDevices[0].name.trim()
         ? onlineDevices[0].name.trim()
@@ -257,7 +290,10 @@ const FileTransferChatView = ({
         return items;
     };
 
-    const uploadDroppedFile = async (file: File) => {
+    const uploadDroppedFile = async (
+        file: File,
+        batch?: { id: string; name: string; index: number; total: number; totalSize: number }
+    ) => {
         const port = Number(actualPort);
         if (!Number.isFinite(port) || port <= 0) {
             throw new Error("File transfer server is not running");
@@ -281,7 +317,12 @@ const FileTransferChatView = ({
                 sender_id: "pc",
                 sender_name: "电脑",
                 total_size: file.size,
-                content_type: file.type || "application/octet-stream"
+                content_type: file.type || "application/octet-stream",
+                batch_id: batch?.id,
+                batch_name: batch?.name,
+                batch_index: batch?.index,
+                batch_total: batch?.total,
+                batch_size: batch?.totalSize
             }));
 
             const response = await fetch(`http://127.0.0.1:${port}/share-chunk`, {
@@ -297,37 +338,69 @@ const FileTransferChatView = ({
         }
     };
 
-    const queueFilesForSending = async (rawItems: PendingTransferItem[]) => {
+    const queueFilesForSending = async (
+        rawItems: PendingTransferItem[],
+        sendMode: MultiFileSendMode = multiFileSendMode
+    ) => {
         const items = rawItems.filter((item) => {
             if (item.path && item.path.trim().length > 0) return true;
             return !!item.file;
         });
         if (items.length === 0) return;
+        const shouldPackage = items.length > 1 && sendMode === 'package';
+        const batchId = shouldPackage
+            ? `desktop_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+            : undefined;
+        const batchName = shouldPackage ? `${items.length} 个文件` : undefined;
+        const batchSize = items.reduce((total, item) => total + (item.file?.size || 0), 0);
 
-        const tempMessages: FileTransferMessage[] = items.map((item) => ({
+        const tempMessages: FileTransferMessage[] = items.map((item, index) => ({
             id: Date.now() + Math.random(),
             direction: 'out',
             msg_type: 'file',
             content: 'Preparing...',
             timestamp: Date.now(),
             _fileName: item.name,
-            _preparing: true
+            _preparing: true,
+            batch_id: batchId,
+            batch_name: batchName,
+            batch_index: batchId ? index : undefined,
+            batch_total: batchId ? items.length : undefined,
+            batch_size: batchId ? batchSize : undefined,
+            file_size: item.file?.size
         }));
 
         setMessages(prev => [...prev, ...tempMessages]);
         setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
-        const results = await Promise.allSettled(
-            items.map((item) => {
-                if (item.path) {
-                    return invoke("send_file_to_client", { filePath: item.path });
-                }
-                if (item.file) {
-                    return uploadDroppedFile(item.file);
-                }
-                return Promise.reject(new Error("No valid file source"));
-            })
-        );
+        let results: PromiseSettledResult<unknown>[];
+        if (shouldPackage && items.every(item => !!item.path)) {
+            const result = await Promise.allSettled([
+                invoke("send_files_to_client", {
+                    filePaths: items.map(item => item.path!),
+                    batchName
+                })
+            ]);
+            results = items.map(() => result[0]);
+        } else {
+            results = await Promise.allSettled(
+                items.map((item, index) => {
+                    if (item.path) {
+                        return invoke("send_file_to_client", { filePath: item.path });
+                    }
+                    if (item.file) {
+                        return uploadDroppedFile(item.file, batchId ? {
+                            id: batchId,
+                            name: batchName!,
+                            index,
+                            total: items.length,
+                            totalSize: batchSize
+                        } : undefined);
+                    }
+                    return Promise.reject(new Error("No valid file source"));
+                })
+            );
+        }
 
         const failedIds = new Set<number>();
         results.forEach((result, index) => {
@@ -344,6 +417,17 @@ const FileTransferChatView = ({
         if (results.some((result) => result.status === "fulfilled")) {
             setTimeout(fetchMessages, 300);
         }
+    };
+
+    const selectMultiFileSendMode = (mode: MultiFileSendMode) => {
+        setMultiFileSendMode(mode);
+        setShowFileSendOptions(false);
+        try {
+            localStorage.setItem(MULTI_FILE_SEND_MODE_KEY, mode);
+        } catch {
+            // The preference is optional; sending still works when storage is unavailable.
+        }
+        void chooseFilesToSend(mode);
     };
 
     const normalizeUrl = (raw: string) => {
@@ -371,6 +455,15 @@ const FileTransferChatView = ({
     const mediaFallbackKey = (message: FileTransferMessage) => (
         `${message.id}:${message.content}:${message.file_path || ''}`
     );
+
+    useEffect(() => {
+        const activeKeys = new Set(messages.map(mediaFallbackKey));
+        setMediaFallbackSources((current) => {
+            const entries = Object.entries(current);
+            if (entries.every(([key]) => activeKeys.has(key))) return current;
+            return Object.fromEntries(entries.filter(([key]) => activeKeys.has(key)));
+        });
+    }, [messages]);
 
     const getMessageMediaSrc = (message: FileTransferMessage) => {
         const fallback = mediaFallbackSources[mediaFallbackKey(message)];
@@ -648,7 +741,7 @@ const FileTransferChatView = ({
             console.log("[DRAG] Drop event received:", event);
             console.log("[DRAG] Event payload type:", typeof event.payload);
             console.log("[DRAG] Event payload:", JSON.stringify(event.payload, null, 2));
-            setIsDragging(false);
+            setDragging(false);
 
             const paths = resolveDropPaths(event.payload);
 
@@ -666,12 +759,12 @@ const FileTransferChatView = ({
 
         const handleDragEnter = (event: { payload: unknown }) => {
             console.log("[DRAG] Enter event received:", event);
-            setIsDragging(true);
+            setDragging(true);
         };
 
         const handleDragLeave = (event: { payload: unknown }) => {
             console.log("[DRAG] Leave event received:", event);
-            setIsDragging(false);
+            setDragging(false);
         };
 
         // Listen to BOTH v1 and v2 events just to be safe
@@ -771,9 +864,10 @@ const FileTransferChatView = ({
         }
     }, [composerMinHeight, input]);
 
-    const chooseFilesToSend = async () => {
+    const chooseFilesToSend = async (sendMode: MultiFileSendMode = multiFileSendMode) => {
         if (isChoosingFiles) return;
         setIsChoosingFiles(true);
+        setShowFileSendOptions(false);
 
         try {
             const selected = await withNativeDialog(() => open({
@@ -787,7 +881,8 @@ const FileTransferChatView = ({
                 paths.map(path => ({
                     name: path.split(/[/\\]/).pop() || '文件',
                     path
-                }))
+                })),
+                sendMode
             );
         } catch (error) {
             console.error('Failed to choose files', error);
@@ -796,6 +891,17 @@ const FileTransferChatView = ({
             setIsChoosingFiles(false);
         }
     };
+
+    useEffect(() => {
+        if (!showFileSendOptions) return;
+        const closeOptions = (event: globalThis.MouseEvent) => {
+            if (!fileSendOptionsRef.current?.contains(event.target as Node)) {
+                setShowFileSendOptions(false);
+            }
+        };
+        window.addEventListener('pointerdown', closeOptions);
+        return () => window.removeEventListener('pointerdown', closeOptions);
+    }, [showFileSendOptions]);
 
     const send = async () => {
         if (!input.trim()) return;
@@ -902,27 +1008,71 @@ const FileTransferChatView = ({
         };
     }, [contextMenu]);
 
+    const toggleBatchExpanded = (batchId: string) => {
+        setExpandedBatches(current => {
+            const next = new Set(current);
+            if (next.has(batchId)) next.delete(batchId);
+            else next.add(batchId);
+            return next;
+        });
+    };
+
+    const saveBatchAs = async (batchMessages: FileTransferMessage[]) => {
+        const batchId = batchMessages[0]?.batch_id;
+        if (!batchId || savingBatchId) return;
+        const sourcePaths = batchMessages
+            .map(message => message.file_path)
+            .filter((path): path is string => !!path && isLocalTransferPath(path));
+        if (sourcePaths.length !== batchMessages.length) {
+            await emit('toast', '文件包中有文件尚未准备好或已不可用');
+            return;
+        }
+
+        const targetDir = await withNativeDialog(
+            () => open({ directory: true, multiple: false, title: '选择文件包保存位置' }),
+            'file-transfer:save-batch'
+        );
+        if (!targetDir || Array.isArray(targetDir)) return;
+
+        setSavingBatchId(batchId);
+        try {
+            const savedPath = await invoke<string>('save_file_batch', {
+                sourcePaths,
+                targetDir,
+                batchName: batchMessages[0].batch_name || `${batchMessages.length} 个文件`
+            });
+            await emit('toast', `文件包已保存到 ${savedPath}`);
+        } catch (error) {
+            console.error('Failed to save file package', error);
+            await emit('toast', '文件包保存失败，请检查目标目录空间和权限');
+        } finally {
+            setSavingBatchId(null);
+        }
+    };
+
     useEffect(() => {
         const handleWindowDragOver = (event: globalThis.DragEvent) => {
+            if (!isExternalFileDrag(event.dataTransfer)) return;
             event.preventDefault();
             if (event.dataTransfer) {
                 event.dataTransfer.dropEffect = "copy";
             }
-            if (!isDragging) {
-                setIsDragging(true);
+            if (!isDraggingRef.current) {
+                setDragging(true);
             }
         };
 
         const handleWindowDragLeave = (event: globalThis.DragEvent) => {
             if (event.relatedTarget === null) {
-                setIsDragging(false);
+                setDragging(false);
             }
         };
 
         const handleWindowDrop = (event: globalThis.DragEvent) => {
+            if (!isExternalFileDrag(event.dataTransfer) && !isDraggingRef.current) return;
             event.preventDefault();
             event.stopPropagation();
-            setIsDragging(false);
+            setDragging(false);
 
             const items = getDroppedTransferItems(event.dataTransfer);
             if (items.length > 0) {
@@ -942,29 +1092,57 @@ const FileTransferChatView = ({
             window.removeEventListener("dragleave", handleWindowDragLeave);
             window.removeEventListener("drop", handleWindowDrop);
         };
+    }, []);
+
+    // Safety net: drag-leave/cancel can be missed (esp. Esc / leave window),
+    // leaving the full-screen overlay stuck and blocking custom context menus.
+    useEffect(() => {
+        if (!isDragging) return;
+
+        const clearDragging = () => setDragging(false);
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') clearDragging();
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('dragend', clearDragging);
+        window.addEventListener('blur', clearDragging);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('dragend', clearDragging);
+            window.removeEventListener('blur', clearDragging);
+        };
     }, [isDragging]);
 
     return (
         <div
             className="wt-chat-view"
             style={{ position: 'relative' }}
+            onContextMenu={(e) => {
+                // Blank areas have no custom menu; always block WKWebView "Reload".
+                if (!(e.target as HTMLElement).closest('.wt-context-menu')) {
+                    e.preventDefault();
+                }
+            }}
             onDragOver={(e) => {
+                if (!isExternalFileDrag(e.dataTransfer)) return;
                 // Critical: Prevent default browser behavior to allow drop
                 e.preventDefault();
                 if (e.dataTransfer) {
                     e.dataTransfer.dropEffect = 'copy';
                 }
-                if (!isDragging) setIsDragging(true);
+                if (!isDraggingRef.current) setDragging(true);
             }}
             onDragLeave={(e) => {
                 // Check if leaving the main container
                 if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-                setIsDragging(false);
+                setDragging(false);
             }}
             onDrop={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                setIsDragging(false);
+                setDragging(false);
                 const items = getDroppedTransferItems(e.dataTransfer);
                 if (items.length > 0) {
                     void queueFilesForSending(items);
@@ -981,6 +1159,12 @@ const FileTransferChatView = ({
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="wt-drag-overlay"
+                        onContextMenu={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setDragging(false);
+                        }}
+                        onClick={() => setDragging(false)}
                     >
                         <div className="wt-drag-drop-zone">
                             <Folder size={64} strokeWidth={1.5} />
@@ -1054,10 +1238,123 @@ const FileTransferChatView = ({
                 {messages.map((m, index) => {
                     const avatar = getAvatarConfig(m);
                     const transferFileName = getTransferFileName(m);
+                    const batchMessages = m.batch_id
+                        ? messages
+                            .filter(message => message.batch_id === m.batch_id)
+                            .sort((left, right) => (left.batch_index ?? 0) - (right.batch_index ?? 0))
+                        : [];
+                    const isBatch = !!m.batch_id && (m.batch_total ?? batchMessages.length) > 1;
+                    if (isBatch && messages.findIndex(message => message.batch_id === m.batch_id) !== index) {
+                        return null;
+                    }
                     const groupedWithPrevious = messagesBelongToSameGroup(messages[index - 1], m);
                     const groupedWithNext = messagesBelongToSameGroup(m, messages[index + 1]);
                     const startsNewDay = index === 0
                         || getMessageDayKey(messages[index - 1].timestamp) !== getMessageDayKey(m.timestamp);
+                    if (isBatch) {
+                        const batchId = m.batch_id!;
+                        const expanded = expandedBatches.has(batchId);
+                        const availableCount = batchMessages.filter(message =>
+                            !!message.file_path && isLocalTransferPath(message.file_path)
+                        ).length;
+                        const totalSize = m.batch_size
+                            || batchMessages.reduce((total, message) => total + (message.file_size || 0), 0);
+                        return (
+                            <Fragment key={`batch-${batchId}`}>
+                                {startsNewDay && m.timestamp > 0 && (
+                                    <div className="wt-day-separator" role="separator">
+                                        <span>{formatMessageDay(m.timestamp)}</span>
+                                    </div>
+                                )}
+                                <div className={`wt-message ${m.direction === 'out' ? 'sent' : 'received'} is-group-start is-group-end`}>
+                                    <div
+                                        className="wt-avatar"
+                                        style={{ background: avatar.isImg ? 'transparent' : avatar.color }}
+                                        aria-label={m.direction === 'out' ? '我的设备' : (m.sender_name || '对方设备')}
+                                    >
+                                        {avatar.isImg
+                                            ? <img src={avatar.content} loading="lazy" alt="" />
+                                            : avatar.initial}
+                                    </div>
+                                    <div className="wt-message-stack">
+                                        <div
+                                            className="wt-bubble wt-bubble-file wt-batch-bubble"
+                                            onContextMenu={(event) => openContextMenu(event, {
+                                                type: 'batch',
+                                                batchId,
+                                                batchMessages
+                                            })}
+                                        >
+                                            {m.sender_name && m.direction === 'in' && (
+                                                <div className="wt-sender-name">{m.sender_name}</div>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="wt-batch-header"
+                                                onClick={() => toggleBatchExpanded(batchId)}
+                                                aria-expanded={expanded}
+                                            >
+                                                <span className="wt-batch-icon"><FileArchive size={24} /></span>
+                                                <span className="wt-batch-summary">
+                                                    <strong>{m.batch_name || `${m.batch_total || batchMessages.length} 个文件`}</strong>
+                                                    <small>
+                                                        {m.batch_total || batchMessages.length} 个文件
+                                                        {totalSize > 0 ? ` · ${formatTransferBytes(totalSize)}` : ''}
+                                                    </small>
+                                                </span>
+                                                {expanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
+                                            </button>
+                                            {expanded && (
+                                                <div className="wt-batch-files">
+                                                    {batchMessages.map(fileMessage => (
+                                                        <button
+                                                            type="button"
+                                                            className="wt-batch-file"
+                                                            key={fileMessage.id}
+                                                            disabled={fileMessage._preparing}
+                                                            onClick={() => {
+                                                                if (fileMessage._preparing) return;
+                                                                void openTransferContent({
+                                                                    filePath: fileMessage.file_path,
+                                                                    content: fileMessage.content,
+                                                                    type: fileMessage.msg_type
+                                                                });
+                                                            }}
+                                                        >
+                                                            <TransferFileTypeIcon
+                                                                filePath={getTransferFileIconPath(fileMessage)}
+                                                                fileName={getTransferFileName(fileMessage)}
+                                                                preparing={fileMessage._preparing}
+                                                            />
+                                                            <span>
+                                                                <strong>{getTransferFileName(fileMessage)}</strong>
+                                                                <small>{formatTransferBytes(fileMessage.file_size) || (fileMessage._preparing ? '准备中…' : '点击打开')}</small>
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            <div className="wt-batch-actions">
+                                                <span>{availableCount}/{m.batch_total || batchMessages.length} 可用</span>
+                                                <button
+                                                    type="button"
+                                                    disabled={savingBatchId === batchId || availableCount !== batchMessages.length}
+                                                    onClick={() => void saveBatchAs(batchMessages)}
+                                                >
+                                                    <Folder size={13} />
+                                                    {savingBatchId === batchId ? '正在保存…' : '整包另存为'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="wt-message-meta">
+                                            <span>{formatMessageTime(m.timestamp)}</span>
+                                            {m.direction === 'out' && <span className="wt-delivery-mark">✓</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                            </Fragment>
+                        );
+                    }
                     return (
                         <Fragment key={m.id}>
                         {startsNewDay && m.timestamp > 0 && (
@@ -1093,7 +1390,11 @@ const FileTransferChatView = ({
                                 <div
                                     className={`wt-bubble wt-bubble-${m.msg_type}`}
                                     onContextMenu={(event) => {
-                                        if (m._preparing) return;
+                                        if (m._preparing) {
+                                            event.preventDefault();
+                                            event.stopPropagation();
+                                            return;
+                                        }
                                         const menuType = m.msg_type === 'text' || m.msg_type === 'image' || m.msg_type === 'video'
                                             ? m.msg_type
                                             : 'file';
@@ -1123,6 +1424,7 @@ const FileTransferChatView = ({
                                             src={getMessageMediaSrc(m)}
                                             className="wt-img-preview"
                                             loading="lazy"
+                                            draggable={false}
                                             style={{ cursor: 'pointer' }}
                                             alt="Image"
                                             onClick={async () => {
@@ -1185,14 +1487,17 @@ const FileTransferChatView = ({
                                             }}
 
                                             onContextMenu={(e) => {
-                                                if (!m._preparing) {
-                                                    openContextMenu(e, {
-                                                        filePath: m.file_path || m.content,
-                                                        content: m.content,
-                                                        id: m.id,
-                                                        type: 'file'
-                                                    });
+                                                if (m._preparing) {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    return;
                                                 }
+                                                openContextMenu(e, {
+                                                    filePath: m.file_path || m.content,
+                                                    content: m.content,
+                                                    id: m.id,
+                                                    type: 'file'
+                                                });
                                             }}
                                         >
                                             <div className="wt-file-icon">
@@ -1239,18 +1544,64 @@ const FileTransferChatView = ({
 
             <div className="wt-footer">
                 <div className="wt-composer">
-                    <button
-                        type="button"
-                        className="wt-btn-icon"
-                        title={isChoosingFiles ? '正在打开文件选择器' : '发送文件'}
-                        aria-label={isChoosingFiles ? '正在打开文件选择器' : '发送文件'}
-                        disabled={isChoosingFiles}
-                        onClick={() => void chooseFilesToSend()}
-                    >
-                        {isChoosingFiles
-                            ? <LoaderCircle size={18} className="wt-spin" />
-                            : <Plus size={18} />}
-                    </button>
+                    <div className="wt-file-send-control" ref={fileSendOptionsRef}>
+                        <button
+                            type="button"
+                            className="wt-btn-icon wt-file-send-main"
+                            title={isChoosingFiles
+                                ? '正在打开文件选择器'
+                                : multiFileSendMode === 'package' ? '发送文件（多文件组成文件包）' : '发送文件（多文件分别发送）'}
+                            aria-label={isChoosingFiles ? '正在打开文件选择器' : '发送文件'}
+                            disabled={isChoosingFiles}
+                            onClick={() => void chooseFilesToSend()}
+                        >
+                            {isChoosingFiles
+                                ? <LoaderCircle size={18} className="wt-spin" />
+                                : <Plus size={18} />}
+                        </button>
+                        <button
+                            type="button"
+                            className="wt-file-send-toggle"
+                            aria-label="选择多文件发送方式"
+                            aria-expanded={showFileSendOptions}
+                            disabled={isChoosingFiles}
+                            onClick={() => setShowFileSendOptions(value => !value)}
+                        >
+                            <ChevronDown size={12} />
+                        </button>
+                        {showFileSendOptions && (
+                            <div className="wt-file-send-options" role="menu">
+                                <button
+                                    type="button"
+                                    className={multiFileSendMode === 'package' ? 'is-active' : ''}
+                                    role="menuitemradio"
+                                    aria-checked={multiFileSendMode === 'package'}
+                                    onClick={() => selectMultiFileSendMode('package')}
+                                >
+                                    <FileArchive size={17} />
+                                    <span>
+                                        <strong>作为文件包发送</strong>
+                                        <small>多文件折叠显示，可整包保存</small>
+                                    </span>
+                                    {multiFileSendMode === 'package' && <span className="wt-option-check">✓</span>}
+                                </button>
+                                <button
+                                    type="button"
+                                    className={multiFileSendMode === 'separate' ? 'is-active' : ''}
+                                    role="menuitemradio"
+                                    aria-checked={multiFileSendMode === 'separate'}
+                                    onClick={() => selectMultiFileSendMode('separate')}
+                                >
+                                    <FileIcon size={17} />
+                                    <span>
+                                        <strong>分别发送</strong>
+                                        <small>每个文件独立显示</small>
+                                    </span>
+                                    {multiFileSendMode === 'separate' && <span className="wt-option-check">✓</span>}
+                                </button>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="wt-input-wrap">
                         <textarea
@@ -1350,6 +1701,46 @@ const FileTransferChatView = ({
                         style={{ top: contextMenu.y, left: contextMenu.x }}
                         onContextMenu={(event) => event.preventDefault()}
                     >
+                        {contextMenu.type === 'batch' && contextMenu.batchId && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
+                                    onClick={() => {
+                                        const batchId = contextMenu.batchId!;
+                                        setContextMenu(null);
+                                        toggleBatchExpanded(batchId);
+                                    }}
+                                >
+                                    {expandedBatches.has(contextMenu.batchId)
+                                        ? <ChevronRight size={16} />
+                                        : <ChevronDown size={16} />}
+                                    <span>{expandedBatches.has(contextMenu.batchId) ? '收起文件包' : '展开文件包'}</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className="wt-context-item"
+                                    role="menuitem"
+                                    disabled={
+                                        savingBatchId === contextMenu.batchId
+                                        || !contextMenu.batchMessages?.length
+                                        || contextMenu.batchMessages.some(message =>
+                                            !message.file_path || !isLocalTransferPath(message.file_path)
+                                        )
+                                    }
+                                    onClick={() => {
+                                        const selected = contextMenu.batchMessages || [];
+                                        setContextMenu(null);
+                                        void saveBatchAs(selected);
+                                    }}
+                                >
+                                    <Folder size={16} />
+                                    <span>{savingBatchId === contextMenu.batchId ? '正在保存…' : '整包另存为…'}</span>
+                                </button>
+                            </>
+                        )}
+
                         {(contextMenu.type === 'file' || contextMenu.type === 'image' || contextMenu.type === 'video') && (
                             <>
                                 <button

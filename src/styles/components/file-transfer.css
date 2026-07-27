@@ -628,6 +628,124 @@
   margin: 0 auto;
 }
 
+.wt-file-send-control {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  border-radius: var(--im-control-radius);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--im-accent) 28%, transparent),
+    0 3px 10px rgba(var(--im-accent-rgb), 0.1);
+}
+
+.wt-file-send-main {
+  color: var(--im-accent) !important;
+  border-color: color-mix(in srgb, var(--im-accent) 45%, var(--im-border)) !important;
+  border-radius: var(--im-control-radius) 0 0 var(--im-control-radius) !important;
+  background: color-mix(in srgb, var(--im-accent) 12%, var(--im-input)) !important;
+}
+
+.wt-file-send-toggle {
+  display: inline-flex;
+  width: 25px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--im-accent) 45%, var(--im-border));
+  border-left: 0;
+  border-radius: 0 var(--im-control-radius) var(--im-control-radius) 0;
+  color: var(--im-accent);
+  background: color-mix(in srgb, var(--im-accent) 12%, var(--im-input));
+  cursor: pointer;
+}
+
+.wt-file-send-toggle::before {
+  position: absolute;
+  left: 35px;
+  width: 1px;
+  height: 18px;
+  content: "";
+  background: color-mix(in srgb, var(--im-accent) 32%, transparent);
+}
+
+.wt-file-send-toggle:hover,
+.wt-file-send-toggle[aria-expanded="true"] {
+  color: var(--im-accent);
+  background: color-mix(in srgb, var(--im-accent) 22%, var(--im-input));
+}
+
+.wt-file-send-toggle:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.wt-file-send-options {
+  position: absolute;
+  z-index: 2200;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  width: 244px;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid var(--im-strong-border);
+  border-radius: var(--im-control-radius);
+  background: color-mix(in srgb, var(--im-surface) 97%, transparent);
+  box-shadow: var(--im-menu-shadow);
+  backdrop-filter: blur(22px) saturate(130%);
+}
+
+.wt-file-send-options button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--im-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wt-file-send-options button:hover,
+.wt-file-send-options button.is-active {
+  background: color-mix(in srgb, var(--im-accent) 10%, transparent);
+}
+
+.wt-file-send-options button > svg {
+  color: var(--im-muted);
+}
+
+.wt-file-send-options button.is-active > svg,
+.wt-option-check {
+  color: var(--im-accent);
+}
+
+.wt-file-send-options strong,
+.wt-file-send-options small {
+  display: block;
+}
+
+.wt-file-send-options strong {
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.wt-file-send-options small {
+  margin-top: 2px;
+  color: var(--im-muted);
+  font-size: 9.5px;
+}
+
+.wt-option-check {
+  justify-self: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .wt-input-wrap {
   display: flex;
   min-width: 0;
@@ -887,6 +1005,152 @@
   height: 1px;
   margin: 4px 7px;
   background: var(--im-border);
+}
+
+.wt-batch-bubble {
+  width: min(310px, calc(100vw - 92px));
+  padding: 8px;
+}
+
+.wt-batch-header,
+.wt-batch-file,
+.wt-batch-actions button {
+  font: inherit;
+  color: inherit;
+}
+
+.wt-batch-header {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 7px;
+  border: 0;
+  border-radius: var(--im-control-radius);
+  color: var(--im-text);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wt-batch-header:hover {
+  background: color-mix(in srgb, var(--im-accent) 8%, transparent);
+}
+
+.wt-batch-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: var(--im-control-radius);
+  color: var(--im-accent);
+  background: color-mix(in srgb, var(--im-accent) 12%, var(--im-input));
+}
+
+.wt-batch-summary {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wt-batch-summary strong,
+.wt-batch-file strong {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-batch-summary small,
+.wt-batch-file small,
+.wt-batch-actions {
+  color: var(--im-muted);
+  font-size: 10px;
+}
+
+.wt-batch-files {
+  display: flex;
+  max-height: 220px;
+  margin: 5px 4px 7px;
+  padding: 5px 0;
+  flex-direction: column;
+  overflow-y: auto;
+  border-top: 1px solid var(--im-border);
+  border-bottom: 1px solid var(--im-border);
+}
+
+.wt-batch-file {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wt-batch-file:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--im-accent) 8%, transparent);
+}
+
+.wt-batch-file:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.wt-batch-file > svg,
+.wt-batch-file > .wt-file-fallback-icon,
+.wt-batch-file > .wt-file-system-icon {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+}
+
+.wt-batch-file > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wt-batch-actions {
+  display: flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 5px 0;
+}
+
+.wt-batch-actions button {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--im-border);
+  border-radius: var(--im-control-radius);
+  color: var(--im-accent);
+  background: var(--im-input);
+  cursor: pointer;
+}
+
+.wt-batch-actions button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--im-accent) 36%, var(--im-border));
+  background: color-mix(in srgb, var(--im-accent) 10%, var(--im-input));
+}
+
+.wt-batch-actions button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 /* Theme token adapters: geometry remains untouched. */

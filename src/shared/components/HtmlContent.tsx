@@ -39,6 +39,24 @@ const stripPreviewColorFromCssText = (cssText: string): string => {
     .trim();
 };
 
+const stripUnsafeCssText = (cssText: string): string => {
+  return cssText
+    .replace(/@import\s+[^;]+;?/gi, "")
+    .replace(/expression\s*\([^)]*\)/gi, "")
+    .replace(/(?:^|[;{])\s*(?:position|z-index|inset|top|right|bottom|left)\s*:\s*[^;}]+;?/gi, "$1")
+    .replace(
+      /url\s*\(\s*(['"]?)(.*?)\1\s*\)/gi,
+      (full, _quote: string, rawUrl: string) => {
+        const url = rawUrl.trim();
+        return /^(?:data:image\/|https?:\/\/asset\.localhost\/|asset:)/i.test(url)
+          ? full
+          : "none";
+      }
+    )
+    .replace(/;\s*;/g, ";")
+    .trim();
+};
+
 const resolveImgSource = (el: Element): string | null => {
   const src = el.getAttribute("src")?.trim() || "";
   const lazyAttrs = [
@@ -112,8 +130,13 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
 
   const doc = parser.parseFromString(processedHtml, "text/html");
 
-  // Only remove scripts, keep styles for formatting (e.g. Excel)
-  doc.querySelectorAll("script").forEach(el => el.remove());
+  // Keep formatting styles, but remove active/embedded content. Author styles are
+  // rendered inside a ShadowRoot below, so their selectors cannot leak into TieZ.
+  doc
+    .querySelectorAll(
+      "script, iframe, frame, object, embed, form, input, button, textarea, select, option, base, template, svg, math"
+    )
+    .forEach(el => el.remove());
   doc.querySelectorAll("style").forEach((style) => {
     if (isOfficeStyleDefinitionText(style.textContent || "")) {
       style.remove();
@@ -123,8 +146,9 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       style.textContent = stripPreviewColorFromCssText(
         stripFontSizeFromCssText(style.textContent)
       );
-    } else if (style.textContent) {
-      style.textContent = stripPreviewColorFromCssText(style.textContent);
+    }
+    if (style.textContent) {
+      style.textContent = stripUnsafeCssText(style.textContent);
     }
   });
   doc.querySelectorAll("meta, link, xml").forEach((el) => el.remove());
@@ -163,7 +187,7 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
     // Basic sanitization of on* attributes and javascript: links
     [...el.attributes].forEach(attr => {
       const name = attr.name.toLowerCase();
-      const value = attr.value.toLowerCase();
+      const value = attr.value.trim().toLowerCase();
       if (name.startsWith("on")) {
         el.removeAttribute(attr.name);
       }
@@ -175,8 +199,9 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
           .replace(/(?:^|;)\s*(?:transform|writing-mode|rotate|scale)\s*:[^;]*/gi, "")
           .trim()
           .replace(/^;+|;+$/g, "");
-        cleanedStyle = stripPreviewColorFromCssText(cleanedStyle);
+        cleanedStyle = stripUnsafeCssText(cleanedStyle);
         if (preview) {
+          cleanedStyle = stripPreviewColorFromCssText(cleanedStyle);
           cleanedStyle = stripFontSizeFromCssText(cleanedStyle);
         }
         if (cleanedStyle) {
@@ -189,7 +214,7 @@ const sanitizeHTML = (html: string, preview?: boolean) => {
       if (preview && el.tagName.toLowerCase() === "font" && name === "size") {
         el.removeAttribute(attr.name);
       }
-      if (name === "color" || name === "bgcolor") {
+      if (preview && (name === "color" || name === "bgcolor")) {
         el.removeAttribute(attr.name);
       }
     });
@@ -235,6 +260,130 @@ type HtmlContentProps = {
   preview?: boolean;
 };
 
+const SHADOW_BASE_STYLE = `
+  :host {
+    display: block;
+    color: var(--text-primary);
+    font-family: var(--font-main);
+    font-size: var(--clipboard-item-font-size);
+    line-height: 1.4;
+  }
+  .tiez-rich-root { color: inherit; font: inherit; line-height: inherit; min-width: 0; }
+  .tiez-rich-root *, .tiez-rich-root *::before, .tiez-rich-root *::after {
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+  .tiez-rich-root img, .tiez-rich-root video { max-width: 100%; height: auto; }
+  .tiez-rich-root table { border-collapse: collapse; max-width: 100%; }
+`;
+
+const SHADOW_PREVIEW_STYLE = `
+  .tiez-rich-root, .tiez-rich-root *:not(style) {
+    font-size: inherit !important;
+    line-height: inherit;
+    color: var(--text-primary) !important;
+    background-color: transparent !important;
+  }
+  .tiez-rich-root table { width: 100%; margin: 4px 0; }
+  .tiez-rich-root td, .tiez-rich-root th {
+    border: 1px solid var(--border-dark);
+    padding: 2px 4px;
+    background-color: var(--bg-element) !important;
+    color: var(--text-primary) !important;
+  }
+  .tiez-rich-root img { max-height: 80px; object-fit: contain; }
+  .tiez-rich-root p { margin: 0; padding: 0; }
+  .tiez-rich-root h1, .tiez-rich-root h2, .tiez-rich-root h3, .tiez-rich-root h4 {
+    font-size: 1em !important;
+    font-weight: bold;
+    margin: 2px 0;
+  }
+  .tiez-rich-root ul, .tiez-rich-root ol { padding-left: 16px; margin: 0; }
+  .tiez-rich-root a { color: var(--accent-color) !important; text-decoration: underline; }
+`;
+
+type Rgba = { r: number; g: number; b: number; a: number };
+
+const parseCssColor = (value: string): Rgba | null => {
+  const match = value.match(
+    /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i
+  );
+  if (!match) return null;
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: match[4] == null ? 1 : Number(match[4])
+  };
+};
+
+const compositeColor = (foreground: Rgba, background: Rgba): Rgba => {
+  const alpha = foreground.a + background.a * (1 - foreground.a);
+  if (alpha <= 0) return { r: 0, g: 0, b: 0, a: 0 };
+  return {
+    r: (foreground.r * foreground.a + background.r * background.a * (1 - foreground.a)) / alpha,
+    g: (foreground.g * foreground.a + background.g * background.a * (1 - foreground.a)) / alpha,
+    b: (foreground.b * foreground.a + background.b * background.a * (1 - foreground.a)) / alpha,
+    a: alpha
+  };
+};
+
+const relativeLuminance = ({ r, g, b }: Rgba) => {
+  const linear = [r, g, b].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+};
+
+const contrastRatio = (left: Rgba, right: Rgba) => {
+  const light = Math.max(relativeLuminance(left), relativeLuminance(right));
+  const dark = Math.min(relativeLuminance(left), relativeLuminance(right));
+  return (light + 0.05) / (dark + 0.05);
+};
+
+const effectiveBackground = (element: Element, host: HTMLElement): Rgba => {
+  let background: Rgba = { r: 0, g: 0, b: 0, a: 0 };
+  let current: Element | null = element;
+
+  while (current) {
+    const parsed = parseCssColor(getComputedStyle(current).backgroundColor);
+    if (parsed && parsed.a > 0) {
+      background = compositeColor(background, parsed);
+      if (background.a >= 0.99) return background;
+    }
+    current = current.parentElement;
+  }
+
+  current = host;
+  while (current) {
+    const parsed = parseCssColor(getComputedStyle(current).backgroundColor);
+    if (parsed && parsed.a > 0) {
+      background = compositeColor(background, parsed);
+      if (background.a >= 0.99) return background;
+    }
+    current = current.parentElement;
+  }
+
+  const fallback = parseCssColor(
+    getComputedStyle(host).getPropertyValue("--bg-element").trim()
+  );
+  return fallback ?? { r: 255, g: 255, b: 255, a: 1 };
+};
+
+const repairUnreadableSourceColors = (root: ShadowRoot, host: HTMLElement) => {
+  root.querySelectorAll<HTMLElement>(".tiez-rich-root *").forEach((element) => {
+    if (!(element.textContent || "").trim()) return;
+    const foreground = parseCssColor(getComputedStyle(element).color);
+    if (!foreground) return;
+    const background = effectiveBackground(element, host);
+    const opaqueForeground = compositeColor(foreground, background);
+    if (contrastRatio(opaqueForeground, background) < 2.25) {
+      element.style.setProperty("color", "var(--text-primary)", "important");
+    }
+  });
+};
+
 const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: HtmlContentProps) => {
   const contentRef = useRef<HTMLDivElement | null>(null);
   const processedRef = useRef<{ htmlContent: string; preview?: boolean; fallbackText?: string } | null>(null);
@@ -272,10 +421,18 @@ const HtmlContent = ({ htmlContent, fallbackText, className, style, preview }: H
     }
     processedRef.current = { htmlContent, preview, fallbackText };
     const { html: cleanHTML, hasRenderable } = sanitizeHTML(htmlContent, preview);
+    const host = contentRef.current;
+    const shadowRoot = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    const renderedContent = !hasRenderable && fallbackText
+      ? `<div class="tiez-rich-root"></div>`
+      : `<div class="tiez-rich-root">${cleanHTML}</div>`;
+    shadowRoot.innerHTML = `<style>${SHADOW_BASE_STYLE}${preview ? SHADOW_PREVIEW_STYLE : ""}</style>${renderedContent}`;
+
     if (!hasRenderable && fallbackText) {
-      contentRef.current.textContent = fallbackText;
-    } else {
-      contentRef.current.innerHTML = cleanHTML;
+      const fallbackRoot = shadowRoot.querySelector(".tiez-rich-root");
+      if (fallbackRoot) fallbackRoot.textContent = fallbackText;
+    } else if (!preview) {
+      requestAnimationFrame(() => repairUnreadableSourceColors(shadowRoot, host));
     }
   }, [htmlContent, fallbackText, isVisible, preview]);
 

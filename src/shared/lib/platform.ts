@@ -6,3 +6,12 @@ export const isMacPlatform = (): boolean => {
     /Mac/i.test(navigator.platform)
   );
 };
+
+export const isWindowsPlatform = (): boolean => {
+  if (typeof navigator === "undefined") return false;
+
+  return (
+    /Windows|Win32|Win64/i.test(navigator.userAgent) ||
+    /Win/i.test(navigator.platform)
+  );
+};

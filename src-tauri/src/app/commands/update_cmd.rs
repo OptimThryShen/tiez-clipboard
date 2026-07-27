@@ -1,9 +1,22 @@
-use crate::error::{AppError, AppResult};
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseBuildInfo {
+    pub channel: String,
+    pub portable: bool,
+}
 
 #[tauri::command]
-pub async fn download_and_install_update(_url: String) -> AppResult<()> {
-    // macOS auto-update logic goes here later (e.g. sparkel or Tauri built-in updater)
-    Err(AppError::Internal(
-        "Auto-update is not fully supported on this macOS build yet.".to_string(),
-    ))
+pub fn get_release_build_info() -> ReleaseBuildInfo {
+    let configured_channel = option_env!("TIEZ_RELEASE_CHANNEL").unwrap_or("stable");
+    let channel = match configured_channel {
+        "beta" => "beta",
+        _ => "stable",
+    };
+
+    ReleaseBuildInfo {
+        channel: channel.to_string(),
+        portable: cfg!(feature = "portable"),
+    }
 }

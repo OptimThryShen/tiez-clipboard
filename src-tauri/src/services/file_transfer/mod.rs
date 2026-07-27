@@ -10,7 +10,7 @@ use axum::{
     Router,
 };
 use base64::Engine;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -27,6 +27,10 @@ pub use utils::*;
 
 pub static SERVER_HANDLE: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
 const SHARED_FILE_TOKEN_LIFETIME: Duration = Duration::from_secs(8 * 60 * 60);
+const MAX_SHARED_FILE_TOKENS: usize = 1_024;
+const MAX_CHAT_MESSAGES: usize = 5_000;
+const MAX_FILES_PER_BATCH: usize = 2_000;
+static NEXT_CHAT_MESSAGE_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(super) fn register_shared_file(app_handle: &AppHandle, file_path: String) -> Option<String> {
     if !std::path::Path::new(&file_path).is_file() {
@@ -35,7 +39,26 @@ pub(super) fn register_shared_file(app_handle: &AppHandle, file_path: String) ->
 
     let shared_state = app_handle.state::<SharedFileState>();
     let mut files = shared_state.0.lock().ok()?;
-    files.retain(|_, entry| !entry.is_expired());
+    files.retain(|_, entry| {
+        let keep = !entry.is_expired();
+        if !keep && is_generated_batch_archive(&entry.path) {
+            let _ = std::fs::remove_file(&entry.path);
+        }
+        keep
+    });
+    if files.len() >= MAX_SHARED_FILE_TOKENS {
+        if let Some(oldest_key) = files
+            .iter()
+            .min_by_key(|(_, entry)| entry.expires_at)
+            .map(|(key, _)| key.clone())
+        {
+            if let Some(entry) = files.remove(&oldest_key) {
+                if is_generated_batch_archive(&entry.path) {
+                    let _ = std::fs::remove_file(entry.path);
+                }
+            }
+        }
+    }
 
     let token = uuid::Uuid::new_v4().to_string();
     files.insert(
@@ -48,7 +71,31 @@ pub(super) fn register_shared_file(app_handle: &AppHandle, file_path: String) ->
 fn clear_shared_files(app_handle: &AppHandle) {
     if let Some(shared_state) = app_handle.try_state::<SharedFileState>() {
         if let Ok(mut files) = shared_state.0.lock() {
+            for entry in files.values() {
+                if is_generated_batch_archive(&entry.path) {
+                    let _ = std::fs::remove_file(&entry.path);
+                }
+            }
             files.clear();
+        }
+    }
+}
+
+fn is_generated_batch_archive(path: &str) -> bool {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with(".tiez-batch-") && name.ends_with(".zip"))
+        .unwrap_or(false)
+}
+
+fn clear_upload_sessions(app_handle: &AppHandle) {
+    if let Some(upload_sessions) = app_handle.try_state::<UploadSessions>() {
+        if let Ok(mut sessions) = upload_sessions.0.lock() {
+            for path in sessions.values() {
+                let _ = std::fs::remove_file(path);
+            }
+            sessions.clear();
         }
     }
 }
@@ -175,6 +222,91 @@ pub fn send_file_to_client(app_handle: AppHandle, file_path: String) -> Result<(
 }
 
 #[tauri::command]
+pub fn send_files_to_client(
+    app_handle: AppHandle,
+    file_paths: Vec<String>,
+    batch_name: Option<String>,
+) -> Result<String, String> {
+    if file_paths.len() < 2 {
+        return Err("A file package requires at least two files".to_string());
+    }
+    if file_paths.len() > MAX_FILES_PER_BATCH {
+        return Err("Too many files in one package".to_string());
+    }
+
+    let mut files = Vec::with_capacity(file_paths.len());
+    let mut total_size = 0_u64;
+    for file_path in file_paths {
+        let path = std::path::PathBuf::from(&file_path);
+        let metadata = std::fs::metadata(&path)
+            .map_err(|_| format!("File does not exist: {}", path.to_string_lossy()))?;
+        if !metadata.is_file() {
+            return Err(format!("Not a regular file: {}", path.to_string_lossy()));
+        }
+        total_size = total_size.saturating_add(metadata.len());
+        files.push((file_path, metadata.len()));
+    }
+
+    update_activity(&app_handle);
+    let server_info = app_handle.state::<ServerInfo>();
+    let port = server_info.port.load(Ordering::Relaxed);
+    let ip = server_info.ip.lock().unwrap().clone();
+    if port == 0 || ip.is_empty() || ip == "0.0.0.0" {
+        return Err("Server not running or IP not detected".to_string());
+    }
+
+    let batch_id = uuid::Uuid::new_v4().to_string();
+    let total = files.len();
+    let name = batch_name
+        .unwrap_or_else(|| format!("{} 个文件", total))
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(120)
+        .collect::<String>();
+
+    for (index, (file_path, file_size)) in files.into_iter().enumerate() {
+        let msg_type = transfer_message_type(&file_path);
+        let batch = FileBatchMetadata {
+            id: batch_id.clone(),
+            name: name.clone(),
+            index,
+            total,
+            total_size,
+        };
+        append_message_with_batch(
+            &app_handle,
+            "out",
+            msg_type,
+            &file_path,
+            "pc",
+            "电脑",
+            Some(&file_path),
+            Some(&batch),
+            Some(file_size),
+        );
+    }
+
+    Ok(batch_id)
+}
+
+fn transfer_message_type(file_path: &str) -> &'static str {
+    let path_lower = file_path.to_lowercase();
+    if [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]
+        .iter()
+        .any(|ext| path_lower.ends_with(ext))
+    {
+        "image"
+    } else if [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]
+        .iter()
+        .any(|ext| path_lower.ends_with(ext))
+    {
+        "video"
+    } else {
+        "file"
+    }
+}
+
+#[tauri::command]
 pub fn save_temp_image(app_handle: AppHandle, base64_data: String) -> Result<String, String> {
     use std::io::Write;
     let b64 = if let Some(idx) = base64_data.find(',') {
@@ -229,7 +361,8 @@ pub async fn get_download_url(app_handle: AppHandle, file_path: String) -> Resul
         .to_string_lossy()
         .to_string();
     Ok(format!(
-        "/download/{}?name={}",
+        "http://127.0.0.1:{}/download/{}?name={}",
+        port,
         token,
         urlencoding::encode(&filename)
     ))
@@ -309,6 +442,7 @@ pub async fn toggle_file_server(
                 *token_guard = String::new();
             }
             clear_shared_files(&app_handle);
+            clear_upload_sessions(&app_handle);
             let _ = app_handle.emit(
                 "file-server-status-changed",
                 StatusPayload {
@@ -344,12 +478,20 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         .route("/upload", post(handlers::upload))
         .route("/upload_chunk", post(handlers::upload_chunk))
         .route("/upload-chunk", post(handlers::upload_chunk))
+        .route(
+            "/upload-chunk-base64",
+            post(handlers::upload_chunk_base64),
+        )
         .route("/share_chunk", post(handlers::share_chunk))
         .route("/share-chunk", post(handlers::share_chunk))
         .route("/share_chunk", options(handlers::share_chunk_options))
         .route("/share-chunk", options(handlers::share_chunk_options))
         .route("/send_text", post(handlers::handle_text))
         .route("/send-text", post(handlers::handle_text))
+        .route(
+            "/download-batch/{batch_id}",
+            post(handlers::prepare_batch_download),
+        )
         .layer(middleware::from_fn_with_state(
             state.clone(),
             handlers::require_session,
@@ -387,6 +529,7 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         *token_guard = String::new();
     }
     clear_shared_files(&app_handle);
+    clear_upload_sessions(&app_handle);
     let _ = app_handle.emit(
         "file-server-status-changed",
         StatusPayload {
@@ -407,12 +550,36 @@ pub fn append_message(
     sender_name: &str,
     file_path: Option<&str>,
 ) {
+    append_message_with_batch(
+        app,
+        direction,
+        msg_type,
+        content,
+        sender_id,
+        sender_name,
+        file_path,
+        None,
+        file_path.and_then(|path| std::fs::metadata(path).ok().map(|metadata| metadata.len())),
+    );
+}
+
+pub fn append_message_with_batch(
+    app: &AppHandle,
+    direction: &str,
+    msg_type: &str,
+    content: &str,
+    sender_id: &str,
+    sender_name: &str,
+    file_path: Option<&str>,
+    batch: Option<&FileBatchMetadata>,
+    file_size: Option<u64>,
+) {
     let chat_state = app.state::<ChatState>();
     let mut msgs = match chat_state.0.lock() {
         Ok(guard) => guard,
         Err(_) => return,
     };
-    let id = msgs.len() as u64 + 1;
+    let id = NEXT_CHAT_MESSAGE_ID.fetch_add(1, Ordering::Relaxed);
     let mut final_content = content.to_string();
     if (msg_type == "image" || msg_type == "video" || msg_type == "file")
         && !final_content.starts_with("data:")
@@ -442,8 +609,18 @@ pub fn append_message(
         sender_id: sender_id.to_string(),
         sender_name: sender_name.to_string(),
         file_path: file_path.map(|s| s.to_string()),
+        batch_id: batch.map(|value| value.id.clone()),
+        batch_name: batch.map(|value| value.name.clone()),
+        batch_index: batch.map(|value| value.index),
+        batch_total: batch.map(|value| value.total),
+        batch_size: batch.map(|value| value.total_size),
+        file_size,
     };
     msgs.push(msg.clone());
+    if msgs.len() > MAX_CHAT_MESSAGES {
+        let excess = msgs.len() - MAX_CHAT_MESSAGES;
+        msgs.drain(..excess);
+    }
     drop(msgs);
     if let Some(ws_state) = app.try_state::<WsBroadcaster>() {
         if let Ok(guard) = ws_state.0.lock() {
@@ -464,6 +641,8 @@ pub async fn register_received_file(
     content_type: String,
     sender_id: String,
     sender_name: String,
+    batch: Option<FileBatchMetadata>,
+    file_size: Option<u64>,
 ) {
     let settings = app_handle.state::<SettingsState>();
     let session_hist = app_handle.state::<SessionHistory>();
@@ -483,7 +662,7 @@ pub async fn register_received_file(
         preview = "[Video]".to_string();
         type_enum = "video";
     }
-    append_message(
+    append_message_with_batch(
         app_handle,
         "in",
         type_enum,
@@ -491,6 +670,8 @@ pub async fn register_received_file(
         &sender_id,
         &sender_name,
         Some(&saved_path),
+        batch.as_ref(),
+        file_size,
     );
     if settings.auto_copy_file.load(Ordering::Relaxed) {
         let timestamp = SystemTime::now()

@@ -34,6 +34,27 @@ pub struct Message {
     pub sender_id: String,   // Device unique ID
     pub sender_name: String, // Device display name (e.g., "iPhone X", "PC")
     pub file_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_total: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_size: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_size: Option<u64>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct FileBatchMetadata {
+    pub id: String,
+    pub name: String,
+    pub index: usize,
+    pub total: usize,
+    pub total_size: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -71,6 +92,49 @@ pub struct ChunkMetadata {
     pub sender_name: String,
     pub total_size: u64,
     pub content_type: Option<String>,
+    #[serde(default)]
+    pub batch_id: Option<String>,
+    #[serde(default)]
+    pub batch_name: Option<String>,
+    #[serde(default)]
+    pub batch_index: Option<usize>,
+    #[serde(default)]
+    pub batch_total: Option<usize>,
+    #[serde(default)]
+    pub batch_size: Option<u64>,
+}
+
+impl ChunkMetadata {
+    pub fn batch_metadata(&self) -> Option<FileBatchMetadata> {
+        let id = self.batch_id.as_ref()?.trim();
+        let total = self.batch_total?;
+        let index = self.batch_index?;
+        if id.is_empty() || total < 2 || total > 2_000 || index >= total {
+            return None;
+        }
+        let safe_id = id
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+            .take(96)
+            .collect::<String>();
+        if safe_id.is_empty() {
+            return None;
+        }
+        Some(FileBatchMetadata {
+            id: safe_id,
+            name: self
+                .batch_name
+                .as_deref()
+                .unwrap_or("文件包")
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(120)
+                .collect(),
+            index,
+            total,
+            total_size: self.batch_size.unwrap_or(self.total_size),
+        })
+    }
 }
 
 pub struct UploadSessions(pub Mutex<HashMap<String, std::path::PathBuf>>);

@@ -17,14 +17,33 @@ function detectPlatform() {
   if (process.platform === "darwin") return "macos";
   if (process.platform === "win32") return "windows";
 
-  return "macos";
+  return null;
+}
+
+function detectChannel() {
+  const arg = process.argv[3]?.trim().toLowerCase();
+  const env = process.env.TIEZ_RELEASE_CHANNEL?.trim().toLowerCase();
+  const channel = arg || env || "stable";
+  return channel === "stable" || channel === "beta" ? channel : null;
 }
 
 const platform = detectPlatform();
-const version = process.env.TIEZ_APP_VERSION?.trim() || versions[platform];
+if (!platform) {
+  console.error("[apply-app-version] Unable to detect a supported platform. Set TIEZ_PLATFORM=macos or windows.");
+  process.exit(1);
+}
+const channel = detectChannel();
+if (!channel) {
+  console.error("[apply-app-version] Release channel must be stable or beta.");
+  process.exit(1);
+}
+
+// Backward compatibility for the previous flat versions.json format.
+const channelVersions = versions[channel] || (channel === "stable" ? versions : null);
+const version = process.env.TIEZ_APP_VERSION?.trim() || channelVersions?.[platform];
 
 if (!version) {
-  console.error(`[apply-app-version] No version configured for platform: ${platform}`);
+  console.error(`[apply-app-version] No ${channel} version configured for platform: ${platform}`);
   process.exit(1);
 }
 
@@ -50,4 +69,4 @@ writeFileSync(
   cargoToml.replace(cargoVersionRe, `version = "${version}"`),
 );
 
-console.log(`[apply-app-version] ${platform} -> ${version}`);
+console.log(`[apply-app-version] ${channel}/${platform} -> ${version}`);

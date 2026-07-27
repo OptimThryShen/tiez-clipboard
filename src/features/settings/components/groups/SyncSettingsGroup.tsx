@@ -1,6 +1,11 @@
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import ConfigShareQr from "../ConfigShareQr";
+import {
+    buildMqttConfigQrPayload,
+    isMqttConfigQrReady,
+} from "../../utils/configQr";
 
 interface LabelWithHintProps {
     label: string;
@@ -227,7 +232,7 @@ const SyncSettingsGroup = ({
                                 />
                             </>
                         </div>
-                        <div className="setting-item">
+                        <div className="setting-item no-border">
                             <LabelWithHint
                                 label={t('mqtt_notification_enabled')}
                                 hint={t('mqtt_notification_enabled_hint')}
@@ -247,9 +252,27 @@ const SyncSettingsGroup = ({
                                 <div className="toggle"><div className="left" /><div className="right" /></div>
                             </label>
                         </div>
-                        <div style={{ padding: '0 8px 8px', fontSize: '11px', color: 'var(--text-secondary)', opacity: 0.8 }}>
-                            {t('mqtt_restart_hint')}
-                        </div>
+                        {(() => {
+                            const mqttQr = buildMqttConfigQrPayload({
+                                server: mqttServer,
+                                port: mqttPort,
+                                protocol: mqttProtocol,
+                                wsPath: mqttWsPath,
+                                username: mqttUser,
+                                password: mqttPass,
+                                topic: mqttTopic,
+                            });
+                            const mqttQrReady = isMqttConfigQrReady(mqttQr);
+                            return (
+                                <ConfigShareQr
+                                    value={JSON.stringify(mqttQr)}
+                                    ready={mqttQrReady}
+                                    title={t('mqtt_share_qr_title')}
+                                    hint={t('mqtt_share_qr_hint')}
+                                    emptyHint={t('mqtt_share_qr_empty')}
+                                />
+                            );
+                        })()}
                     </>
                 )}
             </div>

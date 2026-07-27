@@ -53,6 +53,40 @@ pub fn calc_text_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
+/// Stable cross-platform fingerprint used by the cloud-sync wire protocol.
+///
+/// Keep this algorithm in sync with `tiez-mobile/src/lib/sync.ts`. Unlike
+/// `DefaultHasher`, FNV-1a 32-bit is deterministic across Rust/JavaScript and
+/// stays inside JavaScript's exact integer range.
+pub fn calc_sync_content_hash(content_type: &str, content: &str) -> i64 {
+    let owned_bytes;
+    let bytes: &[u8] = if content_type == "image" {
+        let trimmed = content.trim();
+        if !trimmed.starts_with("data:") && std::path::Path::new(trimmed).is_file() {
+            owned_bytes = std::fs::read(trimmed).unwrap_or_else(|_| trimmed.as_bytes().to_vec());
+            &owned_bytes
+        } else if let Some((_, payload)) = trimmed.split_once(',') {
+            use base64::Engine;
+            owned_bytes = base64::engine::general_purpose::STANDARD
+                .decode(payload.replace('\r', "").replace('\n', ""))
+                .unwrap_or_else(|_| trimmed.as_bytes().to_vec());
+            &owned_bytes
+        } else {
+            trimmed.as_bytes()
+        }
+    } else {
+        owned_bytes = normalize_text(content).into_bytes();
+        &owned_bytes
+    };
+
+    let mut hash = 2_166_136_261_u32;
+    for byte in bytes {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    i64::from(if hash == 0 { 1 } else { hash })
+}
+
 fn calc_visual_hash(img: &image::DynamicImage) -> i64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -650,5 +684,35 @@ mod tests {
         // 测试设置读取
         let val = repo.get("test_key").unwrap();
         assert_eq!(val, Some("test_value".to_string()));
+    }
+
+    #[test]
+    fn sync_hash_is_stable_and_normalizes_line_endings() {
+        assert_eq!(calc_sync_content_hash("text", "hello"), 1_335_831_723);
+        assert_eq!(
+            calc_sync_content_hash("text", "line 1\r\nline 2"),
+            calc_sync_content_hash("text", "line 1\nline 2")
+        );
+    }
+
+    #[test]
+    fn image_sync_hash_matches_file_and_data_url_representations() {
+        let path = std::env::temp_dir().join(format!(
+            "tiez-sync-hash-{}.png",
+            std::process::id()
+        ));
+        let bytes = [0_u8, 1, 2, 3, 250, 251, 252];
+        std::fs::write(&path, bytes).expect("write hash fixture");
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        );
+
+        assert_eq!(
+            calc_sync_content_hash("image", &path.to_string_lossy()),
+            calc_sync_content_hash("image", &data_url)
+        );
+
+        let _ = std::fs::remove_file(path);
     }
 }

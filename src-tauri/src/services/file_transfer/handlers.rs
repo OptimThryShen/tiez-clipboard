@@ -8,6 +8,7 @@ use axum::{
     middleware::Next,
     response::{Html, IntoResponse, Json, Response},
 };
+use base64::Engine;
 use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -27,7 +28,9 @@ use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use super::models::*;
 use super::utils::*;
 use super::web_ui::render_index;
-use super::{append_message, register_received_file, register_shared_file};
+use super::{
+    append_message, append_message_with_batch, register_received_file, register_shared_file,
+};
 
 const TRANSFER_CHUNK_SIZE: usize = 512 * 1024;
 const MIN_DISK_RESERVE: u64 = 512 * 1024 * 1024;
@@ -83,6 +86,41 @@ fn safe_identity(value: &str, fallback: &str) -> String {
         fallback.to_string()
     } else {
         value
+    }
+}
+
+const UPLOAD_SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+const MAX_UPLOAD_SESSIONS: usize = 256;
+
+fn prune_upload_sessions(
+    sessions: &mut std::collections::HashMap<String, std::path::PathBuf>,
+) {
+    let stale_keys = sessions
+        .iter()
+        .filter_map(|(upload_id, path)| {
+            let is_stale = std::fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .map(|elapsed| elapsed >= UPLOAD_SESSION_TTL)
+                .unwrap_or(false);
+            is_stale.then(|| upload_id.clone())
+        })
+        .collect::<Vec<_>>();
+
+    for upload_id in stale_keys {
+        if let Some(path) = sessions.remove(&upload_id) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    while sessions.len() >= MAX_UPLOAD_SESSIONS {
+        let Some(upload_id) = sessions.keys().next().cloned() else {
+            break;
+        };
+        if let Some(path) = sessions.remove(&upload_id) {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 
@@ -631,6 +669,8 @@ pub async fn upload(
                         content_type,
                         current_sender_id.clone(),
                         current_sender_name.clone(),
+                        None,
+                        None,
                     )
                     .await;
                     success = true;
@@ -652,7 +692,6 @@ pub async fn upload_chunk(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
 ) -> axum::response::Response {
-    update_activity(&state.app_handle);
     let mut metadata: Option<ChunkMetadata> = None;
     let mut chunk_data: Option<Vec<u8>> = None;
 
@@ -682,6 +721,34 @@ pub async fn upload_chunk(
         Some(d) => d,
         None => return (StatusCode::BAD_REQUEST, "Missing data").into_response(),
     };
+
+    process_upload_chunk(state, meta, data).await
+}
+
+#[derive(serde::Deserialize)]
+pub struct Base64ChunkPayload {
+    metadata: ChunkMetadata,
+    data_base64: String,
+}
+
+pub async fn upload_chunk_base64(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Base64ChunkPayload>,
+) -> axum::response::Response {
+    let data = match base64::engine::general_purpose::STANDARD.decode(payload.data_base64.as_bytes())
+    {
+        Ok(data) => data,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid base64 chunk").into_response(),
+    };
+    process_upload_chunk(state, payload.metadata, data).await
+}
+
+async fn process_upload_chunk(
+    state: Arc<AppState>,
+    meta: ChunkMetadata,
+    data: Vec<u8>,
+) -> axum::response::Response {
+    update_activity(&state.app_handle);
     if let Err(message) = validate_chunk(&meta, data.len()) {
         return (StatusCode::BAD_REQUEST, message).into_response();
     }
@@ -690,6 +757,7 @@ pub async fn upload_chunk(
     let sessions = state.app_handle.state::<UploadSessions>();
     let temp_path = {
         let mut sessions_map = sessions.0.lock().unwrap();
+        prune_upload_sessions(&mut sessions_map);
         sessions_map
             .entry(meta.upload_id.clone())
             .or_insert_with(|| {
@@ -754,6 +822,8 @@ pub async fn upload_chunk(
     }
 
     if meta.chunk_index == meta.total_chunks - 1 {
+        let batch = meta.batch_metadata();
+        let file_size = Some(meta.total_size);
         let final_filename = format!(
             "{}_{}",
             chrono::Utc::now().format("%Y%m%d%H%M%S"),
@@ -781,6 +851,8 @@ pub async fn upload_chunk(
             content_type,
             meta.sender_id,
             meta.sender_name,
+            batch,
+            file_size,
         )
         .await;
 
@@ -832,6 +904,7 @@ pub async fn share_chunk(
     let sessions = state.app_handle.state::<UploadSessions>();
     let temp_path = {
         let mut sessions_map = sessions.0.lock().unwrap();
+        prune_upload_sessions(&mut sessions_map);
         sessions_map
             .entry(meta.upload_id.clone())
             .or_insert_with(|| {
@@ -886,6 +959,8 @@ pub async fn share_chunk(
     }
 
     if meta.chunk_index == meta.total_chunks.saturating_sub(1) {
+        let batch = meta.batch_metadata();
+        let file_size = Some(meta.total_size);
         let final_filename = format!(
             "share_{}_{}",
             chrono::Utc::now().format("%Y%m%d%H%M%S"),
@@ -924,7 +999,7 @@ pub async fn share_chunk(
         };
 
         let shared_path = final_path.to_string_lossy().to_string();
-        append_message(
+        append_message_with_batch(
             &state.app_handle,
             "out",
             msg_type,
@@ -932,6 +1007,8 @@ pub async fn share_chunk(
             "pc",
             "电脑",
             Some(&shared_path),
+            batch.as_ref(),
+            file_size,
         );
 
         return with_cors((StatusCode::OK, "Share upload complete").into_response());
@@ -944,8 +1021,211 @@ pub async fn share_chunk_options() -> axum::response::Response {
     with_cors(StatusCode::NO_CONTENT.into_response())
 }
 
+#[derive(serde::Serialize)]
+pub struct BatchDownloadResponse {
+    url: String,
+    name: String,
+}
+
+pub async fn prepare_batch_download(
+    Path(batch_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> axum::response::Response {
+    update_activity(&state.app_handle);
+    if batch_id.len() > 96
+        || !batch_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return (StatusCode::BAD_REQUEST, "Invalid package id").into_response();
+    }
+
+    let (batch_name, files, expected_total) = {
+        let chat_state = state.app_handle.state::<ChatState>();
+        let messages = match chat_state.0.lock() {
+            Ok(messages) => messages,
+            Err(_) => {
+                return (StatusCode::INTERNAL_SERVER_ERROR, "History unavailable")
+                    .into_response()
+            }
+        };
+        let matching = messages
+            .iter()
+            .filter(|message| message.batch_id.as_deref() == Some(batch_id.as_str()))
+            .collect::<Vec<_>>();
+        let expected_total = matching
+            .iter()
+            .filter_map(|message| message.batch_total)
+            .max()
+            .unwrap_or(0);
+        let name = matching
+            .iter()
+            .find_map(|message| message.batch_name.clone())
+            .unwrap_or_else(|| "TieZ 文件包".to_string());
+        let files = matching
+            .iter()
+            .filter_map(|message| message.file_path.as_deref())
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_file())
+            .collect::<Vec<_>>();
+        (name, files, expected_total)
+    };
+
+    if expected_total < 2 || files.len() != expected_total {
+        return (
+            StatusCode::CONFLICT,
+            "Package is incomplete or its files are no longer available",
+        )
+            .into_response();
+    }
+
+    let total_size = files.iter().fold(0_u64, |total, path| {
+        total.saturating_add(
+            std::fs::metadata(path)
+                .map(|metadata| metadata.len())
+                .unwrap_or(0),
+        )
+    });
+    let mut archive_dir = state
+        .app_handle
+        .path()
+        .app_cache_dir()
+        .unwrap_or_else(|_| std::env::temp_dir());
+    archive_dir.push("file-transfer-packages");
+    if std::fs::create_dir_all(&archive_dir).is_err()
+        || ensure_disk_capacity(&archive_dir, total_size).is_err()
+    {
+        return (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "Not enough space to prepare this package",
+        )
+            .into_response();
+    }
+
+    let safe_package_name = safe_file_name(&batch_name);
+    let download_name = if safe_package_name.to_lowercase().ends_with(".zip") {
+        safe_package_name
+    } else {
+        format!("{safe_package_name}.zip")
+    };
+    let archive_path = archive_dir.join(format!(
+        ".tiez-batch-{batch_id}-{}.zip",
+        uuid::Uuid::new_v4()
+    ));
+    let archive_path_for_job = archive_path.clone();
+    let archive_result = tokio::task::spawn_blocking(move || {
+        create_batch_archive(&archive_path_for_job, &files)
+    })
+    .await;
+
+    if !matches!(archive_result, Ok(Ok(()))) {
+        let _ = std::fs::remove_file(&archive_path);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to create package").into_response();
+    }
+
+    let Some(token) = register_shared_file(
+        &state.app_handle,
+        archive_path.to_string_lossy().to_string(),
+    ) else {
+        let _ = std::fs::remove_file(&archive_path);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to share package").into_response();
+    };
+
+    let cleanup_path = archive_path.clone();
+    tokio::spawn(async move {
+        // Match the download token lifetime so large packages are not removed
+        // while a slow LAN client is still preparing or downloading them.
+        tokio::time::sleep(std::time::Duration::from_secs(8 * 60 * 60)).await;
+        let _ = tokio::fs::remove_file(cleanup_path).await;
+    });
+
+    Json(BatchDownloadResponse {
+        url: format!(
+            "/download/{}?name={}",
+            token,
+            urlencoding::encode(&download_name)
+        ),
+        name: download_name,
+    })
+    .into_response()
+}
+
+fn create_batch_archive(
+    archive_path: &std::path::Path,
+    files: &[std::path::PathBuf],
+) -> Result<(), String> {
+    use std::collections::HashSet;
+    use std::io;
+    use zip::write::SimpleFileOptions;
+
+    let archive_file = std::fs::File::create(archive_path).map_err(|e| e.to_string())?;
+    let mut writer = zip::ZipWriter::new(archive_file);
+    let mut used_names = HashSet::new();
+
+    for path in files {
+        let original_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("file");
+        let safe_name = unique_package_entry_name(&safe_file_name(original_name), &mut used_names);
+        let extension = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let already_compressed = [
+            "zip", "rar", "7z", "gz", "bz2", "xz", "jpg", "jpeg", "png", "gif", "webp",
+            "heic", "avif", "mp3", "aac", "m4a", "mp4", "mov", "mkv", "webm", "pdf",
+        ]
+        .contains(&extension.as_str());
+        let method = if already_compressed {
+            zip::CompressionMethod::Stored
+        } else {
+            zip::CompressionMethod::Deflated
+        };
+        let options = SimpleFileOptions::default().compression_method(method);
+        writer
+            .start_file(safe_name, options)
+            .map_err(|e| e.to_string())?;
+        let mut source = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        io::copy(&mut source, &mut writer).map_err(|e| e.to_string())?;
+    }
+
+    writer.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn unique_package_entry_name(
+    requested: &str,
+    used_names: &mut std::collections::HashSet<String>,
+) -> String {
+    let requested = if requested.trim().is_empty() {
+        "file"
+    } else {
+        requested
+    };
+    if used_names.insert(requested.to_string()) {
+        return requested.to_string();
+    }
+
+    let path = std::path::Path::new(requested);
+    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("file");
+    let extension = path.extension().and_then(|value| value.to_str());
+    for suffix in 2..=10_000 {
+        let candidate = match extension {
+            Some(extension) => format!("{stem} ({suffix}).{extension}"),
+            None => format!("{stem} ({suffix})"),
+        };
+        if used_names.insert(candidate.clone()) {
+            return candidate;
+        }
+    }
+    format!("{}-{}", uuid::Uuid::new_v4(), requested)
+}
+
 pub async fn handle_file_download_proxy(
     Path(token): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
     headers: HeaderMap,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
@@ -961,11 +1241,16 @@ pub async fn handle_file_download_proxy(
     if let Some(path_str) = file_path {
         let path = std::path::PathBuf::from(&path_str);
         if path.exists() {
-            let filename = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
+            let filename = params
+                .get("name")
+                .map(|name| safe_file_name(name))
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| {
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy()
+                        .to_string()
+                });
             let disposition_filename: String = filename
                 .chars()
                 .filter(|ch| !ch.is_control())
@@ -1112,6 +1397,11 @@ mod tests {
             sender_name: "phone".to_string(),
             total_size: 4,
             content_type: Some("text/plain".to_string()),
+            batch_id: None,
+            batch_name: None,
+            batch_index: None,
+            batch_total: None,
+            batch_size: None,
         };
         assert!(validate_chunk(&metadata, 4).is_ok());
         assert!(validate_chunk(&metadata, 3).is_err());
@@ -1126,8 +1416,40 @@ mod tests {
             sender_name: "phone".to_string(),
             total_size: large_size,
             content_type: Some("application/octet-stream".to_string()),
+            batch_id: None,
+            batch_name: None,
+            batch_index: None,
+            batch_total: None,
+            batch_size: None,
         };
         assert!(validate_chunk(&large_metadata, TRANSFER_CHUNK_SIZE).is_ok());
+    }
+
+    #[test]
+    fn batch_archives_stream_files_and_preserve_duplicate_names() {
+        let root = std::env::temp_dir().join(format!(
+            "tiez-batch-test-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        let first_dir = root.join("first");
+        let second_dir = root.join("second");
+        std::fs::create_dir_all(&first_dir).unwrap();
+        std::fs::create_dir_all(&second_dir).unwrap();
+        let first = first_dir.join("same.txt");
+        let second = second_dir.join("same.txt");
+        std::fs::write(&first, b"first").unwrap();
+        std::fs::write(&second, b"second").unwrap();
+        let archive = root.join("package.zip");
+
+        create_batch_archive(&archive, &[first, second]).unwrap();
+
+        let file = std::fs::File::open(&archive).unwrap();
+        let mut zip = zip::ZipArchive::new(file).unwrap();
+        assert_eq!(zip.len(), 2);
+        assert_eq!(zip.by_index(0).unwrap().name(), "same.txt");
+        assert_eq!(zip.by_index(1).unwrap().name(), "same (2).txt");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

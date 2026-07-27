@@ -27,7 +27,7 @@ impl SqliteSettingsRepository {
         if let Some(row) = rows.next()? {
             let value: String = row.get(0)?;
             if is_sensitive_key(key) && encryption::is_encrypted_value(&value) {
-                return Ok(Some(encryption::decrypt_value(&value).unwrap_or(value)));
+                return Ok(Some(Self::decrypt_sensitive_value(key, &value)));
             }
             Ok(Some(value))
         } else {
@@ -54,9 +54,25 @@ impl SqliteSettingsRepository {
 
     fn maybe_decrypt(&self, key: &str, value: &str) -> String {
         if is_sensitive_key(key) && encryption::is_encrypted_value(value) {
-            return encryption::decrypt_value(value).unwrap_or_else(|| value.to_string());
+            return Self::decrypt_sensitive_value(key, value);
         }
         value.to_string()
+    }
+
+    fn decrypt_sensitive_value(key: &str, value: &str) -> String {
+        match encryption::decrypt_value(value) {
+            Some(plain) if plain != value || !encryption::is_modern_ciphertext(value) => plain,
+            _ => {
+                // Never expose ciphertext through commands such as `get_settings`.
+                // A common cause in development is opening the production database
+                // with a debug-only key; returning the raw value would also allow the
+                // UI to accidentally save that ciphertext as the visible username.
+                eprintln!(
+                    ">>> [ENCRYPTION] unable to decrypt sensitive setting '{key}'; hiding its value"
+                );
+                String::new()
+            }
+        }
     }
 }
 
@@ -129,5 +145,32 @@ impl SettingsRepository for SqliteSettingsRepository {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM settings", [])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SqliteSettingsRepository;
+
+    #[test]
+    fn undecryptable_sensitive_values_are_never_returned_to_the_ui() {
+        assert_eq!(
+            SqliteSettingsRepository::decrypt_sensitive_value(
+                "mqtt_username",
+                "enc1:not-valid-ciphertext"
+            ),
+            ""
+        );
+    }
+
+    #[test]
+    fn legacy_sensitive_values_still_decode() {
+        assert_eq!(
+            SqliteSettingsRepository::decrypt_sensitive_value(
+                "mqtt_username",
+                "plain:example-user"
+            ),
+            "example-user"
+        );
     }
 }

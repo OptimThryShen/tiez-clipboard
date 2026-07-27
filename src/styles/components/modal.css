@@ -393,6 +393,26 @@ body:has(.modal-overlay) #root {
   color: var(--text-secondary);
 }
 
+.modal-update-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.modal-update-badge.beta {
+  color: #7c3aed;
+  background: rgba(124, 58, 237, 0.12);
+}
+
+.modal-update-badge.important {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.14);
+}
+
 .modal-update-content {
   padding: 12px 18px 18px;
 }
@@ -432,6 +452,27 @@ body:has(.modal-overlay) #root {
   height: 100%;
   background: var(--accent-color);
   transition: width 0.3s ease;
+}
+
+.modal-update-progress-bar.indeterminate {
+  width: 36%;
+  animation: modal-update-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes modal-update-indeterminate {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-update-progress-bar.indeterminate {
+    width: 55%;
+    animation: none;
+  }
 }
 
 .modal-update-actions {

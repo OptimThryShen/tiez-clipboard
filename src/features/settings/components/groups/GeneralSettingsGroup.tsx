@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { isMacPlatform } from "../../../../shared/lib/platform";
+import { isMacPlatform, isWindowsPlatform } from "../../../../shared/lib/platform";
 import MacAccessibilityPermission from "./MacAccessibilityPermission";
 
 interface LabelWithHintProps {
@@ -399,7 +399,7 @@ const GeneralSettingsGroup = ({
                     </label>
                 </div>
 
-                {!isMacPlatform() && (
+                {isWindowsPlatform() && (
                     <div className="setting-item">
                         <LabelWithHint
                             label={t('restart_as_admin')}

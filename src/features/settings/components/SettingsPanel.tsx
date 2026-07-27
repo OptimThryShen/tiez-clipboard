@@ -22,6 +22,7 @@ import FileTransferSettingsGroup from "./groups/FileTransferSettingsGroup";
 import AiSettingsGroup from "./groups/AiSettingsGroup";
 import SettingsFooter from "./SettingsFooter";
 import { CLOUD_SYNC_ENABLED } from "../../../shared/config/edition";
+import { getReleaseBuildInfo, type ReleaseBuildInfo } from "../../../shared/lib/releaseBuild";
 
 interface SettingsPanelProps {
     t: (key: string) => string;
@@ -290,6 +291,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
 
     const [emailCopied, setEmailCopied] = useState(false);
     const [appVersion, setAppVersion] = useState("");
+    const [releaseBuildInfo, setReleaseBuildInfo] = useState<ReleaseBuildInfo>({
+        channel: "stable",
+        portable: false
+    });
     const [mqttStatus, setMqttStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
     const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatusPayload>({
         state: "disabled",
@@ -421,6 +426,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 console.error("Failed to get version:", err);
                 setAppVersion("0.2.0");
             });
+        getReleaseBuildInfo().then(setReleaseBuildInfo);
 
         const unlistenMqtt = listen<string>("mqtt-status", (event) => {
             console.log('[MQTT STATUS] Received status:', event.payload);
@@ -789,9 +795,10 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             <SettingsFooter
                 t={t}
                 appVersion={appVersion}
+                releaseChannel={releaseBuildInfo.channel}
+                portable={releaseBuildInfo.portable}
                 updateStatus={updateStatus}
                 setUpdateStatus={setUpdateStatus}
-                // Removed setUpdateModalData
                 onResetSettings={handleResetSettings}
                 emailCopied={emailCopied}
                 setEmailCopied={setEmailCopied}

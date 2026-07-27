@@ -244,6 +244,244 @@ fn file_transfer_theme_variants(theme: &str) -> (&'static str, &'static str, &'s
             }}
             "#,
         ),
+        "sakura" => (
+            r#"
+            --bg-body: #fff7fa;
+            --bg-panel: rgba(255, 252, 253, 0.86);
+            --bg-input: rgba(255, 255, 255, 0.9);
+            --bg-button: rgba(255, 255, 255, 0.78);
+            --border-dark: rgba(255, 133, 161, 0.28);
+            --text-primary: #4a343a;
+            --text-secondary: #946c78;
+            --accent-color: #ff85a1;
+            --shadow-color: rgba(92, 58, 68, 0.12);
+            --font-mono: "Segoe UI", system-ui, -apple-system, "PingFang SC", sans-serif;
+            --content-font-family: var(--font-mono);
+            --radius: 14px;
+            --bubble-received-bg: rgba(255, 255, 255, 0.9);
+            --panel-border: 1px solid rgba(255, 133, 161, 0.18);
+            --panel-radius: 16px;
+            --panel-shadow: 0 12px 30px rgba(160, 80, 100, 0.08);
+            --input-border: 1px solid rgba(255, 133, 161, 0.25);
+            --input-radius: 12px;
+            --input-shadow: inset 0 1px 2px rgba(255, 133, 161, 0.05);
+            --button-border: 1px solid rgba(255, 133, 161, 0.2);
+            --button-radius: 12px;
+            --button-shadow: none;
+            --send-button-background: #ff85a1;
+            --send-button-color: #ffffff;
+            --send-button-border: 1px solid rgba(255, 107, 142, 0.45);
+            --send-button-shadow: 0 8px 20px rgba(255, 133, 161, 0.24);
+            "#,
+            r#"
+            --bg-body: #241a1e;
+            --bg-panel: rgba(48, 34, 40, 0.9);
+            --bg-input: rgba(255, 255, 255, 0.08);
+            --bg-button: rgba(255, 255, 255, 0.06);
+            --border-dark: rgba(255, 255, 255, 0.08);
+            --text-primary: #fcecef;
+            --text-secondary: #d4a5b2;
+            --accent-color: #ff9fb4;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --bubble-received-bg: rgba(65, 45, 52, 0.88);
+            --panel-border: 1px solid rgba(255, 255, 255, 0.06);
+            --input-border: 1px solid rgba(255, 255, 255, 0.08);
+            --button-border: 1px solid rgba(255, 255, 255, 0.06);
+            --send-button-background: #e87088;
+            "#,
+            r#"
+            body.theme-sakura {{
+                background:
+                    radial-gradient(circle at 12% 18%, rgba(255, 183, 197, 0.2) 0 3px, transparent 4px),
+                    radial-gradient(circle at 86% 28%, rgba(248, 200, 220, 0.18) 0 4px, transparent 5px),
+                    radial-gradient(circle at 72% 82%, rgba(255, 183, 197, 0.14) 0 3px, transparent 4px),
+                    var(--bg-body);
+            }}
+            .theme-sakura header, .theme-sakura footer {{
+                backdrop-filter: blur(18px) saturate(130%);
+                -webkit-backdrop-filter: blur(18px) saturate(130%);
+            }}
+            "#,
+        ),
+        "terminal" => (
+            r#"
+            --bg-body: #0d1117;
+            --bg-panel: #010409;
+            --bg-input: #0d1117;
+            --bg-button: transparent;
+            --border-dark: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-color: #3fb950;
+            --shadow-color: rgba(0, 0, 0, 0.55);
+            --font-mono: "SF Mono", Menlo, Monaco, "Cascadia Mono", Consolas, monospace;
+            --content-font-family: var(--font-mono);
+            --radius: 0;
+            --bubble-received-bg: #161b22;
+            --panel-border: 1px solid #30363d;
+            --panel-radius: 0;
+            --panel-shadow: none;
+            --input-border: 1px solid #30363d;
+            --input-radius: 0;
+            --input-shadow: none;
+            --button-border: 1px solid #30363d;
+            --button-radius: 0;
+            --button-shadow: none;
+            --send-button-background: rgba(63, 185, 80, 0.14);
+            --send-button-color: #56d364;
+            --send-button-border: 1px solid rgba(63, 185, 80, 0.46);
+            --send-button-shadow: none;
+            "#,
+            r#"
+            --bg-body: #0d1117;
+            --bg-panel: #010409;
+            --bg-input: #0d1117;
+            --bg-button: transparent;
+            --border-dark: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --accent-color: #3fb950;
+            --shadow-color: rgba(0, 0, 0, 0.55);
+            --bubble-received-bg: #161b22;
+            "#,
+            r#"
+            .theme-terminal header, .theme-terminal footer {{
+                border-color: #21262d;
+            }}
+            .theme-terminal .bubble {{
+                box-shadow: none;
+            }}
+            .theme-terminal .message.sent .bubble {{
+                color: #56d364;
+            }}
+            "#,
+        ),
+        "receipt" => (
+            r#"
+            --bg-body: #faf8f3;
+            --bg-panel: #fffef9;
+            --bg-input: #ffffff;
+            --bg-button: transparent;
+            --border-dark: rgba(0, 0, 0, 0.2);
+            --text-primary: #1e1e1e;
+            --text-secondary: #6a6a6a;
+            --accent-color: #2a2a2a;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+            --font-mono: "Courier New", Courier, "SF Mono", monospace;
+            --content-font-family: var(--font-mono);
+            --radius: 0;
+            --bubble-received-bg: #fffef9;
+            --panel-border: 1px dashed rgba(0, 0, 0, 0.18);
+            --panel-radius: 2px;
+            --panel-shadow: none;
+            --input-border: 1px dashed rgba(0, 0, 0, 0.2);
+            --input-radius: 0;
+            --input-shadow: none;
+            --button-border: 1px dashed rgba(0, 0, 0, 0.25);
+            --button-radius: 0;
+            --button-shadow: none;
+            --send-button-background: #2a2a2a;
+            --send-button-color: #fffef9;
+            --send-button-border: 1px dashed #2a2a2a;
+            --send-button-shadow: none;
+            "#,
+            r#"
+            --bg-body: #1c1c1c;
+            --bg-panel: #242424;
+            --bg-input: #1b1b1b;
+            --bg-button: transparent;
+            --border-dark: rgba(255, 255, 255, 0.18);
+            --text-primary: #e8e8e8;
+            --text-secondary: #a0a0a0;
+            --accent-color: #e8e8e8;
+            --shadow-color: rgba(0, 0, 0, 0.35);
+            --bubble-received-bg: #242424;
+            --panel-border: 1px dashed rgba(255, 255, 255, 0.16);
+            --input-border: 1px dashed rgba(255, 255, 255, 0.18);
+            --button-border: 1px dashed rgba(255, 255, 255, 0.22);
+            --send-button-background: #e8e8e8;
+            --send-button-color: #1c1c1c;
+            --send-button-border: 1px dashed #e8e8e8;
+            "#,
+            r#"
+            body.theme-receipt {{
+                background-image: repeating-linear-gradient(
+                    0deg,
+                    transparent 0,
+                    transparent 23px,
+                    rgba(0, 0, 0, 0.025) 24px
+                );
+            }}
+            .theme-receipt header, .theme-receipt footer {{
+                border-style: dashed;
+            }}
+            .theme-receipt .bubble {{
+                border-style: dashed;
+                box-shadow: none;
+            }}
+            "#,
+        ),
+        "ink" => (
+            r#"
+            --bg-body: #f0ebe3;
+            --bg-panel: rgba(247, 244, 238, 0.94);
+            --bg-input: rgba(255, 255, 255, 0.72);
+            --bg-button: transparent;
+            --border-dark: rgba(26, 26, 26, 0.18);
+            --text-primary: #1a1a1a;
+            --text-secondary: #5c5c5c;
+            --accent-color: #9b2d30;
+            --shadow-color: rgba(26, 26, 26, 0.08);
+            --font-mono: "Songti SC", "STSong", "Noto Serif SC", Georgia, serif;
+            --content-font-family: var(--font-mono);
+            --radius: 2px;
+            --bubble-received-bg: rgba(255, 255, 255, 0.58);
+            --panel-border: 1px solid rgba(26, 26, 26, 0.14);
+            --panel-radius: 2px;
+            --panel-shadow: 0 10px 28px rgba(26, 26, 26, 0.06);
+            --input-border: 1px solid rgba(26, 26, 26, 0.14);
+            --input-radius: 2px;
+            --input-shadow: none;
+            --button-border: 1px solid rgba(26, 26, 26, 0.18);
+            --button-radius: 2px;
+            --button-shadow: none;
+            --send-button-background: #9b2d30;
+            --send-button-color: #f7f4ee;
+            --send-button-border: 1px solid #7f2427;
+            --send-button-shadow: none;
+            "#,
+            r#"
+            --bg-body: #121411;
+            --bg-panel: rgba(28, 31, 29, 0.96);
+            --bg-input: rgba(22, 25, 23, 0.98);
+            --bg-button: transparent;
+            --border-dark: rgba(228, 221, 209, 0.14);
+            --text-primary: #e4ddd1;
+            --text-secondary: #a39c90;
+            --accent-color: #a84848;
+            --shadow-color: rgba(0, 0, 0, 0.3);
+            --bubble-received-bg: rgba(28, 31, 29, 0.96);
+            --panel-border: 1px solid rgba(228, 221, 209, 0.1);
+            --input-border: 1px solid rgba(228, 221, 209, 0.1);
+            --button-border: 1px solid rgba(228, 221, 209, 0.12);
+            --send-button-background: #a84848;
+            --send-button-color: #e4ddd1;
+            --send-button-border: 1px solid #8c3a3a;
+            "#,
+            r#"
+            body.theme-ink {{
+                background:
+                    radial-gradient(ellipse 120% 70% at 50% -10%, rgba(255, 255, 255, 0.2), transparent 58%),
+                    var(--bg-body);
+            }}
+            .theme-ink header, .theme-ink footer {{
+                border-color: var(--border-dark);
+            }}
+            .theme-ink .bubble {{
+                box-shadow: none;
+            }}
+            "#,
+        ),
         _ => (
             r#"
             --bg-body: #dcdcdc;
@@ -305,6 +543,10 @@ fn file_transfer_theme_variants(theme: &str) -> (&'static str, &'static str, &'s
 
 fn file_transfer_theme_css(theme: &str, color_mode: &str) -> String {
     let (light, dark, extra) = file_transfer_theme_variants(theme);
+    // Theme snippets are kept next to Rust's `format!`-heavy HTML template,
+    // where doubled braces are easier to maintain. Normalize them before the
+    // CSS is sent to the browser.
+    let extra = extra.replace("{{", "{").replace("}}", "}");
     let dark_css = match color_mode {
         "dark" => format!(":root {{{dark}}}"),
         "system" => format!("@media (prefers-color-scheme: dark) {{ :root {{{dark}}} }}"),
@@ -533,6 +775,23 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
         .file-info {{ display: flex; flex-direction: column; min-width: 0; overflow: hidden; }}
         .file-name {{ font-weight: 700; font-family: var(--font-mono); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }}
         .file-size {{ font-size: 11px; font-family: var(--font-mono); opacity: 0.8; margin-top: 2px; }}
+        .batch-bubble {{ width: min(310px, calc(100vw - 72px)); padding: 9px; }}
+        .batch-header {{ display:flex; align-items:center; gap:10px; padding:5px; cursor:pointer; }}
+        .batch-header-icon {{ display:grid; width:38px; height:38px; place-items:center; flex:0 0 38px; border-radius:var(--input-radius, 8px); background:rgba(127,127,127,0.12); font-size:22px; }}
+        .batch-header-copy {{ display:flex; min-width:0; flex:1; flex-direction:column; }}
+        .batch-title {{ overflow:hidden; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }}
+        .batch-meta, .batch-file-status {{ font-size:10px; opacity:0.7; }}
+        .batch-toggle {{ flex:0 0 auto; font-size:15px; opacity:0.65; }}
+        .batch-files {{ display:none; max-height:230px; margin-top:7px; padding:5px 0; overflow-y:auto; border-top:1px solid var(--border-dark); border-bottom:1px solid var(--border-dark); }}
+        .batch-bubble.expanded .batch-files {{ display:block; }}
+        .batch-file-row {{ display:flex; align-items:center; gap:9px; min-height:40px; padding:5px; color:inherit; text-decoration:none; border-radius:var(--input-radius, 6px); }}
+        .batch-file-row:active {{ background:rgba(127,127,127,0.12); }}
+        .batch-file-icon {{ flex:0 0 auto; font-size:19px; }}
+        .batch-file-copy {{ display:flex; min-width:0; flex:1; flex-direction:column; }}
+        .batch-file-name {{ overflow:hidden; font-size:12px; font-weight:700; text-overflow:ellipsis; white-space:nowrap; }}
+        .batch-actions {{ display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:32px; padding:6px 4px 0; }}
+        .batch-download {{ min-height:28px; padding:4px 9px; border:var(--button-border, 1px solid var(--border-dark)); border-radius:var(--button-radius, 6px); color:var(--send-button-color, #fff); background:var(--send-button-background, var(--accent-color)); font:700 11px/1 var(--font-mono); }}
+        .batch-download:disabled {{ opacity:0.55; }}
 
         /* Image Preview */
         .img-preview {{
@@ -601,7 +860,39 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
             .theme-mica .retro-btn, .theme-acrylic .retro-btn {{ background: rgba(255,255,255,0.1); }}
         }}
 
-        .add-btn {{ width: 40px; font-size: 24px; font-weight: 900; }}
+        .file-send-control {{
+            position: relative; display: flex; height: 40px; flex-shrink: 0;
+            border-radius: var(--button-radius, var(--radius));
+            box-shadow: var(--button-shadow, 2px 2px 0 0 var(--shadow-color));
+        }}
+        .file-send-control .retro-btn {{ box-shadow: none; }}
+        .add-btn {{
+            width: 40px; font-size: 24px; font-weight: 900;
+            border-radius: var(--button-radius, var(--radius)) 0 0 var(--button-radius, var(--radius));
+        }}
+        .file-mode-toggle {{
+            width: 24px; padding: 0; margin-left: -2px; font-size: 12px;
+            border-radius: 0 var(--button-radius, var(--radius)) var(--button-radius, var(--radius)) 0;
+            color: var(--accent-color);
+        }}
+        .file-mode-menu {{
+            position: absolute; left: 0; bottom: calc(100% + 10px); z-index: 50;
+            display: none; width: 230px; padding: 6px;
+            border: var(--button-border, 2px solid var(--border-dark));
+            border-radius: var(--button-radius, var(--radius));
+            background: var(--bg-panel); box-shadow: var(--button-shadow, 3px 3px 0 var(--shadow-color));
+        }}
+        .file-mode-menu.open {{ display: grid; gap: 4px; }}
+        .file-mode-option {{
+            display: grid; grid-template-columns: 26px 1fr 18px; align-items: center;
+            gap: 8px; width: 100%; padding: 9px; border: 0;
+            border-radius: max(4px, var(--radius)); color: var(--text-primary);
+            background: transparent; text-align: left; font-family: inherit;
+        }}
+        .file-mode-option.active {{ background: color-mix(in srgb, var(--accent-color) 15%, transparent); }}
+        .file-mode-option strong, .file-mode-option small {{ display: block; }}
+        .file-mode-option small {{ margin-top: 2px; color: var(--text-secondary); font-size: 10px; }}
+        .file-mode-check {{ color: var(--accent-color); font-weight: 900; }}
         .send-btn {{
             min-width: 72px;
             padding: 0 16px;
@@ -728,7 +1019,18 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
     </div>
 
     <footer>
-        <label for="file-input" class="retro-btn add-btn">+</label>
+        <div class="file-send-control" id="file-send-control">
+            <label for="file-input" class="retro-btn add-btn" aria-label="发送文件">+</label>
+            <button type="button" class="retro-btn file-mode-toggle" id="file-mode-toggle" aria-label="选择多文件发送方式" aria-expanded="false">⌃</button>
+            <div class="file-mode-menu" id="file-mode-menu">
+                <button type="button" class="file-mode-option" data-mode="package">
+                    <span>▣</span><span><strong>作为文件包发送</strong><small>折叠显示，可下载 ZIP</small></span><span class="file-mode-check"></span>
+                </button>
+                <button type="button" class="file-mode-option" data-mode="separate">
+                    <span>▤</span><span><strong>分别发送</strong><small>每个文件独立显示</small></span><span class="file-mode-check"></span>
+                </button>
+            </div>
+        </div>
         <div style="position:relative; flex:1; display:flex;">
             <textarea class="text-input" id="text-input" placeholder="输入文字..." rows="1"></textarea>
             <div class="expand-btn" id="expand-btn" onclick="openFullscreen()">⤢</div>
@@ -753,6 +1055,41 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
         const textInput = document.getElementById('text-input');
         const sendBtn = document.getElementById('send-btn');
         const chatBox = document.getElementById('chat-box');
+        const fileModeToggle = document.getElementById('file-mode-toggle');
+        const fileModeMenu = document.getElementById('file-mode-menu');
+        const fileSendControl = document.getElementById('file-send-control');
+        let multiFileSendMode = localStorage.getItem('tiez.file-transfer.multi-file-send-mode') === 'separate'
+            ? 'separate' : 'package';
+
+        function renderFileMode() {{
+            fileModeMenu.querySelectorAll('.file-mode-option').forEach(option => {{
+                const active = option.dataset.mode === multiFileSendMode;
+                option.classList.toggle('active', active);
+                option.querySelector('.file-mode-check').textContent = active ? '✓' : '';
+            }});
+        }}
+        renderFileMode();
+        fileModeToggle.onclick = () => {{
+            const open = !fileModeMenu.classList.contains('open');
+            fileModeMenu.classList.toggle('open', open);
+            fileModeToggle.setAttribute('aria-expanded', String(open));
+        }};
+        fileModeMenu.querySelectorAll('.file-mode-option').forEach(option => {{
+            option.onclick = () => {{
+                multiFileSendMode = option.dataset.mode;
+                localStorage.setItem('tiez.file-transfer.multi-file-send-mode', multiFileSendMode);
+                renderFileMode();
+                fileModeMenu.classList.remove('open');
+                fileModeToggle.setAttribute('aria-expanded', 'false');
+                fileInput.click();
+            }};
+        }});
+        document.addEventListener('pointerdown', event => {{
+            if (!fileSendControl.contains(event.target)) {{
+                fileModeMenu.classList.remove('open');
+                fileModeToggle.setAttribute('aria-expanded', 'false');
+            }}
+        }});
         
         const now = new Date();
         document.getElementById('time-now').innerText = `${{now.getHours().toString().padStart(2,'0')}}:${{now.getMinutes().toString().padStart(2,'0')}}`;
@@ -765,6 +1102,7 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
         const deviceName = "Mobile";
         const TIEZ_LOGO = "{logo_base64}";
         const pendingUploads = new Map(); // filename -> [elements]
+        const batchElements = new Map();
 
         function scrollToBottom() {{
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -841,6 +1179,110 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
                 }}
             }}
             return null;
+        }}
+        function formatBytes(bytes) {{
+            if (!bytes || bytes <= 0) return '';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+            const value = bytes / Math.pow(1024, index);
+            return `${{value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)}} ${{units[index]}}`;
+        }}
+        async function downloadBatch(batchId, button) {{
+            if (button.disabled) return;
+            button.disabled = true;
+            const original = button.textContent;
+            button.textContent = '正在打包…';
+            try {{
+                const response = await fetch('/download-batch/' + encodeURIComponent(batchId), {{ method: 'POST' }});
+                if (!response.ok) throw new Error(await response.text());
+                const result = await response.json();
+                window.location.href = result.url;
+                button.textContent = '已开始下载';
+            }} catch (error) {{
+                console.error(error);
+                button.textContent = '打包失败';
+            }} finally {{
+                setTimeout(() => {{
+                    button.disabled = false;
+                    button.textContent = original;
+                }}, 1800);
+            }}
+        }}
+        function appendBatchMessage(msg, direction, senderName) {{
+            const batchId = String(msg.batch_id || '');
+            if (!batchId) return null;
+            let entry = batchElements.get(batchId);
+            if (!entry) {{
+                const outer = document.createElement('div');
+                outer.className = `message ${{direction}}`;
+                if (direction === 'received') {{
+                    const avatar = document.createElement('div');
+                    avatar.className = 'avatar';
+                    avatar.innerHTML = `<img src="${{TIEZ_LOGO}}" alt="TieZ">`;
+                    outer.appendChild(avatar);
+                }}
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble batch-bubble';
+                bubble.innerHTML = `
+                    ${{senderName ? `<div style="font-size:10px;opacity:.65;margin:0 5px 3px">${{escapeHTML(senderName)}}</div>` : ''}}
+                    <div class="batch-header">
+                        <span class="batch-header-icon">🗂️</span>
+                        <span class="batch-header-copy">
+                            <span class="batch-title">${{escapeHTML(msg.batch_name || '文件包')}}</span>
+                            <span class="batch-meta"><span class="batch-count">0</span>/${{Number(msg.batch_total || 0)}} 个文件${{msg.batch_size ? ` · ${{formatBytes(msg.batch_size)}}` : ''}}</span>
+                        </span>
+                        <span class="batch-toggle">›</span>
+                    </div>
+                    <div class="batch-files"></div>
+                    <div class="batch-actions">
+                        <span class="batch-file-status">文件独立传输</span>
+                        <button type="button" class="batch-download">下载 ZIP</button>
+                    </div>`;
+                outer.appendChild(bubble);
+                bubble.querySelector('.batch-header').onclick = () => {{
+                    bubble.classList.toggle('expanded');
+                    bubble.querySelector('.batch-toggle').textContent = bubble.classList.contains('expanded') ? '⌄' : '›';
+                }};
+                bubble.querySelector('.batch-download').onclick = event => {{
+                    event.stopPropagation();
+                    downloadBatch(batchId, event.currentTarget);
+                }};
+                chatBox.appendChild(outer);
+                entry = {{ outer, bubble, files: bubble.querySelector('.batch-files'), indices: new Set() }};
+                batchElements.set(batchId, entry);
+            }}
+
+            const index = Number(msg.batch_index || 0);
+            let row = entry.files.querySelector(`[data-batch-index="${{index}}"]`);
+            const rawName = extractNameFromContent(msg.content || '', msg.file_path);
+            const fileName = normalizeFileName(rawName || `文件 ${{index + 1}}`);
+            const url = msg.content && msg.content.startsWith('/download/') ? msg.content : '';
+            if (!row) {{
+                row = document.createElement(url ? 'a' : 'div');
+                row.className = 'batch-file-row';
+                row.dataset.batchIndex = String(index);
+                if (url) row.href = url;
+                row.innerHTML = `
+                    <span class="batch-file-icon">📄</span>
+                    <span class="batch-file-copy">
+                        <span class="batch-file-name">${{fileName}}</span>
+                        <span class="batch-file-status">${{formatBytes(msg.file_size) || '准备中…'}}</span>
+                    </span>`;
+                entry.files.appendChild(row);
+                entry.indices.add(index);
+            }} else {{
+                if (url) {{
+                    if (row.tagName === 'A') row.href = url;
+                    else {{
+                        row.style.cursor = 'pointer';
+                        row.onclick = () => window.location.href = url;
+                    }}
+                }}
+                row.querySelector('.batch-file-name').textContent = fileName;
+                row.querySelector('.batch-file-status').textContent = formatBytes(msg.file_size) || '已完成';
+            }}
+            entry.bubble.querySelector('.batch-count').textContent = String(entry.indices.size);
+            return row;
         }}
         function createMessageElement(direction, content, senderName, msgType, file_path) {{
             const div = document.createElement('div');
@@ -956,6 +1398,20 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
             
             socket.onmessage = (e) => {{
                 const msg = JSON.parse(e.data);
+                if (msg.batch_id) {{
+                    if (msg.direction === 'in' && msg.sender_id === deviceId) {{
+                        const rawName = extractNameFromContent(msg.content, msg.file_path);
+                        const pending = takePendingUpload(normalizeFileName(rawName));
+                        if (pending) pending.remove();
+                    }}
+                    appendBatchMessage(
+                        msg,
+                        msg.direction === 'out' ? 'received' : 'sent',
+                        msg.direction === 'out' ? msg.sender_name : 'You'
+                    );
+                    scrollToBottom();
+                    return;
+                }}
                 if (msg.direction === 'in' && msg.sender_id === deviceId && (msg.msg_type === 'file' || msg.msg_type === 'image' || msg.msg_type === 'video')) {{
                     const rawName = extractNameFromContent(msg.content, msg.file_path);
                     const maybeName = normalizeFileName(rawName);
@@ -1003,32 +1459,52 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
             if (!fileInput.files.length || isUploading) return;
             const files = Array.from(fileInput.files);
             fileInput.value = '';
-            
-            for(const file of files) {{
-                await uploadFile(file);
+            const batch = files.length > 1 && multiFileSendMode === 'package' ? {{
+                id: 'mobile_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                name: files.length + ' 个文件',
+                total: files.length,
+                totalSize: files.reduce((sum, file) => sum + file.size, 0)
+            }} : null;
+            for(let index = 0; index < files.length; index++) {{
+                await uploadFile(files[index], batch ? {{ ...batch, index }} : null);
             }}
         }};
 
-        async function uploadFile(file) {{
+        async function uploadFile(file, batch) {{
             isUploading = true;
             const isImage = file.type.startsWith('image/');
             const isVideo = file.type.startsWith('video/');
             const msgType = isVideo ? 'video' : (isImage ? 'image' : 'file');
             const previewUrl = (isImage || isVideo) ? URL.createObjectURL(file) : file.name;
-            const el = createMessageElement('sent', previewUrl, 'You', msgType, undefined);
+            const pendingMessage = batch ? {{
+                batch_id: batch.id,
+                batch_name: batch.name,
+                batch_index: batch.index,
+                batch_total: batch.total,
+                batch_size: batch.totalSize,
+                file_size: file.size,
+                content: file.name,
+                msg_type: msgType
+            }} : null;
+            const batchRow = pendingMessage ? appendBatchMessage(pendingMessage, 'sent', 'You') : null;
+            const el = batchRow ? batchRow.closest('.message') : createMessageElement('sent', previewUrl, 'You', msgType, undefined);
             el.dataset.fileName = file.name;
             el.dataset.pending = 'true';
-            addPendingUpload(file.name, el);
+            if (!batchRow) addPendingUpload(file.name, el);
             const progressWrapper = document.createElement('div');
             progressWrapper.className = 'progress-wrapper';
             progressWrapper.innerHTML = `<div style="font-size:10px">0%</div><div class="progress-bar"><div class="progress-inner"></div></div>`;
-            el.querySelector('.bubble').appendChild(progressWrapper);
-            chatBox.appendChild(el);
+            if (!batchRow) {{
+                el.querySelector('.bubble').appendChild(progressWrapper);
+                chatBox.appendChild(el);
+            }}
             scrollToBottom();
 
             const CHUNK_SIZE = 1024 * 512; // 512KB
             const totalChunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
             const uploadId = Math.random().toString(36).substr(2, 9);
+            let uploadFailed = false;
+            let uploadError = '';
 
             for (let i = 0; i < totalChunks; i++) {{
                 const start = i * CHUNK_SIZE;
@@ -1045,30 +1521,68 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
                     sender_id: deviceId,
                     sender_name: deviceName,
                     total_size: file.size,
-                    content_type: file.type
+                    content_type: file.type,
+                    batch_id: batch?.id,
+                    batch_name: batch?.name,
+                    batch_index: batch?.index,
+                    batch_total: batch?.total,
+                    batch_size: batch?.totalSize
                 }}));
 
                 try {{
-                    const res = await fetch('/upload-chunk', {{ method: 'POST', body: formData }});
-                    if (!res.ok) throw new Error('Chunk failed');
+                    let res = null;
+                    let lastError = null;
+                    for (let attempt = 0; attempt < 3; attempt++) {{
+                        try {{
+                            res = await fetch('/upload-chunk', {{ method: 'POST', body: formData }});
+                            if (res.ok) break;
+                            const detail = await res.text().catch(() => '');
+                            lastError = new Error(detail || `HTTP ${{res.status}}`);
+                            // Validation and storage errors will not improve by retrying.
+                            if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) break;
+                        }} catch (error) {{
+                            lastError = error;
+                        }}
+                        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+                    }}
+                    if (!res || !res.ok) throw lastError || new Error('网络连接已中断');
                     
                     const percent = Math.round(((i + 1) / totalChunks) * 100);
-                    progressWrapper.querySelector('.progress-inner').style.width = percent + '%';
-                    progressWrapper.querySelector('div').innerText = percent + '%';
+                    if (batchRow) {{
+                        batchRow.querySelector('.batch-file-status').textContent = `${{formatBytes(file.size)}} · ${{percent}}%`;
+                    }} else {{
+                        progressWrapper.querySelector('.progress-inner').style.width = percent + '%';
+                        progressWrapper.querySelector('div').innerText = percent + '%';
+                    }}
                 }} catch (e) {{
-                    alert('Upload failed: ' + file.name);
-                    // Remove pending marker on failure
-                    el.dataset.pending = 'false';
-                    const list = pendingUploads.get(file.name) || [];
-                    const idx = list.indexOf(el);
-                    if (idx >= 0) {{ list.splice(idx, 1); }}
-                    if (list.length === 0) pendingUploads.delete(name);
+                    uploadError = e instanceof Error ? e.message : String(e || '');
+                    uploadFailed = true;
+                    if (batchRow) {{
+                        batchRow.querySelector('.batch-file-status').textContent = '上传失败';
+                    }} else {{
+                        el.dataset.pending = 'false';
+                        const list = pendingUploads.get(file.name) || [];
+                        const idx = list.indexOf(el);
+                        if (idx >= 0) list.splice(idx, 1);
+                        if (list.length === 0) pendingUploads.delete(file.name);
+                    }}
                     break;
                 }}
             }}
-            
-            progressWrapper.remove();
-            el.querySelector('.bubble').innerHTML += ' <span style="color:#4caf50">✓</span>';
+            if (uploadFailed) {{
+                const reason = uploadError === 'Failed to fetch' || uploadError.toLowerCase().includes('network')
+                    ? '文件传输服务已断开，请在电脑端重新打开文件传输并扫码。'
+                    : `上传失败：${{uploadError || '未知错误'}}`;
+                alert(`${{file.name}}\n${{reason}}`);
+                isUploading = false;
+                return;
+            }}
+            if (batchRow) {{
+                batchRow.querySelector('.batch-file-status').textContent = `${{formatBytes(file.size)}} · 已完成`;
+            }} else {{
+                progressWrapper.remove();
+                el.querySelector('.bubble').innerHTML += ' <span style="color:#4caf50">✓</span>';
+            }}
             isUploading = false;
         }}
 
@@ -1078,7 +1592,15 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
             e.preventDefault();
             const files = Array.from(e.dataTransfer.files);
             if (files.length) {{
-                 for(const file of files) await uploadFile(file);
+                 const batch = files.length > 1 ? {{
+                     id: 'mobile_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+                     name: files.length + ' 个文件',
+                     total: files.length,
+                     totalSize: files.reduce((sum, file) => sum + file.size, 0)
+                 }} : null;
+                 for(let index = 0; index < files.length; index++) {{
+                     await uploadFile(files[index], batch ? {{ ...batch, index }} : null);
+                 }}
                  
                  // Small delay for UI and then notify PC
                  setTimeout(() => {{
@@ -1099,4 +1621,77 @@ pub fn render_index(theme: &str, color_mode: &str, logo_base64: &str) -> String 
         theme_css = theme_css,
         logo_base64 = logo_base64
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{file_transfer_theme_css, render_index};
+
+    const BUILT_IN_THEMES: &[&str] = &[
+        "retro",
+        "sticky-note",
+        "mica",
+        "acrylic",
+        "paper",
+        "sakura",
+        "terminal",
+        "receipt",
+        "ink",
+    ];
+
+    #[test]
+    fn every_desktop_theme_has_a_mobile_file_transfer_variant() {
+        let themes_source = include_str!("../../../../src/shared/config/themes.ts");
+        for theme in BUILT_IN_THEMES {
+            assert!(
+                themes_source.contains(&format!("id: \"{theme}\"")),
+                "desktop theme list no longer contains {theme}"
+            );
+            let css = file_transfer_theme_css(theme, "light");
+            assert!(
+                css.contains("--send-button-background:"),
+                "file transfer theme {theme} is incomplete"
+            );
+        }
+
+        let desktop_theme_count = themes_source.matches("    id: \"").count();
+        assert_eq!(
+            desktop_theme_count,
+            BUILT_IN_THEMES.len(),
+            "update the mobile file transfer theme mapping when adding a desktop theme"
+        );
+    }
+
+    #[test]
+    fn rendered_page_uses_the_requested_theme_and_valid_extra_css() {
+        let html = render_index("sakura", "dark", "");
+        assert!(html.contains(r#"body class="theme-sakura dark-mode""#));
+        assert!(html.contains("body.theme-sakura {"));
+        assert!(!html.contains("body.theme-sakura {{"));
+    }
+
+    #[test]
+    fn rendered_mobile_script_has_valid_javascript_syntax() {
+        let html = render_index("mica", "light", "");
+        let script_start = html.rfind("<script>").unwrap() + "<script>".len();
+        let script_end = html.rfind("</script>").unwrap();
+        let script = &html[script_start..script_end];
+        let path = std::env::temp_dir().join(format!(
+            "tiez-file-transfer-{}.js",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, script).unwrap();
+        let result = std::process::Command::new("node")
+            .arg("--check")
+            .arg(&path)
+            .output();
+        let _ = std::fs::remove_file(path);
+        if let Ok(output) = result {
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
 }

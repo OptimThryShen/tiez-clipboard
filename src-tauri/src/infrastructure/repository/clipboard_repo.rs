@@ -1,6 +1,6 @@
 use crate::database::{
-    calc_image_hash, calc_text_hash, has_sensitive_tag, is_text_type, save_image_to_file,
-    ENCRYPT_PREFIX,
+    calc_image_hash, calc_sync_content_hash, calc_text_hash, has_sensitive_tag, is_text_type,
+    save_image_to_file, ENCRYPT_PREFIX,
 };
 use crate::services::clipboard::entry_matches_search;
 use crate::domain::models::ClipboardEntry;
@@ -507,6 +507,10 @@ impl SqliteClipboardRepository {
 
         // Re-adding an item should clear an older delete tombstone for the same fingerprint.
         let _ = self.clear_tombstone_with_conn(conn, &entry.content_type, calculated_hash);
+        let sync_hash = calc_sync_content_hash(&entry.content_type, &final_content);
+        if sync_hash != calculated_hash {
+            let _ = self.clear_tombstone_with_conn(conn, &entry.content_type, sync_hash);
+        }
 
         let (content, preview, content_hash, html_content) = if should_encrypt {
             let encrypted_content = self.maybe_encrypt_text(&final_content);
@@ -614,7 +618,7 @@ impl SqliteClipboardRepository {
         if let Some(dir) = data_dir {
             let attachments_dir = dir.join("attachments");
             let mut stmt = conn
-                 .prepare("SELECT content, html_content, is_external, content_type, content_hash FROM clipboard_history WHERE id = ?")
+                 .prepare("SELECT content, html_content, is_external, content_type FROM clipboard_history WHERE id = ?")
                  .map_err(|e| e.to_string())?;
 
             if let Ok(entry) = stmt.query_row([id], |row| {
@@ -622,13 +626,11 @@ impl SqliteClipboardRepository {
                 let html_raw: Option<String> = row.get(1).ok();
                 let is_ext: i32 = row.get(2)?;
                 let content_type: String = row.get(3)?;
-                let content_hash: i64 = row.get(4)?;
                 Ok((
                     content_raw,
                     html_raw,
                     is_ext == 1,
                     content_type,
-                    content_hash,
                 ))
             }) {
                 let files_to_remove = self.collect_attachment_paths_for_cleanup(
@@ -637,23 +639,31 @@ impl SqliteClipboardRepository {
                     entry.2,
                     &attachments_dir,
                 );
+                // Fingerprint image bytes before removing managed attachments.
+                // Hashing the path after deletion would create a tombstone that
+                // cannot match the byte-based hash uploaded to mobile devices.
+                let content = self.maybe_decrypt_text(&entry.0);
+                tombstone = Some((entry.3.clone(), calc_sync_content_hash(&entry.3, &content)));
                 for path in files_to_remove {
                     if path.exists() {
                         let _ = std::fs::remove_file(path);
                     }
                 }
-                tombstone = Some((entry.3, entry.4));
             }
         } else {
             let mut stmt = conn
-                .prepare("SELECT content_type, content_hash FROM clipboard_history WHERE id = ?")
+                .prepare("SELECT content_type, content FROM clipboard_history WHERE id = ?")
                 .map_err(|e| e.to_string())?;
             if let Ok(entry) = stmt.query_row([id], |row| {
                 let content_type: String = row.get(0)?;
-                let content_hash: i64 = row.get(1)?;
-                Ok((content_type, content_hash))
+                let content: String = row.get(1)?;
+                Ok((content_type, content))
             }) {
-                tombstone = Some(entry);
+                let content = self.maybe_decrypt_text(&entry.1);
+                tombstone = Some((
+                    entry.0.clone(),
+                    calc_sync_content_hash(&entry.0, &content),
+                ));
             }
         }
 
@@ -1239,6 +1249,8 @@ impl ClipboardRepository for SqliteClipboardRepository {
                     }
                 }
             }
+            drop(stmt);
+            drop(conn);
 
             // 2) Decrypt-scan sensitive or encrypted entries (only if needed)
             if results.len() < limit as usize {
@@ -1270,46 +1282,57 @@ impl ClipboardRepository for SqliteClipboardRepository {
                 );
 
                 loop {
-                    let mut stmt = conn.prepare(&sql_sensitive).map_err(|e| e.to_string())?;
-                    let rows = stmt
-                        .query_map(
-                            params![enc_like, legacy_like, cursor_ts, cursor_id, batch_size],
-                            |row| {
-                            let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
-                            Ok(ClipboardEntry {
-                                id: row.get(0)?,
-                                content_type: row.get(1)?,
-                                content: row.get(2)?, // Encrypted
-                                html_content: row.get(3).ok(),
-                                source_app: row.get(4)?,
-                                timestamp: row.get(5)?,
-                                preview: row.get(6)?, // Encrypted
-                                is_pinned: row.get::<_, i32>(7)? == 1,
-                                tags: serde_json::from_str(&tags_str).unwrap_or_default(),
-                                note: row.get::<_, String>(13).unwrap_or_default(),
-                                use_count: row.get(9).unwrap_or(0),
-                                is_external: row.get::<_, i32>(10)? == 1,
-                                pinned_order: row.get(11).unwrap_or(0),
-                                source_app_path: row.get(12).unwrap_or(None),
-                                file_preview_exists: true,
-                            })
-                        })
-                        .map_err(|e| e.to_string())?;
-
-                    let mut batch: Vec<ClipboardEntry> = Vec::new();
-                    for row in rows {
-                        if let Ok(mut entry) = row {
-                            entry.content = self.maybe_decrypt_text(&entry.content);
-                            entry.preview = self.maybe_decrypt_text(&entry.preview);
-                            if let Some(html) = entry.html_content.take() {
-                                entry.html_content = Some(self.maybe_decrypt_text(&html));
+                    let mut batch = {
+                        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+                        let mut stmt = conn.prepare(&sql_sensitive).map_err(|e| e.to_string())?;
+                        let rows = stmt
+                            .query_map(
+                                params![enc_like, legacy_like, cursor_ts, cursor_id, batch_size],
+                                |row| {
+                                let tags_str: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
+                                Ok(ClipboardEntry {
+                                    id: row.get(0)?,
+                                    content_type: row.get(1)?,
+                                    content: row.get(2)?, // Encrypted
+                                    html_content: row.get(3).ok(),
+                                    source_app: row.get(4)?,
+                                    timestamp: row.get(5)?,
+                                    preview: row.get(6)?, // Encrypted
+                                    is_pinned: row.get::<_, i32>(7)? == 1,
+                                    tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+                                    note: row.get::<_, String>(13).unwrap_or_default(),
+                                    use_count: row.get(9).unwrap_or(0),
+                                    is_external: row.get::<_, i32>(10)? == 1,
+                                    pinned_order: row.get(11).unwrap_or(0),
+                                    source_app_path: row.get(12).unwrap_or(None),
+                                    file_preview_exists: true,
+                                })
                             }
-                            batch.push(entry);
+                            )
+                            .map_err(|e| e.to_string())?;
+
+                        let mut raw_batch = Vec::new();
+                        for row in rows {
+                            if let Ok(entry) = row {
+                                raw_batch.push(entry);
+                            }
                         }
-                    }
+                        raw_batch
+                    };
 
                     if batch.is_empty() {
                         break;
+                    }
+
+                    // Keychain/decryption work can be noticeably slower than the
+                    // SQL read. Do it after releasing the global DB mutex so new
+                    // clipboard captures are not blocked by a long search.
+                    for entry in &mut batch {
+                        entry.content = self.maybe_decrypt_text(&entry.content);
+                        entry.preview = self.maybe_decrypt_text(&entry.preview);
+                        if let Some(html) = entry.html_content.take() {
+                            entry.html_content = Some(self.maybe_decrypt_text(&html));
+                        }
                     }
 
                     for entry in batch.iter() {
@@ -1351,28 +1374,31 @@ impl ClipboardRepository for SqliteClipboardRepository {
 
     fn clear(&self, data_dir: Option<&std::path::Path>) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let transaction = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
         // Get IDs of unpinned items without tags.
-        let mut stmt = conn
-            .prepare(
+        let ids = {
+            let mut stmt = transaction
+                .prepare(
                 "SELECT id FROM clipboard_history 
              WHERE is_pinned = 0 
                AND NOT EXISTS (SELECT 1 FROM entry_tags WHERE entry_id = clipboard_history.id)",
             )
             .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| row.get::<_, i64>(0))
-            .map_err(|e| e.to_string())?;
-        let ids: Vec<i64> = rows.filter_map(Result::ok).collect();
+            let rows = stmt
+                .query_map([], |row| row.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(Result::ok).collect::<Vec<i64>>()
+        };
 
-        // Delete one-by-one so tombstones are recorded for cloud deletion sync.
+        // Keep per-entry cleanup/tombstones, but commit them as one transaction.
+        // The previous implementation performed one durable SQLite commit per
+        // entry and then VACUUMed synchronously, freezing the app on large lists.
         for id in &ids {
-            self.delete_with_conn(&conn, *id, data_dir)?;
+            self.delete_with_conn(&transaction, *id, data_dir)?;
         }
 
-        // VACUUM to reclaim space
-        let _ = conn.execute_batch("VACUUM;");
-        Ok(())
+        transaction.commit().map_err(|e| e.to_string())
     }
 
     fn get_count(&self) -> Result<i64, String> {

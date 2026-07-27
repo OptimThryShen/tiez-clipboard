@@ -233,6 +233,31 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    // Migration 12: Cover the exact list ordering used by paginated history.
+    // Including `id` also makes entries with identical timestamps deterministic.
+    if current_version < 12 {
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_list_order
+                ON clipboard_history (
+                    is_pinned DESC,
+                    pinned_order DESC,
+                    timestamp DESC,
+                    id DESC
+                );
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_type_list_order
+                ON clipboard_history (
+                    content_type,
+                    is_pinned DESC,
+                    pinned_order DESC,
+                    timestamp DESC,
+                    id DESC
+                );
+            ",
+        )?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (12)", [])?;
+    }
+
     Ok(())
 }
 

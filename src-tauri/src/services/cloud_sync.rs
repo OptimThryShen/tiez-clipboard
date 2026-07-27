@@ -781,17 +781,20 @@ fn normalize_item_for_sync(mut item: CloudSyncItem) -> Option<CloudSyncItem> {
 }
 
 fn compute_sync_content_hash(content_type: &str, content: &str) -> i64 {
-    match content_type {
-        "image" => crate::database::calc_image_hash(content).unwrap_or(0),
-        "text" | "code" | "url" | "rich_text" | "file" | "video" => {
-            crate::database::calc_text_hash(content) as i64
-        }
-        _ => 0,
+    if matches!(
+        content_type,
+        "image" | "text" | "code" | "url" | "rich_text" | "file" | "video"
+    ) {
+        crate::database::calc_sync_content_hash(content_type, content)
+    } else {
+        0
     }
 }
 
 fn resolved_content_hash(item: &CloudSyncItem) -> i64 {
-    if item.content_hash != 0 {
+    if item.deleted_at == 0 && !item.content.is_empty() {
+        compute_sync_content_hash(&item.content_type, &item.content)
+    } else if item.content_hash != 0 {
         item.content_hash
     } else {
         compute_sync_content_hash(&item.content_type, &item.content)
@@ -1225,6 +1228,17 @@ fn merge_webdav_sync_heads(base: &mut WebDavSyncHead, incoming: WebDavSyncHead) 
     base.updated_at = base.updated_at.max(incoming.updated_at);
 }
 
+fn webdav_sync_head_covers(actual: &WebDavSyncHead, expected: &WebDavSyncHead) -> bool {
+    expected.devices.iter().all(|(device_id, expected_device)| {
+        actual.devices.get(device_id).is_some_and(|actual_device| {
+            actual_device.latest_op_seq >= expected_device.latest_op_seq
+                && actual_device.snapshot_updated_at >= expected_device.snapshot_updated_at
+                && actual_device.snapshot_op_seq >= expected_device.snapshot_op_seq
+                && actual_device.settings_updated_at >= expected_device.settings_updated_at
+        })
+    })
+}
+
 fn load_webdav_blob_cache(app: &AppHandle) -> HashMap<String, i64> {
     let raw = app
         .try_state::<DbState>()
@@ -1533,19 +1547,34 @@ fn apply_remote_changes(
                 rusqlite::params![item.content_type, remote_hash, tombstone_ts],
             );
 
-            let mut stmt = conn
-                .prepare(
-                    "SELECT id FROM clipboard_history
-                     WHERE content_type = ?1 AND content_hash = ?2",
-                )
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            let rows = stmt
-                .query_map(rusqlite::params![item.content_type, remote_hash], |row| {
-                    row.get::<_, i64>(0)
-                })
-                .map_err(|e| AppError::Internal(e.to_string()))?;
-            for row in rows {
-                let id = row.map_err(|e| AppError::Internal(e.to_string()))?;
+            let candidates = {
+                let mut stmt = conn
+                    .prepare(
+                        "SELECT id, content_hash FROM clipboard_history
+                         WHERE content_type = ?1",
+                    )
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+                let rows = stmt
+                    .query_map(rusqlite::params![item.content_type], |row| {
+                        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+                    })
+                    .map_err(|e| AppError::Internal(e.to_string()))?;
+                rows.filter_map(Result::ok).collect::<Vec<_>>()
+            };
+            for (id, stored_hash) in candidates {
+                let canonical_match = db_state
+                    .repo
+                    .get_entry_by_id_with_conn(&conn, id)
+                    .map_err(AppError::Internal)?
+                    .map(|entry| {
+                        compute_sync_content_hash(&entry.content_type, &entry.content) == remote_hash
+                    })
+                    .unwrap_or(false);
+                // Accept the legacy desktop fingerprint while all clients migrate
+                // to the stable cross-platform hash.
+                if stored_hash != remote_hash && !canonical_match {
+                    continue;
+                }
                 db_state
                     .repo
                     .delete_with_conn(&conn, id, app_data_dir.as_deref())
@@ -2585,9 +2614,29 @@ async fn upload_webdav_sync_head(
     head_path: &str,
     head: &WebDavSyncHead,
 ) -> AppResult<()> {
-    let body = serde_json::to_vec(head)
-        .map_err(|e| AppError::Internal(format!("serialize head failed: {}", e)))?;
-    upload_webdav_json_resource(client, cfg, head_path, body, "sync head").await
+    let mut candidate = head.clone();
+
+    for _ in 0..3 {
+        if let Some(latest) = fetch_webdav_sync_head(client, cfg, head_path).await? {
+            merge_webdav_sync_heads(&mut candidate, latest);
+        }
+        candidate.updated_at = candidate.updated_at.max(now_ms());
+
+        let body = serde_json::to_vec(&candidate)
+            .map_err(|e| AppError::Internal(format!("serialize head failed: {}", e)))?;
+        upload_webdav_json_resource(client, cfg, head_path, body, "sync head").await?;
+
+        if let Some(verified) = fetch_webdav_sync_head(client, cfg, head_path).await? {
+            if webdav_sync_head_covers(&verified, &candidate) {
+                return Ok(());
+            }
+            merge_webdav_sync_heads(&mut candidate, verified);
+        }
+    }
+
+    Err(AppError::Internal(
+        "webdav sync head was overwritten concurrently after 3 retries".to_string(),
+    ))
 }
 
 async fn rebuild_webdav_sync_head(
@@ -3605,9 +3654,12 @@ fn merge_remote_emojis(app: &AppHandle, remote_json: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        normalize_item_for_sync, rewrite_rich_html_resources_for_sync, CloudSyncItem,
-        RICH_IMAGE_FALLBACK_PREFIX, RICH_IMAGE_FALLBACK_SUFFIX,
+        merge_webdav_sync_heads, normalize_item_for_sync,
+        rewrite_rich_html_resources_for_sync, webdav_sync_head_covers, CloudSyncItem,
+        WebDavDeviceHead, WebDavSyncHead, RICH_IMAGE_FALLBACK_PREFIX,
+        RICH_IMAGE_FALLBACK_SUFFIX,
     };
+    use std::collections::BTreeMap;
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -3683,5 +3735,46 @@ mod tests {
         assert!(!html.contains("entry.png"));
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn merging_webdav_heads_preserves_each_devices_high_water_marks() {
+        let mut base = WebDavSyncHead {
+            updated_at: 10,
+            devices: BTreeMap::from([(
+                "desktop".to_string(),
+                WebDavDeviceHead {
+                    latest_op_seq: 4,
+                    snapshot_updated_at: 8,
+                    snapshot_op_seq: 3,
+                    settings_updated_at: 5,
+                },
+            )]),
+        };
+        let incoming = WebDavSyncHead {
+            updated_at: 12,
+            devices: BTreeMap::from([
+                (
+                    "desktop".to_string(),
+                    WebDavDeviceHead {
+                        latest_op_seq: 2,
+                        snapshot_updated_at: 9,
+                        snapshot_op_seq: 5,
+                        settings_updated_at: 1,
+                    },
+                ),
+                ("mobile".to_string(), WebDavDeviceHead::default()),
+            ]),
+        };
+
+        merge_webdav_sync_heads(&mut base, incoming);
+
+        let desktop = &base.devices["desktop"];
+        assert_eq!(desktop.latest_op_seq, 4);
+        assert_eq!(desktop.snapshot_updated_at, 9);
+        assert_eq!(desktop.snapshot_op_seq, 5);
+        assert_eq!(desktop.settings_updated_at, 5);
+        assert!(base.devices.contains_key("mobile"));
+        assert!(webdav_sync_head_covers(&base, &base.clone()));
     }
 }

@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
 import type { CloudSyncContentPrefs } from "../../../app/types";
+import ConfigShareQr from "../ConfigShareQr";
+import {
+    buildWebdavConfigQrPayload,
+    isWebdavConfigQrReady,
+} from "../../utils/configQr";
 
 export interface CloudSyncStatusPayload {
     state: string;
@@ -389,6 +394,25 @@ const CloudSyncSettingsGroup = ({
                             placeholder="tiez-sync"
                         />
                     </div>
+
+                    {(() => {
+                        const webdavQr = buildWebdavConfigQrPayload({
+                            url: cloudSyncWebdavUrl,
+                            username: cloudSyncWebdavUsername,
+                            password: cloudSyncWebdavPassword,
+                            basePath: cloudSyncWebdavBasePath,
+                        });
+                        const webdavQrReady = isWebdavConfigQrReady(webdavQr);
+                        return (
+                            <ConfigShareQr
+                                value={JSON.stringify(webdavQr)}
+                                ready={webdavQrReady}
+                                title={t("webdav_share_qr_title")}
+                                hint={t("webdav_share_qr_hint")}
+                                emptyHint={t("webdav_share_qr_empty")}
+                            />
+                        );
+                    })()}
 
                     <div
                         style={{
