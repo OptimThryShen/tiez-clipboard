@@ -495,6 +495,7 @@ mod tests {
             )
         );
 
+        drop(destination);
         std::fs::remove_dir_all(&test_root).expect("remove test directory");
     }
 
