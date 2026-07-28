@@ -107,7 +107,7 @@ pub fn init(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(feature = "portable"))]
     {
         match crate::infrastructure::encryption::migrate_legacy_ciphertexts(&conn) {
-            Ok(n) if n > 0 => info!(">>> [STARTUP] Migrated {} legacy plaintext cipher fields", n),
+            Ok(n) if n > 0 => info!(">>> [STARTUP] Migrated {} legacy cipher fields", n),
             Ok(_) => {}
             Err(e) => eprintln!(">>> [STARTUP] Legacy encryption migration warning: {}", e),
         }

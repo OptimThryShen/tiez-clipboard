@@ -344,7 +344,10 @@ impl SqliteClipboardRepository {
                 return value.to_string();
             }
             let plain = if encryption::is_encrypted_value(value) {
-                encryption::decrypt_value(value).unwrap_or_else(|| value.to_string())
+                let Some(plain) = encryption::decrypt_value(value) else {
+                    return value.to_string();
+                };
+                plain
             } else {
                 value.to_string()
             };

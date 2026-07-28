@@ -1,7 +1,9 @@
 //! Local-at-rest encryption for sensitive clipboard / settings values.
 //!
 //! Format: `enc1:` + base64(nonce || ciphertext)  (AES-256-GCM)
-//! Legacy: `plain:` + plaintext  (migrated on read / startup)
+//! Legacy:
+//! - `plain:` + plaintext
+//! - `dpapi:` + base64(CryptProtectData output) from older Windows builds
 //!
 //! Master key is stored in macOS Keychain or Windows DPAPI-protected file.
 
@@ -16,6 +18,8 @@ use std::sync::OnceLock;
 pub const ENCRYPT_PREFIX: &str = "enc1:";
 /// Legacy fake-encryption prefix from earlier builds.
 pub const LEGACY_PLAIN_PREFIX: &str = "plain:";
+/// Legacy per-value Windows DPAPI format used before the shared AES key format.
+pub const LEGACY_DPAPI_PREFIX: &str = "dpapi:";
 
 #[cfg(all(target_os = "macos", not(debug_assertions)))]
 const KEYCHAIN_SERVICE: &str = "com.tiez.clipboard";
@@ -39,7 +43,9 @@ static DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// True if value is protected (modern or legacy wrapper).
 pub fn is_encrypted_value(value: &str) -> bool {
-    value.starts_with(ENCRYPT_PREFIX) || value.starts_with(LEGACY_PLAIN_PREFIX)
+    value.starts_with(ENCRYPT_PREFIX)
+        || value.starts_with(LEGACY_PLAIN_PREFIX)
+        || value.starts_with(LEGACY_DPAPI_PREFIX)
 }
 
 /// True if value uses the real AES-GCM format.
@@ -314,39 +320,72 @@ pub fn encrypt_value(plain: &str) -> Option<String> {
 }
 
 pub fn decrypt_value(cipher: &str) -> Option<String> {
+    decrypt_value_inner(cipher, true)
+}
+
+fn decrypt_value_inner(cipher: &str, unwrap_legacy_after_modern: bool) -> Option<String> {
     if let Some(payload) = cipher.strip_prefix(LEGACY_PLAIN_PREFIX) {
         return Some(payload.to_string());
     }
 
-    let Some(payload) = cipher.strip_prefix(ENCRYPT_PREFIX) else {
+    if let Some(payload) = cipher.strip_prefix(LEGACY_DPAPI_PREFIX) {
+        #[cfg(target_os = "windows")]
+        {
+            let protected = base64::engine::general_purpose::STANDARD
+                .decode(payload.as_bytes())
+                .ok()?;
+            let plain = dpapi_unprotect(&protected).ok()?;
+            return String::from_utf8(plain).ok();
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = payload;
+            return None;
+        }
+    }
+
+    if !cipher.starts_with(ENCRYPT_PREFIX) {
         // Unprefixed plaintext (or unknown format)
         return Some(cipher.to_string());
-    };
+    }
 
     #[cfg(feature = "portable")]
     {
-        let _ = payload;
         return Some(cipher.to_string());
     }
 
     #[cfg(not(feature = "portable"))]
     {
-        let key = get_master_key()?;
-        let packed = base64::engine::general_purpose::STANDARD
-            .decode(payload.as_bytes())
-            .ok()?;
-        if packed.len() <= NONCE_LEN {
-            return None;
+        let plain = decrypt_modern_value_once(cipher)?;
+        if unwrap_legacy_after_modern
+            && (plain.starts_with(LEGACY_PLAIN_PREFIX)
+                || plain.starts_with(LEGACY_DPAPI_PREFIX))
+        {
+            return decrypt_value_inner(&plain, false);
         }
-        let (nonce_bytes, ciphertext) = packed.split_at(NONCE_LEN);
-        let aes = Aes256Gcm::new_from_slice(key).ok()?;
-        let nonce = Nonce::from_slice(nonce_bytes);
-        let plain = aes.decrypt(nonce, ciphertext).ok()?;
-        String::from_utf8(plain).ok()
+        Some(plain)
     }
 }
 
-/// Re-encrypt any `plain:` blobs found in settings + clipboard_history.
+#[cfg(not(feature = "portable"))]
+fn decrypt_modern_value_once(cipher: &str) -> Option<String> {
+    let payload = cipher.strip_prefix(ENCRYPT_PREFIX)?;
+    let key = get_master_key()?;
+    let packed = base64::engine::general_purpose::STANDARD
+        .decode(payload.as_bytes())
+        .ok()?;
+    if packed.len() <= NONCE_LEN {
+        return None;
+    }
+    let (nonce_bytes, ciphertext) = packed.split_at(NONCE_LEN);
+    let aes = Aes256Gcm::new_from_slice(key).ok()?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    let plain = aes.decrypt(nonce, ciphertext).ok()?;
+    String::from_utf8(plain).ok()
+}
+
+/// Re-encrypt legacy `plain:` / Windows `dpapi:` blobs when they can be
+/// decrypted. Undecryptable ciphertext is intentionally left untouched.
 pub fn migrate_legacy_ciphertexts(conn: &rusqlite::Connection) -> Result<usize, String> {
     let mut upgraded = 0usize;
 
@@ -367,10 +406,22 @@ pub fn migrate_legacy_ciphertexts(conn: &rusqlite::Connection) -> Result<usize, 
             if !crate::database::is_sensitive_key(&key) {
                 continue;
             }
+            let upgraded_value = upgrade_field(&value);
+            if upgraded_value != value {
+                updates.push((key, upgraded_value));
+                continue;
+            }
             if is_modern_ciphertext(&value) {
                 continue;
             }
-            let plain = decrypt_value(&value).unwrap_or(value);
+            let plain = if is_encrypted_value(&value) {
+                let Some(plain) = decrypt_value(&value) else {
+                    continue;
+                };
+                plain
+            } else {
+                value
+            };
             if let Some(enc) = encrypt_value(&plain) {
                 updates.push((key, enc));
             }
@@ -392,7 +443,13 @@ pub fn migrate_legacy_ciphertexts(conn: &rusqlite::Connection) -> Result<usize, 
                 "SELECT id, content, preview, html_content FROM clipboard_history
                  WHERE content LIKE 'plain:%'
                     OR preview LIKE 'plain:%'
-                    OR html_content LIKE 'plain:%'",
+                    OR html_content LIKE 'plain:%'
+                    OR content LIKE 'dpapi:%'
+                    OR preview LIKE 'dpapi:%'
+                    OR html_content LIKE 'dpapi:%'
+                    OR content LIKE 'enc1:%'
+                    OR preview LIKE 'enc1:%'
+                    OR html_content LIKE 'enc1:%'",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -434,10 +491,26 @@ pub fn migrate_legacy_ciphertexts(conn: &rusqlite::Connection) -> Result<usize, 
 
 fn upgrade_field(value: &str) -> String {
     if is_modern_ciphertext(value) {
+        #[cfg(not(feature = "portable"))]
+        {
+            let Some(inner) = decrypt_modern_value_once(value) else {
+                return value.to_string();
+            };
+            if inner.starts_with(LEGACY_PLAIN_PREFIX)
+                || inner.starts_with(LEGACY_DPAPI_PREFIX)
+            {
+                let Some(plain) = decrypt_value_inner(&inner, false) else {
+                    return value.to_string();
+                };
+                return encrypt_value(&plain).unwrap_or_else(|| value.to_string());
+            }
+        }
         return value.to_string();
     }
-    if value.starts_with(LEGACY_PLAIN_PREFIX) {
-        let plain = decrypt_value(value).unwrap_or_else(|| value.to_string());
+    if value.starts_with(LEGACY_PLAIN_PREFIX) || value.starts_with(LEGACY_DPAPI_PREFIX) {
+        let Some(plain) = decrypt_value(value) else {
+            return value.to_string();
+        };
         return encrypt_value(&plain).unwrap_or(plain);
     }
     value.to_string()
@@ -452,5 +525,76 @@ mod tests {
         assert_eq!(decrypt_value("plain:hello").as_deref(), Some("hello"));
         assert!(is_encrypted_value("plain:hello"));
         assert!(!is_modern_ciphertext("plain:hello"));
+    }
+
+    #[test]
+    fn legacy_dpapi_is_recognized_without_being_modern_ciphertext() {
+        assert!(is_encrypted_value("dpapi:AA=="));
+        assert!(!is_modern_ciphertext("dpapi:AA=="));
+    }
+
+    #[test]
+    fn migration_preserves_undecryptable_dpapi_values() {
+        let conn = rusqlite::Connection::open_in_memory().expect("open database");
+        conn.execute_batch(
+            "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+             CREATE TABLE clipboard_history (
+                 id INTEGER PRIMARY KEY,
+                 content TEXT NOT NULL,
+                 preview TEXT NOT NULL,
+                 html_content TEXT
+             );
+             INSERT INTO settings (key, value)
+             VALUES ('mqtt_password', 'dpapi:not-valid-base64');
+             INSERT INTO clipboard_history (id, content, preview, html_content)
+             VALUES (
+                 1,
+                 'dpapi:not-valid-base64',
+                 'dpapi:not-valid-base64',
+                 'dpapi:not-valid-base64'
+             );",
+        )
+        .expect("create legacy rows");
+
+        assert_eq!(migrate_legacy_ciphertexts(&conn).expect("migrate"), 0);
+        let setting: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'mqtt_password'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read setting");
+        let fields: (String, String, Option<String>) = conn
+            .query_row(
+                "SELECT content, preview, html_content
+                 FROM clipboard_history WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read clipboard row");
+
+        assert_eq!(setting, "dpapi:not-valid-base64");
+        assert_eq!(fields.0, "dpapi:not-valid-base64");
+        assert_eq!(fields.1, "dpapi:not-valid-base64");
+        assert_eq!(fields.2.as_deref(), Some("dpapi:not-valid-base64"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn legacy_dpapi_round_trip_decrypts() {
+        let protected = dpapi_protect(b"old-secret").expect("protect legacy value");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(protected);
+        let legacy = format!("{LEGACY_DPAPI_PREFIX}{encoded}");
+        assert_eq!(decrypt_value(&legacy).as_deref(), Some("old-secret"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn modern_ciphertext_can_unwrap_a_legacy_dpapi_value() {
+        let protected = dpapi_protect(b"old-secret").expect("protect legacy value");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(protected);
+        let legacy = format!("{LEGACY_DPAPI_PREFIX}{encoded}");
+        let modern = encrypt_value(&legacy).expect("wrap legacy value");
+        assert_eq!(decrypt_value(&modern).as_deref(), Some("old-secret"));
     }
 }
