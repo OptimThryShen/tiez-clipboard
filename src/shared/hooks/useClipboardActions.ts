@@ -59,7 +59,9 @@ export const useClipboardActions = ({
           const now = Date.now();
           setHistory((prev) =>
             prev.map((item) =>
-              item.id === id ? { ...item, timestamp: now } : item
+              item.id === id
+                ? { ...item, timestamp: now, sort_at: now, last_used_at: now }
+                : item
             )
           );
         }
@@ -108,13 +110,18 @@ export const useClipboardActions = ({
       e.stopPropagation();
       try {
         await invoke("toggle_clipboard_pin", { id, isPinned: !currentPinned });
+        const now = Date.now();
         setHistory((prev) =>
           prev
             .map((item) =>
-              item.id === id ? { ...item, is_pinned: !currentPinned } : item
+              item.id === id
+                ? { ...item, is_pinned: !currentPinned, timestamp: now, sort_at: now }
+                : item
             )
             .sort((a, b) => {
-              if (a.is_pinned === b.is_pinned) return b.timestamp - a.timestamp;
+              if (a.is_pinned === b.is_pinned) {
+                return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
+              }
               return a.is_pinned ? -1 : 1;
             })
         );

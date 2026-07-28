@@ -112,7 +112,7 @@ export const usePinnedSort = ({
           return (b.pinned_order || 0) - (a.pinned_order || 0);
         }
       }
-      return b.timestamp - a.timestamp;
+      return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
     });
 
     setHistory(nextHistory);

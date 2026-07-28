@@ -370,7 +370,7 @@ export default function TagManager({ t, theme }: TagManagerProps) {
 
     const sortedItems = [...tagItems].sort((a, b) => {
         if (sortBy === 'count') return (b.use_count || 0) - (a.use_count || 0);
-        return b.timestamp - a.timestamp;
+        return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
     });
 
     const formatItemDate = (timestamp: number) => {
@@ -881,7 +881,9 @@ export default function TagManager({ t, theme }: TagManagerProps) {
 
                                         <div className="card-divider" />
                                         <div className="card-footer">
-                                            <span className="meta-time">{formatItemDate(item.timestamp)}</span>
+                                            <span className="meta-time">
+                                                {formatItemDate(item.created_at || item.timestamp)}
+                                            </span>
                                             <div className="meta-usage">
                                                 <MousePointer2 size={8} /> {item.use_count || 0}
                                             </div>

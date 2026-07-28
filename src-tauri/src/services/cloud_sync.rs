@@ -58,7 +58,6 @@ static CLOUD_SYNC_LAST_SYNC_AT: AtomicI64 = AtomicI64::new(0);
 static LAST_PUSHED_EMOJI_HASH: AtomicI64 = AtomicI64::new(0);
 static CLOUD_SYNC_BACKOFF_UNTIL: AtomicI64 = AtomicI64::new(0);
 
-
 // 用于记录在本次运行中，哪些 WebDAV 目录已经确认存在，避免重复发网络请求
 static WEBDAV_KNOWN_DIRS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
 
@@ -164,6 +163,12 @@ struct CloudSyncItem {
     pub html_blob_hash: Option<String>,
     pub source_app: String,
     pub timestamp: i64,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub last_used_at: i64,
+    #[serde(default)]
+    pub sort_at: i64,
     pub preview: String,
     #[serde(default)]
     pub is_pinned: bool,
@@ -763,6 +768,12 @@ fn decode_emoji_favorites_setting(app: &AppHandle, raw: &str) -> AppResult<Strin
 }
 
 fn normalize_item_for_sync(mut item: CloudSyncItem) -> Option<CloudSyncItem> {
+    if item.created_at <= 0 {
+        item.created_at = item.timestamp;
+    }
+    if item.sort_at <= 0 {
+        item.sort_at = item.timestamp;
+    }
     if item.deleted_at > 0 {
         return Some(item);
     }
@@ -819,9 +830,12 @@ fn sync_digest_for_item(item: &CloudSyncItem) -> String {
     let preview_hash = crate::database::calc_text_hash(&item.preview);
     let source_hash = crate::database::calc_text_hash(&item.source_app);
     let meta = format!(
-        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         resolved_content_hash(item),
         item.timestamp,
+        item.created_at,
+        item.last_used_at,
+        item.sort_at,
         item.deleted_at,
         item.is_pinned,
         item.pinned_order,
@@ -1067,6 +1081,9 @@ fn entries_to_sync_items(
                 html_blob_hash: None,
                 source_app: e.source_app,
                 timestamp: e.timestamp,
+                created_at: e.created_at,
+                last_used_at: e.last_used_at,
+                sort_at: e.sort_at,
                 preview: e.preview,
                 is_pinned: e.is_pinned,
                 tags: e.tags,
@@ -1310,6 +1327,9 @@ fn map_tombstone_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CloudSyncItem>
         html_blob_hash: None,
         source_app: "sync".to_string(),
         timestamp: row.get(2)?,
+        created_at: row.get(2)?,
+        last_used_at: 0,
+        sort_at: row.get(2)?,
         preview: String::new(),
         is_pinned: false,
         tags: Vec::new(),
@@ -1375,9 +1395,9 @@ fn update_existing_entry_from_sync(
     item: &CloudSyncItem,
     effective_timestamp: i64,
 ) -> AppResult<bool> {
-    let (local_timestamp, local_is_pinned, local_pinned_order, local_preview, local_source_app, local_use_count, local_tags_json, local_source_app_path, local_is_external): (i64, bool, i64, String, String, i32, String, Option<String>, bool) = conn
+    let (local_timestamp, local_is_pinned, local_pinned_order, local_preview, local_source_app, local_use_count, local_tags_json, local_source_app_path, local_is_external, local_created_at, local_last_used_at): (i64, bool, i64, String, String, i32, String, Option<String>, bool, i64, i64) = conn
         .query_row(
-            "SELECT timestamp, is_pinned, pinned_order, preview, source_app, use_count, tags, source_app_path, is_external FROM clipboard_history WHERE id = ?",
+            "SELECT sort_at, is_pinned, pinned_order, preview, source_app, use_count, tags, source_app_path, is_external, created_at, last_used_at FROM clipboard_history WHERE id = ?",
             rusqlite::params![id],
             |row| Ok((
                 row.get(0)?,
@@ -1389,6 +1409,8 @@ fn update_existing_entry_from_sync(
                 row.get(6)?,
                 row.get(7).unwrap_or(None),
                 row.get(8).unwrap_or(false),
+                row.get(9).unwrap_or(0),
+                row.get(10).unwrap_or(0),
             )),
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -1402,6 +1424,8 @@ fn update_existing_entry_from_sync(
     let mut use_count = local_use_count;
     let mut tags_json = local_tags_json.clone();
     let mut source_app_path = local_source_app_path;
+    let mut created_at = local_created_at;
+    let mut last_used_at = local_last_used_at;
 
     if effective_timestamp > local_timestamp {
         timestamp = effective_timestamp;
@@ -1428,6 +1452,14 @@ fn update_existing_entry_from_sync(
         use_count = item.use_count;
         changed = true;
     }
+    if item.created_at > 0 && (local_created_at <= 0 || item.created_at < local_created_at) {
+        created_at = item.created_at;
+        changed = true;
+    }
+    if item.last_used_at > local_last_used_at {
+        last_used_at = item.last_used_at;
+        changed = true;
+    }
     let remote_tags_json = serde_json::to_string(&item.tags).unwrap_or_else(|_| "[]".to_string());
     if remote_tags_json != tags_json {
         tags_json = remote_tags_json;
@@ -1442,7 +1474,10 @@ fn update_existing_entry_from_sync(
     if changed {
         conn.execute(
             "UPDATE clipboard_history SET 
-                timestamp = ?, 
+                timestamp = ?,
+                sort_at = ?,
+                created_at = ?,
+                last_used_at = ?,
                 is_pinned = ?, 
                 pinned_order = ?, 
                 preview = ?, 
@@ -1454,6 +1489,9 @@ fn update_existing_entry_from_sync(
              WHERE id = ?",
             rusqlite::params![
                 timestamp,
+                timestamp,
+                created_at,
+                last_used_at,
                 is_pinned,
                 pinned_order,
                 preview,
@@ -1522,7 +1560,9 @@ fn apply_remote_changes(
             .conn
             .lock()
             .map_err(|e| AppError::Internal(e.to_string()))?;
-        let effective_timestamp = if item.timestamp > 0 {
+        let effective_timestamp = if item.sort_at > 0 {
+            item.sort_at
+        } else if item.timestamp > 0 {
             item.timestamp
         } else {
             now_ms()
@@ -1567,7 +1607,8 @@ fn apply_remote_changes(
                     .get_entry_by_id_with_conn(&conn, id)
                     .map_err(AppError::Internal)?
                     .map(|entry| {
-                        compute_sync_content_hash(&entry.content_type, &entry.content) == remote_hash
+                        compute_sync_content_hash(&entry.content_type, &entry.content)
+                            == remote_hash
                     })
                     .unwrap_or(false);
                 // Accept the legacy desktop fingerprint while all clients migrate
@@ -1638,6 +1679,13 @@ fn apply_remote_changes(
             source_app: item.source_app.clone(),
             source_app_path: None,
             timestamp: effective_timestamp,
+            created_at: if item.created_at > 0 {
+                item.created_at
+            } else {
+                effective_timestamp
+            },
+            last_used_at: item.last_used_at,
+            sort_at: effective_timestamp,
             preview,
             is_pinned: item.is_pinned,
             tags: item.tags.clone(),
@@ -2018,7 +2066,7 @@ where
         if status_code == missing_status {
             return Ok(None);
         }
-        
+
         // 兼容坚果云：如果父目录不存在，GET 可能返回 409 Conflict (AncestorsNotFound)
         if status_code == 409 {
             return Ok(None);
@@ -2106,7 +2154,6 @@ async fn ensure_webdav_directories(
     mkcol_if_needed(client, cfg, &paths.settings_path).await?;
     mkcol_if_needed(client, cfg, &paths.ops_path).await?;
     mkcol_if_needed(client, cfg, &paths.blobs_path).await?;
-
 
     Ok(paths)
 }
@@ -2828,10 +2875,13 @@ async fn pull_remote_device_snapshots(
         .collect();
 
     for device_id in list_webdav_snapshot_ids(client, cfg, devices_path).await? {
-        if crate::app::system::same_anon_id(&device_id, &cfg.device_id) || !seen_devices.insert(device_id.clone()) {
+        if crate::app::system::same_anon_id(&device_id, &cfg.device_id)
+            || !seen_devices.insert(device_id.clone())
+        {
             continue;
         }
-        if let Some(snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await? {
+        if let Some(snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
+        {
             if snapshot.updated_at > 0 {
                 candidates.push((device_id, snapshot.updated_at));
             }
@@ -2845,7 +2895,8 @@ async fn pull_remote_device_snapshots(
             break;
         }
         let last_pulled = snapshot_cursor.get(&device_id).copied().unwrap_or(0);
-        let Some(mut snapshot) = fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
+        let Some(mut snapshot) =
+            fetch_webdav_snapshot(client, cfg, devices_path, &device_id).await?
         else {
             continue;
         };
@@ -3067,7 +3118,12 @@ async fn sync_once_webdav(
     let (delta_items, _) = collect_local_incremental_items(app, &candidate_items)?;
 
     let should_push_snapshot = force_snapshot
-        || should_push_webdav_snapshot(app, now, cfg.snapshot_interval_secs, !delta_items.is_empty());
+        || should_push_webdav_snapshot(
+            app,
+            now,
+            cfg.snapshot_interval_secs,
+            !delta_items.is_empty(),
+        );
 
     let local_items = if should_push_snapshot {
         collect_local_syncable_items(app, &cfg.content_prefs)?
@@ -3585,6 +3641,7 @@ fn check_and_create_emoji_sync_op(app: &AppHandle) -> AppResult<Option<CloudSync
 
     LAST_PUSHED_EMOJI_HASH.store(current_hash, Ordering::Relaxed);
 
+    let timestamp = now_ms();
     Ok(Some(CloudSyncItem {
         content_type: "emoji_sync".to_string(),
         content: sync_payload,
@@ -3594,7 +3651,10 @@ fn check_and_create_emoji_sync_op(app: &AppHandle) -> AppResult<Option<CloudSync
         content_blob_hash: None,
         html_blob_hash: None,
         source_app: "TieZ".to_string(),
-        timestamp: now_ms(),
+        timestamp,
+        created_at: timestamp,
+        last_used_at: 0,
+        sort_at: timestamp,
         preview: "⭐ Emoji Sync".to_string(),
         is_pinned: false,
         pinned_order: 0,
@@ -3654,10 +3714,9 @@ fn merge_remote_emojis(app: &AppHandle, remote_json: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        merge_webdav_sync_heads, normalize_item_for_sync,
-        rewrite_rich_html_resources_for_sync, webdav_sync_head_covers, CloudSyncItem,
-        WebDavDeviceHead, WebDavSyncHead, RICH_IMAGE_FALLBACK_PREFIX,
-        RICH_IMAGE_FALLBACK_SUFFIX,
+        merge_webdav_sync_heads, normalize_item_for_sync, rewrite_rich_html_resources_for_sync,
+        webdav_sync_head_covers, CloudSyncItem, WebDavDeviceHead, WebDavSyncHead,
+        RICH_IMAGE_FALLBACK_PREFIX, RICH_IMAGE_FALLBACK_SUFFIX,
     };
     use std::collections::BTreeMap;
     use std::fs;
@@ -3721,6 +3780,9 @@ mod tests {
             html_blob_hash: None,
             source_app: "Test".to_string(),
             timestamp: 1,
+            created_at: 1,
+            last_used_at: 0,
+            sort_at: 1,
             preview: "hello".to_string(),
             is_pinned: false,
             tags: vec![],

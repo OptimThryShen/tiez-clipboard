@@ -92,9 +92,7 @@ fn safe_identity(value: &str, fallback: &str) -> String {
 const UPLOAD_SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 const MAX_UPLOAD_SESSIONS: usize = 256;
 
-fn prune_upload_sessions(
-    sessions: &mut std::collections::HashMap<String, std::path::PathBuf>,
-) {
+fn prune_upload_sessions(sessions: &mut std::collections::HashMap<String, std::path::PathBuf>) {
     let stale_keys = sessions
         .iter()
         .filter_map(|(upload_id, path)| {
@@ -345,10 +343,7 @@ pub async fn poll_messages(
                     {
                         if let Some(shared_path) = m.file_path.as_deref() {
                             let path = std::path::Path::new(shared_path);
-                            let filename = path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
+                            let filename = path.file_name().unwrap_or_default().to_string_lossy();
 
                             if let Some(token) =
                                 register_shared_file(&state.app_handle, shared_path.to_string())
@@ -361,10 +356,7 @@ pub async fn poll_messages(
                             }
                         } else if !m.content.starts_with("/download/") {
                             let path = std::path::Path::new(&m.content);
-                            let filename = path
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy();
+                            let filename = path.file_name().unwrap_or_default().to_string_lossy();
                             if let Some(token) =
                                 register_shared_file(&state.app_handle, m.content.clone())
                             {
@@ -518,6 +510,10 @@ pub async fn handle_text(
 
     if settings.auto_copy_file.load(Ordering::Relaxed) {
         id_result = if settings.persistent.load(Ordering::Relaxed) {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
             let entry = ClipboardEntry {
                 id: 0,
                 content_type: "text".to_string(),
@@ -525,10 +521,10 @@ pub async fn handle_text(
                 html_content: None,
                 source_app: sender_name.to_string(),
                 source_app_path: None,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64,
+                timestamp,
+                created_at: timestamp,
+                last_used_at: 0,
+                sort_at: timestamp,
                 preview: preview.clone(),
                 is_pinned: false,
                 tags: Vec::new(),
@@ -550,6 +546,10 @@ pub async fn handle_text(
                 .unwrap()
                 .as_micros() as i64
                 / 1000);
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
             let entry = ClipboardEntry {
                 id,
                 content_type: "text".to_string(),
@@ -557,10 +557,10 @@ pub async fn handle_text(
                 html_content: None,
                 source_app: "File Transfer".to_string(),
                 source_app_path: None,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as i64,
+                timestamp,
+                created_at: timestamp,
+                last_used_at: 0,
+                sort_at: timestamp,
                 preview: preview.clone(),
                 is_pinned: false,
                 tags: Vec::new(),
@@ -735,11 +735,11 @@ pub async fn upload_chunk_base64(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<Base64ChunkPayload>,
 ) -> axum::response::Response {
-    let data = match base64::engine::general_purpose::STANDARD.decode(payload.data_base64.as_bytes())
-    {
-        Ok(data) => data,
-        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid base64 chunk").into_response(),
-    };
+    let data =
+        match base64::engine::general_purpose::STANDARD.decode(payload.data_base64.as_bytes()) {
+            Ok(data) => data,
+            Err(_) => return (StatusCode::BAD_REQUEST, "Invalid base64 chunk").into_response(),
+        };
     process_upload_chunk(state, payload.metadata, data).await
 }
 
@@ -1045,8 +1045,7 @@ pub async fn prepare_batch_download(
         let messages = match chat_state.0.lock() {
             Ok(messages) => messages,
             Err(_) => {
-                return (StatusCode::INTERNAL_SERVER_ERROR, "History unavailable")
-                    .into_response()
+                return (StatusCode::INTERNAL_SERVER_ERROR, "History unavailable").into_response()
             }
         };
         let matching = messages
@@ -1113,14 +1112,17 @@ pub async fn prepare_batch_download(
         uuid::Uuid::new_v4()
     ));
     let archive_path_for_job = archive_path.clone();
-    let archive_result = tokio::task::spawn_blocking(move || {
-        create_batch_archive(&archive_path_for_job, &files)
-    })
-    .await;
+    let archive_result =
+        tokio::task::spawn_blocking(move || create_batch_archive(&archive_path_for_job, &files))
+            .await;
 
     if !matches!(archive_result, Ok(Ok(()))) {
         let _ = std::fs::remove_file(&archive_path);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Unable to create package").into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Unable to create package",
+        )
+            .into_response();
     }
 
     let Some(token) = register_shared_file(
@@ -1174,8 +1176,8 @@ fn create_batch_archive(
             .unwrap_or("")
             .to_ascii_lowercase();
         let already_compressed = [
-            "zip", "rar", "7z", "gz", "bz2", "xz", "jpg", "jpeg", "png", "gif", "webp",
-            "heic", "avif", "mp3", "aac", "m4a", "mp4", "mov", "mkv", "webm", "pdf",
+            "zip", "rar", "7z", "gz", "bz2", "xz", "jpg", "jpeg", "png", "gif", "webp", "heic",
+            "avif", "mp3", "aac", "m4a", "mp4", "mov", "mkv", "webm", "pdf",
         ]
         .contains(&extension.as_str());
         let method = if already_compressed {
@@ -1209,7 +1211,10 @@ fn unique_package_entry_name(
     }
 
     let path = std::path::Path::new(requested);
-    let stem = path.file_stem().and_then(|value| value.to_str()).unwrap_or("file");
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("file");
     let extension = path.extension().and_then(|value| value.to_str());
     for suffix in 2..=10_000 {
         let candidate = match extension {

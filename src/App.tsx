@@ -72,7 +72,7 @@ const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
     while (insertIndex < next.length) {
       const current = next[insertIndex];
       if (!current.is_pinned) break;
-      if (current.timestamp < item.timestamp) break;
+      if ((current.sort_at || current.timestamp) < (item.sort_at || item.timestamp)) break;
       insertIndex++;
     }
   } else {
@@ -85,7 +85,7 @@ const insertHistoryItem = (list: ClipboardEntry[], item: ClipboardEntry) => {
         insertIndex++;
         continue;
       }
-      if (current.timestamp < item.timestamp) break;
+      if ((current.sort_at || current.timestamp) < (item.sort_at || item.timestamp)) break;
       insertIndex++;
     }
   }

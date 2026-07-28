@@ -595,6 +595,13 @@ mod tests {
                 tags TEXT NOT NULL DEFAULT '[]',
                 note TEXT NOT NULL DEFAULT '',
                 use_count INTEGER NOT NULL DEFAULT 0,
+                item_hotkey TEXT NOT NULL DEFAULT '',
+                item_hotkey_global INTEGER NOT NULL DEFAULT 0,
+                last_used_at INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT 0,
+                sort_at INTEGER NOT NULL DEFAULT 0,
+                move_to_group_hotkey TEXT NOT NULL DEFAULT '',
+                move_to_group_hotkey_global INTEGER NOT NULL DEFAULT 0,
                 is_external INTEGER NOT NULL DEFAULT 0,
                 pinned_order INTEGER NOT NULL DEFAULT 0
             )",
@@ -648,6 +655,9 @@ mod tests {
             source_app: "TestApp".to_string(),
             source_app_path: Some("/Applications/TestApp.app".to_string()),
             timestamp: 123456789,
+            created_at: 123456789,
+            last_used_at: 0,
+            sort_at: 123456789,
             preview: "Hello...".to_string(),
             is_pinned: false,
             tags: vec![],
@@ -670,6 +680,14 @@ mod tests {
         assert_eq!(history.len(), 1);
         assert_eq!(history[0].content, "Hello Integration Test");
         assert_eq!(history[0].source_app, "TestApp");
+        assert_eq!(history[0].created_at, 123456789);
+        assert_eq!(history[0].sort_at, 123456789);
+        assert_eq!(history[0].last_used_at, 0);
+
+        repo.increment_use_count(id).expect("更新使用时间失败");
+        let used = repo.get_history(10, 0, None).expect("重新获取历史失败");
+        assert!(used[0].last_used_at > 0);
+        assert_eq!(used[0].created_at, 123456789);
     }
 
     #[test]
@@ -697,10 +715,7 @@ mod tests {
 
     #[test]
     fn image_sync_hash_matches_file_and_data_url_representations() {
-        let path = std::env::temp_dir().join(format!(
-            "tiez-sync-hash-{}.png",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("tiez-sync-hash-{}.png", std::process::id()));
         let bytes = [0_u8, 1, 2, 3, 250, 251, 252];
         std::fs::write(&path, bytes).expect("write hash fixture");
         let data_url = format!(

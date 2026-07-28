@@ -291,9 +291,11 @@ pub fn send_files_to_client(
 
 fn transfer_message_type(file_path: &str) -> &'static str {
     let path_lower = file_path.to_lowercase();
-    if [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]
-        .iter()
-        .any(|ext| path_lower.ends_with(ext))
+    if [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico",
+    ]
+    .iter()
+    .any(|ext| path_lower.ends_with(ext))
     {
         "image"
     } else if [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm"]
@@ -478,10 +480,7 @@ pub async fn run_server(listener: tokio::net::TcpListener, app_handle: AppHandle
         .route("/upload", post(handlers::upload))
         .route("/upload_chunk", post(handlers::upload_chunk))
         .route("/upload-chunk", post(handlers::upload_chunk))
-        .route(
-            "/upload-chunk-base64",
-            post(handlers::upload_chunk_base64),
-        )
+        .route("/upload-chunk-base64", post(handlers::upload_chunk_base64))
         .route("/share_chunk", post(handlers::share_chunk))
         .route("/share-chunk", post(handlers::share_chunk))
         .route("/share_chunk", options(handlers::share_chunk_options))
@@ -686,6 +685,9 @@ pub async fn register_received_file(
             source_app: "File Transfer".to_string(),
             source_app_path: None,
             timestamp,
+            created_at: timestamp,
+            last_used_at: 0,
+            sort_at: timestamp,
             preview,
             is_pinned: false,
             tags: Vec::new(),

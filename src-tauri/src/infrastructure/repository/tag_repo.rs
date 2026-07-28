@@ -242,11 +242,11 @@ impl TagRepository for SqliteTagRepository {
     fn get_entries_by_tag(&self, tag: &str) -> Result<Vec<ClipboardEntry>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn.prepare(
-            "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.timestamp, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.note 
+            "SELECT ch.id, ch.content_type, ch.content, ch.html_content, ch.source_app, ch.sort_at, ch.preview, ch.is_pinned, ch.tags, ch.use_count, ch.is_external, ch.pinned_order, ch.source_app_path, ch.note, ch.created_at, ch.last_used_at, ch.sort_at
              FROM clipboard_history ch
              INNER JOIN entry_tags et ON ch.id = et.entry_id
              WHERE et.tag = ? 
-             ORDER BY ch.is_pinned DESC, ch.pinned_order DESC, ch.timestamp DESC",
+             ORDER BY ch.is_pinned DESC, ch.pinned_order DESC, ch.sort_at DESC",
         ).map_err(|e| e.to_string())?;
 
         let rows = stmt
@@ -267,6 +267,9 @@ impl TagRepository for SqliteTagRepository {
                     html_content,
                     source_app: row.get(4)?,
                     timestamp: row.get(5)?,
+                    created_at: row.get(14).unwrap_or_else(|_| row.get(5).unwrap_or(0)),
+                    last_used_at: row.get(15).unwrap_or(0),
+                    sort_at: row.get(16).unwrap_or_else(|_| row.get(5).unwrap_or(0)),
                     preview,
                     is_pinned: row.get::<_, i32>(7)? == 1,
                     tags,

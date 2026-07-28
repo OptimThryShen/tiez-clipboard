@@ -49,7 +49,10 @@ pub fn toggle_clipboard_pin(
 
         if let Some(entry) = entry_to_save {
             let data_dir = app_data_dir.0.lock().unwrap().clone();
-            if let Ok(new_id) = state.repo.save_with_conn(&conn, &entry, Some(&data_dir), None) {
+            if let Ok(new_id) = state
+                .repo
+                .save_with_conn(&conn, &entry, Some(&data_dir), None)
+            {
                 real_id = new_id;
                 if let Ok(deleted_ids) = state.repo.enforce_limit_with_conn(&conn, Some(&data_dir))
                 {
@@ -175,6 +178,7 @@ pub async fn add_manual_item(
     tags: Vec<String>,
 ) -> AppResult<i64> {
     let preview = truncate_chars_with_suffix(&content, 200, "...");
+    let timestamp = chrono::Utc::now().timestamp_millis();
 
     let entry = database::ClipboardEntry {
         id: 0,
@@ -184,7 +188,10 @@ pub async fn add_manual_item(
         source_app: "Manual".to_string(),
         source_app_path: None,
         note: String::new(),
-        timestamp: chrono::Utc::now().timestamp_millis(),
+        timestamp,
+        created_at: timestamp,
+        last_used_at: 0,
+        sort_at: timestamp,
         preview,
         is_pinned: false,
         tags,

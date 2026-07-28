@@ -812,6 +812,33 @@ pub unsafe fn append_named_clipboard_formats(
     result
 }
 
+/// Append HGLOBAL-backed standard Windows clipboard formats while preserving
+/// the text and HTML formats already placed on the clipboard.
+pub unsafe fn append_standard_clipboard_formats(formats: &[(u32, Vec<u8>)]) -> Result<(), String> {
+    if formats.is_empty() {
+        return Ok(());
+    }
+
+    if OpenClipboard(None).is_err() {
+        return Err("Cannot open clipboard".into());
+    }
+
+    let result = (|| {
+        for (format_id, data) in formats {
+            // Handle-backed formats (bitmap, palette, metafiles) cannot be
+            // reconstructed by copying their database bytes into HGLOBAL.
+            if !matches!(*format_id, 4 | 5 | 6 | 10 | 11 | 12) {
+                continue;
+            }
+            set_named_clipboard_format_bytes(*format_id, data)?;
+        }
+        Ok(())
+    })();
+
+    let _ = CloseClipboard();
+    result
+}
+
 /// Set image (DIB) and optionally a raw format (like GIF) to clipboard in one go
 pub unsafe fn set_clipboard_image_and_gif(
     image: ImageData,

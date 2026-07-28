@@ -4,6 +4,18 @@ use crate::database::DbState;
 use crate::error::{AppError, AppResult};
 use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
+use crate::services::clipboard::{
+    app_likely_word_processor, attach_rich_image_fallback, attach_rich_named_formats,
+    build_clipboard_text_fingerprint, build_exact_paste_html,
+    capture_preserved_named_formats_from_clipboard, clipboard_image_fallback_data_url,
+    derive_rich_text_content, extract_animated_image_data_url_from_html,
+    html_has_renderable_rich_body, normalize_plain_text_for_clipboard_paste, parse_cf_html,
+    plain_text_from_tabular_html, plain_text_requires_exact_paste, repair_html_fragment,
+    rtf_bytes_from_named_formats, sanitize_tabular_html_for_paste,
+    should_attach_rich_image_fallback_on_capture, should_use_rich_image_clipboard_fallback,
+    split_rich_html_and_image_fallback, split_rich_html_and_named_formats,
+};
+use arboard::Clipboard;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::Utc;
 use regex::Regex;
@@ -25,31 +37,12 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetWindowThreadProcessId,
 };
-use crate::services::clipboard::{
-    attach_rich_image_fallback, attach_rich_named_formats, build_clipboard_text_fingerprint,
-    capture_preserved_named_formats_from_clipboard, clipboard_image_fallback_data_url,
-    derive_rich_text_content, extract_animated_image_data_url_from_html,
-    normalize_plain_text_for_clipboard_paste, parse_cf_html, plain_text_from_tabular_html,
-    plain_text_requires_exact_paste, build_exact_paste_html,
-    html_has_renderable_rich_body, repair_html_fragment, rtf_bytes_from_named_formats,
-    sanitize_tabular_html_for_paste, should_attach_rich_image_fallback_on_capture,
-    should_use_rich_image_clipboard_fallback, split_rich_html_and_image_fallback,
-    split_rich_html_and_named_formats, app_likely_word_processor,
-};
-use arboard::Clipboard;
 
 enum ClipboardSnapshot {
     Empty,
-    Text {
-        text: String,
-        html: Option<String>,
-    },
-    Image {
-        data_url: String,
-    },
-    Files {
-        paths: Vec<String>,
-    },
+    Text { text: String, html: Option<String> },
+    Image { data_url: String },
+    Files { paths: Vec<String> },
 }
 
 fn capture_clipboard_snapshot() -> ClipboardSnapshot {
@@ -82,7 +75,9 @@ fn capture_clipboard_snapshot() -> ClipboardSnapshot {
         .filter(|html| !html.trim().is_empty());
 
         if let Some(html) = clipboard_html {
-            let text_value = text.clone().unwrap_or_else(|| derive_rich_text_content("", Some(&html)));
+            let text_value = text
+                .clone()
+                .unwrap_or_else(|| derive_rich_text_content("", Some(&html)));
             let mut html_to_store = html;
             if let Some(data_url) = extract_animated_image_data_url_from_html(&html_to_store)
                 .or_else(clipboard_image_fallback_data_url)
@@ -340,8 +335,25 @@ fn set_windows_formatted_clipboard(
         )
         .map_err(AppError::Internal)?;
         if !named_formats.is_empty() {
+            let mut registered_formats = Vec::new();
+            let mut standard_formats = Vec::new();
+            for format in named_formats {
+                if let Some(id) = format
+                    .name
+                    .strip_prefix(crate::services::clipboard::WINDOWS_STANDARD_FORMAT_PREFIX)
+                    .and_then(|value| value.parse::<u32>().ok())
+                {
+                    standard_formats.push((id, format.data.clone()));
+                } else {
+                    registered_formats.push(format.clone());
+                }
+            }
             crate::infrastructure::windows_api::win_clipboard::append_named_clipboard_formats(
-                named_formats,
+                &registered_formats,
+            )
+            .map_err(AppError::Internal)?;
+            crate::infrastructure::windows_api::win_clipboard::append_standard_clipboard_formats(
+                &standard_formats,
             )
             .map_err(AppError::Internal)?;
         }
@@ -585,7 +597,7 @@ pub async fn paste_history_item_by_index(
         b.is_pinned
             .cmp(&a.is_pinned)
             .then_with(|| b.pinned_order.cmp(&a.pinned_order))
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
+            .then_with(|| b.sort_at.cmp(&a.sort_at))
             .then_with(|| b.id.cmp(&a.id))
     });
 
@@ -835,7 +847,8 @@ async fn copy_content_to_system_clipboard(
                         .unwrap_or_else(|| normalize_plain_text_for_clipboard_paste(content));
                     if plain_text_requires_exact_paste(content) {
                         paste_plain = normalize_plain_text_for_clipboard_paste(content);
-                        paste_html = sanitize_tabular_html_for_paste(&build_exact_paste_html(content));
+                        paste_html =
+                            sanitize_tabular_html_for_paste(&build_exact_paste_html(content));
                     }
 
                     #[cfg(target_os = "macos")]
@@ -867,11 +880,7 @@ async fn copy_content_to_system_clipboard(
                             )?;
                             crate::LAST_APP_SET_HASH_ALT.store(primary_hash, Ordering::SeqCst);
                         }
-                        set_windows_formatted_clipboard(
-                            &paste_plain,
-                            &paste_html,
-                            &named_formats,
-                        )?;
+                        set_windows_formatted_clipboard(&paste_plain, &paste_html, &named_formats)?;
                     }
 
                     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
@@ -918,10 +927,7 @@ fn image_extension_for_bytes(bytes: &[u8]) -> &'static str {
         "png"
     } else if bytes.len() >= 3 && &bytes[0..3] == b"\xFF\xD8\xFF" {
         "jpg"
-    } else if bytes.len() >= 12
-        && &bytes[0..4] == b"RIFF"
-        && bytes.get(8..12) == Some(b"WEBP")
-    {
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && bytes.get(8..12) == Some(b"WEBP") {
         "webp"
     } else {
         "png"
@@ -1018,9 +1024,8 @@ fn copy_image_bytes_to_clipboard(
             Some(bytes.clone())
         } else {
             Some(encode_png_from_rgba(
-                &image::RgbaImage::from_raw(width, height, raw_bytes.clone()).ok_or_else(|| {
-                    AppError::Internal("无法构建 RGBA 图像".to_string())
-                })?,
+                &image::RgbaImage::from_raw(width, height, raw_bytes.clone())
+                    .ok_or_else(|| AppError::Internal("无法构建 RGBA 图像".to_string()))?,
             )?)
         };
 
@@ -1145,8 +1150,7 @@ async fn perform_paste_action(
                 #[cfg(target_os = "macos")]
                 crate::infrastructure::macos_api::window::set_window_focusable(&window, false);
                 #[cfg(target_os = "macos")]
-                let _ =
-                    crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
+                let _ = crate::infrastructure::macos_api::window::hide_clipboard_panel(app_handle);
                 #[cfg(not(target_os = "macos"))]
                 let _ = window.hide();
                 crate::IS_HIDDEN.store(false, std::sync::atomic::Ordering::Relaxed);
@@ -1266,7 +1270,7 @@ fn resolve_windows_paste_method(method: &str) -> String {
 
 pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: Option<&str>) {
     println!("[DEBUG] Sending paste keystroke using method: {}", method);
-#[cfg(target_os = "windows")]
+    #[cfg(target_os = "windows")]
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
             MapVirtualKeyW, KEYEVENTF_EXTENDEDKEY, KEYEVENTF_SCANCODE, MAPVK_VK_TO_VSC, VK_CONTROL,
@@ -1706,7 +1710,9 @@ pub fn send_paste_keystroke(method: &str, content: Option<&str>, content_type: O
         }
 
         if !crate::infrastructure::macos_api::permissions::has_accessibility_permission() {
-            println!("[WARN] Accessibility permission missing; open Settings → Privacy → Accessibility");
+            println!(
+                "[WARN] Accessibility permission missing; open Settings → Privacy → Accessibility"
+            );
             return;
         }
 

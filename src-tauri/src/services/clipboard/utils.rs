@@ -20,6 +20,7 @@ pub const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
 pub const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
 pub const RICH_NAMED_FORMATS_PREFIX: &str = "<!--TIEZ_RICH_FORMATS:";
 pub const RICH_NAMED_FORMATS_SUFFIX: &str = "-->";
+pub const WINDOWS_STANDARD_FORMAT_PREFIX: &str = "TieZ.WindowsStandardFormat.";
 const REMOTE_IMAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 const REMOTE_IMAGE_TIMEOUT_SECS: u64 = 4;
 
@@ -1072,8 +1073,8 @@ pub fn derive_rich_text_content(content: &str, html_content: Option<&str>) -> St
         && !looks_like_html_fragment(&line_plain)
     {
         let lower = line_plain.to_ascii_lowercase();
-        let needs_office_strip = lower.contains("microsoftinternetexplorer")
-            || lower.contains("documentnotspecified");
+        let needs_office_strip =
+            lower.contains("microsoftinternetexplorer") || lower.contains("documentnotspecified");
         if !needs_office_strip {
             let candidate = line_plain.clone();
             if is_whitespace_only(&line_plain) || !candidate.is_empty() {
@@ -1183,10 +1184,7 @@ pub fn entry_matches_search(
         if term.is_empty() {
             return false;
         }
-        return entry
-            .tags
-            .iter()
-            .any(|t| t.eq_ignore_ascii_case(&term));
+        return entry.tags.iter().any(|t| t.eq_ignore_ascii_case(&term));
     }
 
     if note_only {
@@ -1204,11 +1202,7 @@ pub fn entry_matches_search(
         return false;
     }
 
-    if entry
-        .tags
-        .iter()
-        .any(|t| t.to_lowercase().contains(&term))
-    {
+    if entry.tags.iter().any(|t| t.to_lowercase().contains(&term)) {
         return true;
     }
 
@@ -1220,9 +1214,7 @@ pub fn entry_matches_search(
         return true;
     }
 
-    entry_searchable_text(entry)
-        .to_lowercase()
-        .contains(&term)
+    entry_searchable_text(entry).to_lowercase().contains(&term)
 }
 
 pub fn rtf_bytes_from_named_formats(
@@ -1656,11 +1648,11 @@ mod tests {
         normalize_clipboard_plain_text, parse_app_cleanup_policies, parse_cf_html,
         parse_cleanup_rules, plain_text_from_tabular_html, sanitize_tabular_html_for_paste,
         split_rich_html_and_image_fallback, split_rich_html_and_named_formats,
-        truncate_html_for_preview, visible_whitespace_preview,
-        AppCleanupPolicy, HTML_TRUNCATION_SUFFIX,
+        truncate_html_for_preview, visible_whitespace_preview, AppCleanupPolicy,
+        HTML_TRUNCATION_SUFFIX,
     };
-    use base64::Engine;
     use crate::domain::models::ClipboardEntry;
+    use base64::Engine;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1674,6 +1666,9 @@ mod tests {
             source_app: "Notes".to_string(),
             source_app_path: None,
             timestamp: 0,
+            created_at: 0,
+            last_used_at: 0,
+            sort_at: 0,
             preview: preview.to_string(),
             is_pinned: false,
             tags: vec![],
@@ -1860,9 +1855,18 @@ mod tests {
 
     #[test]
     fn normalize_plain_text_for_clipboard_paste_preserves_edge_whitespace() {
-        assert_eq!(super::normalize_plain_text_for_clipboard_paste(" test "), " test ");
-        assert_eq!(super::normalize_plain_text_for_clipboard_paste("   "), "   ");
-        assert_eq!(super::normalize_plain_text_for_clipboard_paste("\t\t"), "\t\t");
+        assert_eq!(
+            super::normalize_plain_text_for_clipboard_paste(" test "),
+            " test "
+        );
+        assert_eq!(
+            super::normalize_plain_text_for_clipboard_paste("   "),
+            "   "
+        );
+        assert_eq!(
+            super::normalize_plain_text_for_clipboard_paste("\t\t"),
+            "\t\t"
+        );
     }
 
     #[test]
@@ -1933,15 +1937,9 @@ mod tests {
     #[test]
     fn resolve_clipboard_text_capture_html_only_payload() {
         let html = "<html><body><p>WPS 内容</p></body></html>";
-        let resolved = super::resolve_clipboard_text_capture(
-            None,
-            Some(html),
-            None,
-            true,
-            "WPS Office",
-            None,
-        )
-        .expect("html-only clipboard should be capturable");
+        let resolved =
+            super::resolve_clipboard_text_capture(None, Some(html), None, true, "WPS Office", None)
+                .expect("html-only clipboard should be capturable");
 
         assert_eq!(resolved.text, "WPS 内容");
         assert_eq!(resolved.html.as_deref(), Some(html));
@@ -1970,7 +1968,10 @@ mod tests {
             None,
             html
         ));
-        assert!(super::should_attach_rich_image_fallback_on_capture("WPS Office", None));
+        assert!(super::should_attach_rich_image_fallback_on_capture(
+            "WPS Office",
+            None
+        ));
     }
 
     #[test]
@@ -2352,7 +2353,14 @@ mod tests {
 
 pub fn detect_content_type(text: &str) -> String {
     let trimmed = text.trim();
-    if trimmed.starts_with("www.") || trimmed.contains("://") && trimmed.split("://").next().map_or(false, |s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')) {
+    if trimmed.starts_with("www.")
+        || trimmed.contains("://")
+            && trimmed.split("://").next().map_or(false, |s| {
+                !s.is_empty()
+                    && s.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+            })
+    {
         return "url".to_string();
     }
 
@@ -2424,8 +2432,11 @@ pub fn contains_sensitive_info(text: &str, kinds: &[String], custom_rules: &[Str
     let has_kind = |k: &str| kinds.iter().any(|t| t == k);
 
     if has_kind("url") {
-        let re = URL_RE.get_or_init(|| Regex::new(r"(?i)(?:[a-zA-Z][a-zA-Z0-9+\-.]*://|www\.)\S+").unwrap());
-        if re.is_match(text) { return true; }
+        let re = URL_RE
+            .get_or_init(|| Regex::new(r"(?i)(?:[a-zA-Z][a-zA-Z0-9+\-.]*://|www\.)\S+").unwrap());
+        if re.is_match(text) {
+            return true;
+        }
     }
     if has_kind("phone") {
         let re = PHONE_RE.get_or_init(|| {
@@ -3023,7 +3034,10 @@ mod type_and_sensitive_tests {
 
         #[test]
         fn ftp_url() {
-            assert_eq!(detect_content_type("ftp://files.example.com/doc.pdf"), "url");
+            assert_eq!(
+                detect_content_type("ftp://files.example.com/doc.pdf"),
+                "url"
+            );
         }
 
         #[test]
@@ -3054,7 +3068,10 @@ mod type_and_sensitive_tests {
 
         #[test]
         fn code_snippet() {
-            assert_eq!(detect_content_type("const x = 1; function foo() {}"), "code");
+            assert_eq!(
+                detect_content_type("const x = 1; function foo() {}"),
+                "code"
+            );
         }
     }
 
@@ -3131,11 +3148,7 @@ mod type_and_sensitive_tests {
         #[test]
         fn skips_oversized_text() {
             let big = "a".repeat(5001);
-            assert!(!contains_sensitive_info(
-                &big,
-                &kinds(&["phone"]),
-                &[],
-            ));
+            assert!(!contains_sensitive_info(&big, &kinds(&["phone"]), &[],));
         }
 
         #[test]

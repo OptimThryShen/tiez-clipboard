@@ -1103,7 +1103,7 @@ const ClipboardItem = ({
                 preview: item.preview,
                 htmlContent: item.html_content,
                 sourceApp: item.source_app,
-                timestamp: item.timestamp,
+                timestamp: item.created_at || item.timestamp,
                 language,
                 theme,
                 colorMode,
@@ -1154,7 +1154,7 @@ const ClipboardItem = ({
                         preview: item.preview,
                         htmlContent: item.html_content,
                         sourceApp: item.source_app,
-                        timestamp: item.timestamp,
+                        timestamp: item.created_at || item.timestamp,
                         language,
                         theme,
                         richTextSnapshotPreview,
@@ -1854,7 +1854,7 @@ const ClipboardItem = ({
                                 {quickPasteHint.combo}
                             </span>
                         )}
-                        <span>{getConciseTime(item.timestamp, language)}</span>
+                        <span>{getConciseTime(item.created_at || item.timestamp, language)}</span>
                     </div>
                 </div>
             </div>

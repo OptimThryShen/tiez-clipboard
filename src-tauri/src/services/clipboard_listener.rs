@@ -51,75 +51,71 @@ pub fn listen_clipboard(callback: Arc<dyn Fn() + Send + Sync + 'static>) {
 
     #[cfg(target_os = "windows")]
     {
-        std::thread::spawn(move || {
-            unsafe {
-                let instance = match windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
-                    Ok(instance) => instance,
-                    Err(err) => {
-                        eprintln!(">>> [CLIPBOARD] failed to get module handle: {err}");
-                        return;
-                    }
-                };
-                let class_name: Vec<u16> = "TieZClipboardListener"
-                    .encode_utf16()
-                    .chain(std::iter::once(0))
-                    .collect();
-                let wnd_class = WNDCLASSW {
-                    lpfnWndProc: Some(wnd_proc),
-                    hInstance: instance.into(),
-                    lpszClassName: PCWSTR(class_name.as_ptr()),
-                    ..Default::default()
-                };
-                let _ = RegisterClassW(&wnd_class);
-
-                let hwnd = match CreateWindowExW(
-                    Default::default(),
-                    PCWSTR(class_name.as_ptr()),
-                    PCWSTR::null(),
-                    Default::default(),
-                    0,
-                    0,
-                    0,
-                    0,
-                    Some(HWND_MESSAGE),
-                    None,
-                    Some(HINSTANCE(instance.0)),
-                    None,
-                ) {
-                    Ok(hwnd) => hwnd,
-                    Err(err) => {
-                        eprintln!(
-                            ">>> [CLIPBOARD] failed to create Windows listener window: {err}"
-                        );
-                        return;
-                    }
-                };
-
-                let callback_ptr = Box::into_raw(Box::new(callback));
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, callback_ptr as isize);
-                if let Err(err) = AddClipboardFormatListener(hwnd) {
-                    eprintln!(">>> [CLIPBOARD] failed to register Windows listener: {err}");
-                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-                    drop(Box::from_raw(callback_ptr));
-                    let _ = DestroyWindow(hwnd);
+        std::thread::spawn(move || unsafe {
+            let instance = match windows::Win32::System::LibraryLoader::GetModuleHandleW(None) {
+                Ok(instance) => instance,
+                Err(err) => {
+                    eprintln!(">>> [CLIPBOARD] failed to get module handle: {err}");
                     return;
                 }
+            };
+            let class_name: Vec<u16> = "TieZClipboardListener"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let wnd_class = WNDCLASSW {
+                lpfnWndProc: Some(wnd_proc),
+                hInstance: instance.into(),
+                lpszClassName: PCWSTR(class_name.as_ptr()),
+                ..Default::default()
+            };
+            let _ = RegisterClassW(&wnd_class);
 
-                println!(">>> [CLIPBOARD] Windows event-driven listener started");
-                let mut msg = MSG::default();
-                loop {
-                    let result = GetMessageW(&mut msg, None, 0, 0);
-                    if result.0 <= 0 {
-                        break;
-                    }
-                    DispatchMessageW(&msg);
+            let hwnd = match CreateWindowExW(
+                Default::default(),
+                PCWSTR(class_name.as_ptr()),
+                PCWSTR::null(),
+                Default::default(),
+                0,
+                0,
+                0,
+                0,
+                Some(HWND_MESSAGE),
+                None,
+                Some(HINSTANCE(instance.0)),
+                None,
+            ) {
+                Ok(hwnd) => hwnd,
+                Err(err) => {
+                    eprintln!(">>> [CLIPBOARD] failed to create Windows listener window: {err}");
+                    return;
                 }
+            };
 
-                let _ = RemoveClipboardFormatListener(hwnd);
+            let callback_ptr = Box::into_raw(Box::new(callback));
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, callback_ptr as isize);
+            if let Err(err) = AddClipboardFormatListener(hwnd) {
+                eprintln!(">>> [CLIPBOARD] failed to register Windows listener: {err}");
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 drop(Box::from_raw(callback_ptr));
                 let _ = DestroyWindow(hwnd);
+                return;
             }
+
+            println!(">>> [CLIPBOARD] Windows event-driven listener started");
+            let mut msg = MSG::default();
+            loop {
+                let result = GetMessageW(&mut msg, None, 0, 0);
+                if result.0 <= 0 {
+                    break;
+                }
+                DispatchMessageW(&msg);
+            }
+
+            let _ = RemoveClipboardFormatListener(hwnd);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            drop(Box::from_raw(callback_ptr));
+            let _ = DestroyWindow(hwnd);
         });
         return;
     }
@@ -141,8 +137,7 @@ unsafe extern "system" fn wnd_proc(
     if msg == WM_CLIPBOARDUPDATE {
         let callback_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
         if callback_ptr != 0 {
-            let callback =
-                &*(callback_ptr as *const Arc<dyn Fn() + Send + Sync + 'static>);
+            let callback = &*(callback_ptr as *const Arc<dyn Fn() + Send + Sync + 'static>);
             let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback()));
         }
         LRESULT(0)

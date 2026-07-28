@@ -1,4 +1,7 @@
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 pub mod app;
 pub mod app_state;
@@ -65,7 +68,9 @@ fn main() -> AppResult<()> {
             services::clipboard_ops::paste_text_directly,
             services::clipboard_ops::paste_content_transiently,
             services::clipboard_ops::paste_latest_rich,
+            app::commands::discover_clipboard_import_sources,
             app::commands::get_clipboard_history,
+            app::commands::import_clipboard_data,
             app::commands::search_clipboard_history,
             app::commands::delete_clipboard_entry,
             app::commands::clear_clipboard_history,

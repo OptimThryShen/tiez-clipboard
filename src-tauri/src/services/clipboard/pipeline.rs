@@ -16,10 +16,7 @@ use tauri::{AppHandle, Emitter, Manager};
 pub enum ClipboardData {
     Text(String),
     RichText { text: String, html: String },
-    Image {
-        bytes: Vec<u8>,
-        extension: String,
-    },
+    Image { bytes: Vec<u8>, extension: String },
     Files(Vec<String>),
 }
 
@@ -181,6 +178,9 @@ impl PipelineStage for DiscoveryStage {
             source_app: ctx.source_app.clone(),
             source_app_path: ctx.source_app_path.clone(),
             timestamp: ctx.timestamp,
+            created_at: ctx.timestamp,
+            last_used_at: 0,
+            sort_at: ctx.timestamp,
             preview,
             is_pinned: false,
             tags: Vec::new(),
@@ -260,8 +260,7 @@ impl PipelineStage for TransformationStage {
                         return;
                     }
                     entry.content = cleaned.replace("\r\n", "\n");
-                    entry.preview =
-                        build_entry_preview(&entry.content_type, &entry.content, None);
+                    entry.preview = build_entry_preview(&entry.content_type, &entry.content, None);
                 }
             }
         }
@@ -351,8 +350,7 @@ impl PipelineStage for DeduplicationStage {
 
             // Try precise match and normalized match
             let normalized_content = normalize_clipboard_line_endings(&content);
-            let normalized_html =
-                |html: &str| normalize_clipboard_line_endings(html);
+            let normalized_html = |html: &str| normalize_clipboard_line_endings(html);
             let htmls_equivalent = |a: Option<&str>, b: Option<&str>| -> bool {
                 match (a, b) {
                     (None, None) => true,
@@ -417,9 +415,9 @@ impl PipelineStage for DeduplicationStage {
                     // This ensures the item is "moved to top" without risking data loss
                     let entry_mut = ctx.entry.as_mut().unwrap();
                     entry_mut.id = id;
-                    if let Ok(Some(existing)) =
-                        db_state.repo.get_entry_by_id_with_conn(&conn, id)
-                    {
+                    if let Ok(Some(existing)) = db_state.repo.get_entry_by_id_with_conn(&conn, id) {
+                        entry_mut.created_at = existing.created_at;
+                        entry_mut.last_used_at = existing.last_used_at;
                         if entry_mut.tags.is_empty() {
                             entry_mut.tags = existing.tags;
                         } else {
@@ -492,12 +490,11 @@ impl PipelineStage for PersistenceStage {
             let data_dir = app_data_dir.0.lock().unwrap().clone();
             let conn = db_state.conn.lock().unwrap();
 
-            if let Ok(id) = db_state.repo.save_with_conn(
-                &conn,
-                entry,
-                Some(&data_dir),
-                ctx.image_content_hash,
-            ) {
+            if let Ok(id) =
+                db_state
+                    .repo
+                    .save_with_conn(&conn, entry, Some(&data_dir), ctx.image_content_hash)
+            {
                 entry.id = id;
                 if let Ok(deleted_ids) = db_state
                     .repo
@@ -520,6 +517,8 @@ impl PipelineStage for PersistenceStage {
                         let preserved_pinned = existing.is_pinned;
                         let preserved_pinned_order = existing.pinned_order;
                         let preserved_use_count = existing.use_count;
+                        let preserved_created_at = existing.created_at;
+                        let preserved_last_used_at = existing.last_used_at;
 
                         existing.content_type = entry.content_type.clone();
                         existing.content = entry.content.clone();
@@ -527,6 +526,9 @@ impl PipelineStage for PersistenceStage {
                         existing.source_app = entry.source_app.clone();
                         existing.source_app_path = entry.source_app_path.clone();
                         existing.timestamp = entry.timestamp;
+                        existing.created_at = preserved_created_at;
+                        existing.last_used_at = preserved_last_used_at;
+                        existing.sort_at = entry.sort_at;
                         existing.preview = entry.preview.clone();
                         existing.is_external = entry.is_external;
                         existing.file_preview_exists = entry.file_preview_exists;

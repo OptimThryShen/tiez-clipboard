@@ -35,9 +35,9 @@ export const useFilteredHistory = ({
         if ((a.pinned_order || 0) !== (b.pinned_order || 0)) {
           return (b.pinned_order || 0) - (a.pinned_order || 0);
         }
-        return b.timestamp - a.timestamp;
+        return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
       }
-      return b.timestamp - a.timestamp;
+      return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
     });
   }, [history, search, typeFilter]);
 };

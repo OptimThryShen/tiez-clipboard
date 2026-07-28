@@ -69,6 +69,8 @@ dotenvy = "0.15"
 aes-gcm = "0.10"
 rand = "0.8"
 zip = "2"
+flate2 = "1"
+encoding_rs = "0.8"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

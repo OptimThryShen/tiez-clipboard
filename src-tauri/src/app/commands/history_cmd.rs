@@ -10,6 +10,41 @@ use crate::services::clipboard::{
 use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command]
+pub fn discover_clipboard_import_sources() -> Vec<crate::services::importers::DiscoveredImportSource>
+{
+    crate::services::importers::discover_clipboard_import_sources()
+}
+
+#[tauri::command]
+pub async fn import_clipboard_data(
+    app_handle: AppHandle,
+    state: State<'_, DbState>,
+    app_data: State<'_, AppDataDir>,
+    path: String,
+) -> AppResult<crate::services::importers::ImportReport> {
+    let source_path = std::path::PathBuf::from(path);
+    let destination = state.conn.clone();
+    let data_dir = app_data
+        .0
+        .lock()
+        .map_err(|error| AppError::Internal(error.to_string()))?
+        .clone();
+
+    let report = tauri::async_runtime::spawn_blocking(move || {
+        crate::services::importers::import_clipboard_data(destination, &data_dir, &source_path)
+            .map_err(AppError::Validation)
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))??;
+
+    let _ = app_handle.emit("clipboard-changed", ());
+    if report.imported > 0 {
+        crate::services::cloud_sync::request_cloud_sync(app_handle);
+    }
+    Ok(report)
+}
+
+#[tauri::command]
 pub fn get_clipboard_history(
     state: State<'_, DbState>,
     session: State<'_, SessionHistory>,
@@ -44,7 +79,7 @@ pub fn get_clipboard_history(
         b.is_pinned
             .cmp(&a.is_pinned)
             .then_with(|| b.pinned_order.cmp(&a.pinned_order))
-            .then_with(|| b.timestamp.cmp(&a.timestamp))
+            .then_with(|| b.sort_at.cmp(&a.sort_at))
             .then_with(|| b.id.cmp(&a.id))
     });
 
@@ -113,7 +148,7 @@ pub fn search_clipboard_history(
         }
     }
 
-    history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| b.id.cmp(&a.id)));
+    history.sort_by(|a, b| b.sort_at.cmp(&a.sort_at).then_with(|| b.id.cmp(&a.id)));
     if history.len() > limit as usize {
         history.truncate(limit as usize);
     }

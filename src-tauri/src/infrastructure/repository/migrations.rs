@@ -258,6 +258,80 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute("INSERT INTO schema_migrations (version) VALUES (12)", [])?;
     }
 
+    // Migration 13: Structured per-entry shortcut and usage metadata.
+    // These fields are intentionally separate from the user-facing note.
+    if current_version < 13 {
+        let columns = [
+            ("item_hotkey", "TEXT NOT NULL DEFAULT ''"),
+            ("item_hotkey_global", "INTEGER NOT NULL DEFAULT 0"),
+            ("last_used_at", "INTEGER NOT NULL DEFAULT 0"),
+            ("move_to_group_hotkey", "TEXT NOT NULL DEFAULT ''"),
+            ("move_to_group_hotkey_global", "INTEGER NOT NULL DEFAULT 0"),
+        ];
+        for (name, definition) in columns {
+            if !has_column(conn, "clipboard_history", name)? {
+                conn.execute(
+                    &format!("ALTER TABLE clipboard_history ADD COLUMN {name} {definition}"),
+                    [],
+                )?;
+            }
+        }
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_last_used_at
+                ON clipboard_history (last_used_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_item_hotkey
+                ON clipboard_history (item_hotkey)
+                WHERE item_hotkey <> '';
+            ",
+        )?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (13)", [])?;
+    }
+
+    // Migration 14: Split immutable creation time from mutable list ordering.
+    // Existing `timestamp` values are the best available historical value, so
+    // use them for both fields to preserve the exact pre-upgrade list order.
+    if current_version < 14 {
+        if !has_column(conn, "clipboard_history", "created_at")? {
+            conn.execute(
+                "ALTER TABLE clipboard_history ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        if !has_column(conn, "clipboard_history", "sort_at")? {
+            conn.execute(
+                "ALTER TABLE clipboard_history ADD COLUMN sort_at INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        conn.execute(
+            "UPDATE clipboard_history SET
+                created_at = CASE WHEN created_at <= 0 THEN timestamp ELSE created_at END,
+                sort_at = CASE WHEN sort_at <= 0 THEN timestamp ELSE sort_at END",
+            [],
+        )?;
+        conn.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_sort_order
+                ON clipboard_history (
+                    is_pinned DESC,
+                    pinned_order DESC,
+                    sort_at DESC,
+                    id DESC
+                );
+            CREATE INDEX IF NOT EXISTS idx_clipboard_history_type_sort_order
+                ON clipboard_history (
+                    content_type,
+                    is_pinned DESC,
+                    pinned_order DESC,
+                    sort_at DESC,
+                    id DESC
+                );
+            ",
+        )?;
+        conn.execute("INSERT INTO schema_migrations (version) VALUES (14)", [])?;
+    }
+
     Ok(())
 }
 
@@ -271,4 +345,61 @@ fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<
         }
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_14_preserves_existing_order_and_backfills_creation_time() {
+        let conn = Connection::open_in_memory().expect("open database");
+        conn.execute_batch(
+            "
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO schema_migrations(version) VALUES (12);
+            CREATE TABLE clipboard_history (
+                id INTEGER PRIMARY KEY,
+                content_type TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                pinned_order INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO clipboard_history(id, content_type, timestamp)
+                VALUES
+                    (1, 'text', 1700000000123),
+                    (2, 'text', 1700000000456);
+            ",
+        )
+        .expect("create version 12 fixture");
+
+        run_migrations(&conn).expect("run update migrations");
+
+        let values: (i64, i64, i64) = conn
+            .query_row(
+                "SELECT created_at, sort_at, last_used_at
+                 FROM clipboard_history WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read migrated fields");
+        assert_eq!(values, (1_700_000_000_123, 1_700_000_000_123, 0));
+        let migrated_order: Vec<i64> = conn
+            .prepare("SELECT id FROM clipboard_history ORDER BY sort_at DESC, id DESC")
+            .expect("prepare migrated order query")
+            .query_map([], |row| row.get(0))
+            .expect("query migrated order")
+            .collect::<Result<Vec<_>>>()
+            .expect("collect migrated order");
+        assert_eq!(migrated_order, vec![2, 1]);
+        let version: i64 = conn
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("read schema version");
+        assert_eq!(version, 14);
+    }
 }

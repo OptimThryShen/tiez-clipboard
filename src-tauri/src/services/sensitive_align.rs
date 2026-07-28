@@ -43,15 +43,15 @@ fn run_alignment(app_handle: AppHandle) {
         };
 
         let sql = format!(
-            "SELECT ch.id, ch.timestamp, ch.content, ch.preview, ch.html_content,
+            "SELECT ch.id, ch.sort_at, ch.content, ch.preview, ch.html_content,
                     EXISTS (
                         SELECT 1 FROM entry_tags se
                         WHERE se.entry_id = ch.id
                           AND se.tag COLLATE NOCASE IN {}
                     ) AS is_sensitive
              FROM clipboard_history ch
-             WHERE (ch.timestamp < ?1) OR (ch.timestamp = ?1 AND ch.id < ?2)
-             ORDER BY ch.timestamp DESC, ch.id DESC
+             WHERE (ch.sort_at < ?1) OR (ch.sort_at = ?1 AND ch.id < ?2)
+             ORDER BY ch.sort_at DESC, ch.id DESC
              LIMIT ?3",
             sensitive_tags_sql
         );

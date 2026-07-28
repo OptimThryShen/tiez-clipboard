@@ -113,13 +113,11 @@ fn read_clipboard_text_fresh() -> Option<String> {
 #[cfg(target_os = "windows")]
 fn has_rich_text_candidate_format() -> bool {
     unsafe {
-        ["HTML Format", "Rich Text Format"]
-            .iter()
-            .any(|name| {
-                crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(name)
-                    .map(|raw| !raw.is_empty())
-                    .unwrap_or(false)
-            })
+        ["HTML Format", "Rich Text Format"].iter().any(|name| {
+            crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(name)
+                .map(|raw| !raw.is_empty())
+                .unwrap_or(false)
+        })
     }
 }
 
@@ -309,9 +307,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         let clipboard_files_snapshot =
             crate::infrastructure::macos_api::clipboard::get_clipboard_files();
         #[cfg(target_os = "windows")]
-        let mut clipboard_files_snapshot = unsafe {
-            crate::infrastructure::windows_api::win_clipboard::get_clipboard_files()
-        };
+        let mut clipboard_files_snapshot =
+            unsafe { crate::infrastructure::windows_api::win_clipboard::get_clipboard_files() };
 
         // Give source apps (especially Excel) a brief moment to finish writing
         // non-file payloads. File URLs are already complete in the event snapshot.
@@ -329,9 +326,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
             // Explorer may notify listeners before CF_HDROP can be opened. Retry
             // after the existing stabilization delay so file copies are not lost.
-            clipboard_files_snapshot = unsafe {
-                crate::infrastructure::windows_api::win_clipboard::get_clipboard_files()
-            };
+            clipboard_files_snapshot =
+                unsafe { crate::infrastructure::windows_api::win_clipboard::get_clipboard_files() };
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -348,19 +344,16 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
         let text_from_clipboard = crate::infrastructure::macos_api::clipboard::get_clipboard_text();
 
         #[cfg(target_os = "macos")]
-        let clipboard_image = clipboard
-            .as_mut()
-            .and_then(|cb| cb.get_image().ok());
+        let clipboard_image = clipboard.as_mut().and_then(|cb| cb.get_image().ok());
         #[cfg(not(target_os = "macos"))]
         let clipboard_image = clipboard.get_image().ok();
         #[cfg(target_os = "windows")]
-        let native_clipboard_image = if clipboard_files_snapshot.is_none()
-            && clipboard_image.is_none()
-        {
-            capture_native_windows_image_png()
-        } else {
-            None
-        };
+        let native_clipboard_image =
+            if clipboard_files_snapshot.is_none() && clipboard_image.is_none() {
+                capture_native_windows_image_png()
+            } else {
+                None
+            };
 
         // Calculate hash of current clipboard content
         let current_content_hash = {
@@ -386,7 +379,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                     } else {
                         html.hash(&mut hasher);
                     }
-                } else if crate::infrastructure::macos_api::clipboard::get_clipboard_rtf().is_some() {
+                } else if crate::infrastructure::macos_api::clipboard::get_clipboard_rtf().is_some()
+                {
                     "__RTF__".hash(&mut hasher);
                 }
             }
@@ -483,9 +477,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                         source_snapshot.clone(),
                     );
                 } else {
-                    println!(
-                        ">>> [CLIPBOARD] Windows file copy ignored: file capture is disabled"
-                    );
+                    println!(">>> [CLIPBOARD] Windows file copy ignored: file capture is disabled");
                 }
                 return;
             }
@@ -496,7 +488,11 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             let settings = app.state::<SettingsState>();
             if settings.capture_rich_text.load(Ordering::Relaxed) {
                 let mut html = get_platform_clipboard_html();
-                if html.as_ref().map(|value| value.trim().is_empty()).unwrap_or(true) {
+                if html
+                    .as_ref()
+                    .map(|value| value.trim().is_empty())
+                    .unwrap_or(true)
+                {
                     if let Some(rtf) =
                         crate::infrastructure::macos_api::clipboard::get_clipboard_rtf()
                     {
@@ -527,9 +523,11 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             let has_gif = ["GIF", "Animated GIF", "gif", "image/gif"]
                 .iter()
                 .any(|name| unsafe {
-                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(name)
-                        .map(|raw| !raw.is_empty())
-                        .unwrap_or(false)
+                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(
+                        name,
+                    )
+                    .map(|raw| !raw.is_empty())
+                    .unwrap_or(false)
                 });
             let should_probe = rich_text_enabled
                 && !has_gif
@@ -564,9 +562,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                             }
                         }
 
-                        let named_formats = capture_preserved_named_formats_from_clipboard(Some(
-                            &source_snapshot,
-                        ));
+                        let named_formats =
+                            capture_preserved_named_formats_from_clipboard(Some(&source_snapshot));
                         if !named_formats.is_empty() {
                             html = utils::attach_rich_named_formats(&html, &named_formats);
                         }
@@ -650,10 +647,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
             let settings = app.state::<SettingsState>();
             let rich_text_enabled = settings.capture_rich_text.load(Ordering::Relaxed);
             #[cfg(not(target_os = "macos"))]
-            let has_text = clipboard
-                .get_text()
-                .map(|t| !t.is_empty())
-                .unwrap_or(false);
+            let has_text = clipboard.get_text().map(|t| !t.is_empty()).unwrap_or(false);
             #[cfg(target_os = "macos")]
             let has_rich_html = rich_text_enabled
                 && clipboard_html_snapshot
@@ -813,7 +807,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                                             image.height,
                                             &image.bytes,
                                         ) {
-                                            html = utils::attach_rich_image_fallback(&html, &data_url);
+                                            html =
+                                                utils::attach_rich_image_fallback(&html, &data_url);
                                         }
                                     }
                                 }
@@ -878,9 +873,7 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                     }
 
                     if settings.capture_rich_text.load(Ordering::Relaxed) {
-                        if let Some(mut html) =
-                            get_platform_clipboard_html()
-                        {
+                        if let Some(mut html) = get_platform_clipboard_html() {
                             if !html.trim().is_empty() {
                                 if let Some(image) = clipboard_image.as_ref() {
                                     #[cfg(target_os = "windows")]
@@ -902,7 +895,8 @@ pub fn start_clipboard_monitor(app_handle: AppHandle) {
                                             image.height,
                                             &image.bytes,
                                         ) {
-                                            html = utils::attach_rich_image_fallback(&html, &data_url);
+                                            html =
+                                                utils::attach_rich_image_fallback(&html, &data_url);
                                         }
                                     }
                                 }
@@ -986,9 +980,7 @@ fn is_ignored_named_clipboard_format(name: &str) -> bool {
 
 #[cfg(target_os = "windows")]
 pub fn capture_preserved_named_formats_from_clipboard(
-    source_snapshot: Option<
-        &crate::infrastructure::windows_api::window_tracker::ActiveAppInfo,
-    >,
+    source_snapshot: Option<&crate::infrastructure::windows_api::window_tracker::ActiveAppInfo>,
 ) -> Vec<crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat> {
     let should_retry = source_snapshot
         .map(is_likely_spreadsheet_source)
@@ -1028,9 +1020,7 @@ pub fn capture_preserved_named_formats_from_clipboard(
 
 #[cfg(not(target_os = "windows"))]
 pub fn capture_preserved_named_formats_from_clipboard(
-    _source_snapshot: Option<
-        &crate::infrastructure::windows_api::window_tracker::ActiveAppInfo,
-    >,
+    _source_snapshot: Option<&crate::infrastructure::windows_api::window_tracker::ActiveAppInfo>,
 ) -> Vec<crate::infrastructure::windows_api::win_clipboard::NamedClipboardFormat> {
     vec![]
 }
@@ -1041,7 +1031,9 @@ pub fn clipboard_image_fallback_data_url() -> Option<String> {
         unsafe {
             for name in ["GIF", "Animated GIF", "image/gif"] {
                 if let Some(raw) =
-                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(name)
+                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(
+                        name,
+                    )
                 {
                     if raw.starts_with(b"GIF87a") || raw.starts_with(b"GIF89a") {
                         return Some(format!(
@@ -1062,7 +1054,9 @@ pub fn clipboard_image_fallback_data_url() -> Option<String> {
                 "WebP",
             ] {
                 if let Some(raw) =
-                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(name)
+                    crate::infrastructure::windows_api::win_clipboard::get_clipboard_raw_format(
+                        name,
+                    )
                 {
                     if raw.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
                         return Some(format!(
@@ -1079,10 +1073,7 @@ pub fn clipboard_image_fallback_data_url() -> Option<String> {
                     if let Ok(image) = image::load_from_memory(&raw) {
                         let mut png = Vec::new();
                         if image
-                            .write_to(
-                                &mut std::io::Cursor::new(&mut png),
-                                image::ImageFormat::Png,
-                            )
+                            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
                             .is_ok()
                         {
                             return Some(format!(
@@ -1119,18 +1110,17 @@ pub fn clipboard_image_fallback_data_url() -> Option<String> {
 
 pub use pipeline::{ClipboardData, ClipboardPipeline, PipelineContext};
 pub use utils::{
-    attach_rich_image_fallback, attach_rich_named_formats, build_clipboard_text_fingerprint,
-    build_entry_preview, build_exact_paste_html, derive_rich_text_content, embed_local_images,
-    encode_cf_html, entry_matches_search, entry_searchable_text,
-    extract_animated_image_data_url_from_html, extract_animated_image_data_url_from_text,
-    extract_first_image_data_url_from_html, html_has_renderable_rich_body,
-    normalize_clipboard_line_endings,
-    normalize_plain_text_for_clipboard_paste, plain_text_requires_exact_paste, parse_cf_html,
-    plain_text_from_tabular_html,
-    repair_html_fragment, rtf_bytes_from_named_formats, sanitize_tabular_html_for_paste,
-    should_attach_rich_image_fallback_on_capture, should_use_rich_image_clipboard_fallback,
-    split_rich_html_and_image_fallback, split_rich_html_and_named_formats,
-    truncate_html_for_preview, app_likely_word_processor,
+    app_likely_word_processor, attach_rich_image_fallback, attach_rich_named_formats,
+    build_clipboard_text_fingerprint, build_entry_preview, build_exact_paste_html,
+    derive_rich_text_content, detect_content_type, embed_local_images, encode_cf_html,
+    entry_matches_search, entry_searchable_text, extract_animated_image_data_url_from_html,
+    extract_animated_image_data_url_from_text, extract_first_image_data_url_from_html,
+    html_has_renderable_rich_body, normalize_clipboard_line_endings,
+    normalize_plain_text_for_clipboard_paste, parse_cf_html, plain_text_from_tabular_html,
+    plain_text_requires_exact_paste, repair_html_fragment, rtf_bytes_from_named_formats,
+    sanitize_tabular_html_for_paste, should_attach_rich_image_fallback_on_capture,
+    should_use_rich_image_clipboard_fallback, split_rich_html_and_image_fallback,
+    split_rich_html_and_named_formats, truncate_html_for_preview, WINDOWS_STANDARD_FORMAT_PREFIX,
 };
 
 const MAX_PIPELINE_TEXT_BYTES: usize = 8 * 1024 * 1024;

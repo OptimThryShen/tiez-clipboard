@@ -1,7 +1,9 @@
 import { open, ask, message } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { ArchiveRestore, ChevronDown, ChevronRight } from "lucide-react";
 import { withNativeDialog } from "../../../../shared/lib/focus";
+import { isMacPlatform, isWindowsPlatform } from "../../../../shared/lib/platform";
 
 interface DataSettingsGroupProps {
     t: (key: string) => string;
@@ -10,7 +12,140 @@ interface DataSettingsGroupProps {
     dataPath: string;
 }
 
-const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGroupProps) => (
+interface ImportReport {
+    source: string;
+    scanned: number;
+    imported: number;
+    duplicates: number;
+    unsupported: number;
+    failed: number;
+    warnings: string[];
+}
+
+interface DiscoveredImportSource {
+    source: string;
+    path: string;
+    modifiedAt: number;
+}
+
+const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGroupProps) => {
+    const [importing, setImporting] = useState(false);
+    const importSource = isMacPlatform()
+        ? {
+            titleKey: 'third_party_import_maccy',
+            hintKey: 'third_party_import_hint_maccy',
+            buttonKey: 'third_party_import_button_maccy',
+            chooseKey: 'third_party_import_choose_maccy',
+            fileTypeKey: 'third_party_import_file_type_maccy',
+            extensions: ['sqlite', 'sqlite3']
+        }
+        : isWindowsPlatform()
+            ? {
+                titleKey: 'third_party_import_ditto',
+                hintKey: 'third_party_import_hint_ditto',
+                buttonKey: 'third_party_import_button_ditto',
+                chooseKey: 'third_party_import_choose_ditto',
+                fileTypeKey: 'third_party_import_file_type_ditto',
+                extensions: ['db', 'dto']
+            }
+            : {
+                titleKey: 'third_party_import',
+                hintKey: 'third_party_import_hint',
+                buttonKey: 'third_party_import_button',
+                chooseKey: 'third_party_import_choose',
+                fileTypeKey: 'third_party_import_file_type',
+                extensions: ['db', 'dto', 'sqlite', 'sqlite3']
+            };
+
+    const importThirdPartyData = async () => {
+        if (importing) return;
+        setImporting(true);
+        try {
+            await withNativeDialog(async () => {
+                const discovered = await invoke<DiscoveredImportSource[]>(
+                    'discover_clipboard_import_sources'
+                );
+                let selectedPath: string | null = null;
+                let confirmed = false;
+
+                if (discovered.length > 0) {
+                    const detected = discovered[0];
+                    confirmed = await ask(
+                        t('third_party_import_found')
+                            .replace('{source}', detected.source)
+                            .replace('{path}', detected.path),
+                        {
+                            title: t(importSource.titleKey),
+                            kind: 'info',
+                            okLabel: t('third_party_import_start'),
+                            cancelLabel: t('third_party_import_choose_manually')
+                        }
+                    );
+                    if (confirmed) {
+                        selectedPath = detected.path;
+                    }
+                }
+
+                if (!selectedPath) {
+                    const selected = await open({
+                        directory: false,
+                        multiple: false,
+                        title: t(importSource.chooseKey),
+                        filters: [
+                            {
+                                name: t(importSource.fileTypeKey),
+                                extensions: importSource.extensions
+                            }
+                        ]
+                    });
+                    if (!selected || Array.isArray(selected)) return;
+                    selectedPath = selected;
+                }
+
+                if (!confirmed) {
+                    confirmed = await ask(
+                        t('third_party_import_confirm'),
+                        {
+                            title: t(importSource.titleKey),
+                            kind: 'info',
+                            okLabel: t('third_party_import_start'),
+                            cancelLabel: t('cancel')
+                        }
+                    );
+                    if (!confirmed) return;
+                }
+
+                const report = await invoke<ImportReport>('import_clipboard_data', {
+                    path: selectedPath
+                });
+                const summary = t('third_party_import_result')
+                    .replace('{source}', report.source)
+                    .replace('{scanned}', String(report.scanned))
+                    .replace('{imported}', String(report.imported))
+                    .replace('{duplicates}', String(report.duplicates))
+                    .replace('{unsupported}', String(report.unsupported))
+                    .replace('{failed}', String(report.failed));
+                const warningText = report.warnings.length > 0
+                    ? `\n\n${t('third_party_import_warnings')}\n${report.warnings.join('\n')}`
+                    : '';
+                await message(`${summary}${warningText}`, {
+                    title: t('third_party_import_complete'),
+                    kind: report.failed > 0 ? 'warning' : 'info'
+                });
+            }, "settings:import-third-party-data");
+        } catch (error: unknown) {
+            console.error(error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            await withNativeDialog(() => message(
+                t('third_party_import_failed').replace('{e}', errorMessage),
+                { title: t('error'), kind: 'error' }
+            ), "settings:import-third-party-data-error");
+        } finally {
+            setImporting(false);
+        }
+    };
+
+    return (
     <div className={`settings-group ${collapsed ? 'collapsed' : ''}`}>
         <div className="group-header" onClick={onToggle}>
             <h3 style={{ margin: 0 }}>{t('data_management')}</h3>
@@ -91,9 +226,40 @@ const DataSettingsGroup = ({ t, collapsed, onToggle, dataPath }: DataSettingsGro
                         {dataPath}
                     </div>
                 </div>
+                <div className="setting-item column no-border">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+                        <div>
+                            <div className="item-label">{t(importSource.titleKey)}</div>
+                            <div className="item-description" style={{ marginTop: '4px' }}>
+                                {t(importSource.hintKey)}
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            className="btn-icon"
+                            onClick={importThirdPartyData}
+                            disabled={importing}
+                            style={{
+                                width: 'auto',
+                                minWidth: '112px',
+                                padding: '6px 12px',
+                                fontSize: '11px',
+                                height: '30px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '6px'
+                            }}
+                        >
+                            <ArchiveRestore size={14} />
+                            {importing ? t('third_party_importing') : t(importSource.buttonKey)}
+                        </button>
+                    </div>
+                </div>
             </div>
         )}
     </div>
-);
+    );
+};
 
 export default DataSettingsGroup;

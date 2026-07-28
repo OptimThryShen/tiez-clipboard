@@ -5490,7 +5490,7 @@ dependencies = [
 
 [[package]]
 name = "tiez-app"
-version = "1.0.0-beta.1"
+version = "1.0.0"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -5501,6 +5501,8 @@ dependencies = [
  "chrono",
  "clipboard-rs",
  "dotenvy",
+ "encoding_rs",
+ "flate2",
  "fs2",
  "futures",
  "hound",
