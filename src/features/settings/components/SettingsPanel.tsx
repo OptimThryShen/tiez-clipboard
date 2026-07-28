@@ -773,6 +773,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
             {/* Data Management Settings */}
             <DataSettingsGroup
                 t={t}
+                theme={theme}
                 collapsed={collapsedGroups['data']}
                 onToggle={() => toggleGroup('data')}
                 dataPath={dataPath}

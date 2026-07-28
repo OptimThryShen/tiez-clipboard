@@ -2,12 +2,14 @@ import { useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Dispatch, SetStateAction } from "react";
 import type { ClipboardEntry } from "../types";
+import type { ClipboardSortMode } from "../../features/app/types";
 import { isTauriRuntime } from "../lib/tauriRuntime";
 import { parseSearchQuery } from "../lib/searchQuery";
 
 interface UseHistoryFetchOptions {
   debouncedSearch: string;
   typeFilter: string | null;
+  sortMode: ClipboardSortMode;
   persistentLimitEnabled: boolean;
   persistentLimit: number;
   pageSize: number;
@@ -24,6 +26,7 @@ interface UseHistoryFetchOptions {
 export const useHistoryFetch = ({
   debouncedSearch,
   typeFilter,
+  sortMode,
   persistentLimitEnabled,
   persistentLimit,
   pageSize,
@@ -99,7 +102,8 @@ export const useHistoryFetch = ({
           const rawData = await invoke<ClipboardEntry[]>("get_clipboard_history", {
             limit: requestedLimit,
             offset: baseOffset,
-            contentType: typeFilter || undefined
+            contentType: typeFilter || undefined,
+            sortMode
           });
 
           if (seq !== fetchSeqRef.current) return;
@@ -140,6 +144,7 @@ export const useHistoryFetch = ({
     [
       debouncedSearch,
       typeFilter,
+      sortMode,
       pageSize,
       persistentLimit,
       persistentLimitEnabled,

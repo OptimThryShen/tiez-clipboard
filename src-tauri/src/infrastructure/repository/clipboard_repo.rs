@@ -17,6 +17,87 @@ use urlencoding::decode;
 const RICH_IMAGE_FALLBACK_PREFIX: &str = "<!--TIEZ_RICH_IMAGE:";
 const RICH_IMAGE_FALLBACK_SUFFIX: &str = "-->";
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ClipboardSortMode {
+    #[default]
+    Activity,
+    Created,
+    LastUsed,
+    Usage,
+    Manual,
+}
+
+impl ClipboardSortMode {
+    pub fn from_setting(value: Option<&str>) -> Self {
+        match value {
+            Some("created") => Self::Created,
+            Some("last_used") => Self::LastUsed,
+            Some("usage") => Self::Usage,
+            Some("manual") => Self::Manual,
+            Some(_) => Self::Activity,
+            None => Self::Manual,
+        }
+    }
+
+    fn order_clause(self) -> &'static str {
+        match self {
+            Self::Activity => {
+                " ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN pinned_order ELSE sort_at END DESC, sort_at DESC, id DESC LIMIT ? OFFSET ?"
+            }
+            Self::Created => {
+                " ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN pinned_order WHEN created_at > 0 THEN created_at ELSE sort_at END DESC, sort_at DESC, id DESC LIMIT ? OFFSET ?"
+            }
+            Self::LastUsed => {
+                " ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN pinned_order ELSE last_used_at END DESC, sort_at DESC, id DESC LIMIT ? OFFSET ?"
+            }
+            Self::Usage => {
+                " ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN pinned_order ELSE use_count END DESC, sort_at DESC, id DESC LIMIT ? OFFSET ?"
+            }
+            Self::Manual => {
+                " ORDER BY is_pinned DESC, CASE WHEN is_pinned = 1 THEN pinned_order ELSE 0 END DESC, sort_at DESC, id DESC LIMIT ? OFFSET ?"
+            }
+        }
+    }
+
+    pub fn compare(self, a: &ClipboardEntry, b: &ClipboardEntry) -> std::cmp::Ordering {
+        let pinned_comparison = b.is_pinned.cmp(&a.is_pinned);
+        if pinned_comparison != std::cmp::Ordering::Equal {
+            return pinned_comparison;
+        }
+        if a.is_pinned {
+            return b
+                .pinned_order
+                .cmp(&a.pinned_order)
+                .then_with(|| b.sort_at.cmp(&a.sort_at))
+                .then_with(|| b.id.cmp(&a.id));
+        }
+
+        let by_selected_mode = match self {
+            Self::Activity => b.sort_at.cmp(&a.sort_at),
+            Self::Created => {
+                let a_created_at = if a.created_at > 0 {
+                    a.created_at
+                } else {
+                    a.timestamp
+                };
+                let b_created_at = if b.created_at > 0 {
+                    b.created_at
+                } else {
+                    b.timestamp
+                };
+                b_created_at.cmp(&a_created_at)
+            }
+            Self::LastUsed => b.last_used_at.cmp(&a.last_used_at),
+            Self::Usage => b.use_count.cmp(&a.use_count),
+            Self::Manual => b.sort_at.cmp(&a.sort_at),
+        };
+
+        by_selected_mode
+            .then_with(|| b.sort_at.cmp(&a.sort_at))
+            .then_with(|| b.id.cmp(&a.id))
+    }
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -43,6 +124,16 @@ pub trait ClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String>;
+    fn get_history_sorted(
+        &self,
+        limit: i32,
+        offset: i32,
+        content_type: Option<&str>,
+        sort_mode: ClipboardSortMode,
+    ) -> Result<Vec<ClipboardEntry>, String> {
+        let _ = sort_mode;
+        self.get_history(limit, offset, content_type)
+    }
     fn get_history_since(
         &self,
         since_timestamp: i64,
@@ -403,11 +494,11 @@ impl SqliteClipboardRepository {
         limit: i32,
         offset: i32,
         content_type: Option<&str>,
+        sort_mode: ClipboardSortMode,
     ) -> Result<Vec<RawHistoryRow>, String> {
         let select = "SELECT id, content_type, content, html_content, source_app, sort_at, preview, is_pinned, tags, use_count, is_external, pinned_order, source_app_path, note, created_at, last_used_at, sort_at
              FROM clipboard_history";
-        let order = " ORDER BY is_pinned DESC, pinned_order DESC, sort_at DESC, id DESC
-             LIMIT ? OFFSET ?";
+        let order = sort_mode.order_clause();
 
         let mut mapped_rows = Vec::new();
         match (content_type, since_timestamp) {
@@ -464,10 +555,18 @@ impl SqliteClipboardRepository {
         limit: i32,
         offset: i32,
         content_type: Option<&str>,
+        sort_mode: ClipboardSortMode,
     ) -> Result<Vec<ClipboardEntry>, String> {
         let raw_rows = {
             let conn = self.conn.lock().map_err(|e| e.to_string())?;
-            Self::fetch_history_rows(&conn, since_timestamp, limit, offset, content_type)?
+            Self::fetch_history_rows(
+                &conn,
+                since_timestamp,
+                limit,
+                offset,
+                content_type,
+                sort_mode,
+            )?
         };
         Ok(raw_rows
             .into_iter()
@@ -1041,7 +1140,17 @@ impl ClipboardRepository for SqliteClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String> {
-        self.load_history(None, limit, offset, content_type)
+        self.load_history(None, limit, offset, content_type, ClipboardSortMode::Manual)
+    }
+
+    fn get_history_sorted(
+        &self,
+        limit: i32,
+        offset: i32,
+        content_type: Option<&str>,
+        sort_mode: ClipboardSortMode,
+    ) -> Result<Vec<ClipboardEntry>, String> {
+        self.load_history(None, limit, offset, content_type, sort_mode)
     }
 
     fn get_history_since(
@@ -1051,7 +1160,13 @@ impl ClipboardRepository for SqliteClipboardRepository {
         offset: i32,
         content_type: Option<&str>,
     ) -> Result<Vec<ClipboardEntry>, String> {
-        self.load_history(Some(since_timestamp), limit, offset, content_type)
+        self.load_history(
+            Some(since_timestamp),
+            limit,
+            offset,
+            content_type,
+            ClipboardSortMode::Manual,
+        )
     }
 
     fn search(

@@ -259,6 +259,55 @@
   background: var(--data-panel-hover-background);
 }
 
+.clipboard-import-setting {
+  padding-top: 8px !important;
+}
+
+.clipboard-import-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.clipboard-import-entry-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.clipboard-import-entry-copy .item-label {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.clipboard-import-entry-description {
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.clipboard-import-launch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+@media (max-width: 520px) {
+  .clipboard-import-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .clipboard-import-launch {
+    width: 100%;
+  }
+}
+
 .setting-item .switch {
   margin-left: 12px;
   flex-shrink: 0;

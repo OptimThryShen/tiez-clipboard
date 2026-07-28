@@ -3,6 +3,7 @@ import { DEFAULT_THEME } from "../../../shared/config/themes";
 import type { ClipboardEntry, Locale } from "../../../shared/types";
 import type {
   AppState,
+  ClipboardSortMode,
   CloudSyncContentPrefs,
   DefaultAppsMap,
   InstalledAppOption,
@@ -30,6 +31,8 @@ export const useAppState = (): AppState => {
     data: true
   });
   const [history, setHistory] = useState<ClipboardEntry[]>([]);
+  const [clipboardSortMode, setClipboardSortMode] =
+    useState<ClipboardSortMode>("activity");
   const [search, setSearch] = useState("");
   const [isComposing, setIsComposing] = useState(false);
   const [searchIsFocused, setSearchIsFocused] = useState(false);
@@ -190,6 +193,8 @@ export const useAppState = (): AppState => {
     setCollapsedGroups,
     history,
     setHistory,
+    clipboardSortMode,
+    setClipboardSortMode,
     search,
     setSearch,
     isComposing,

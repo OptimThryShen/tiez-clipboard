@@ -1,5 +1,8 @@
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent, RefObject } from "react";
 import {
+  ArrowUpDown,
+  Check,
   ChevronLeft,
   MessageSquare,
   Pin,
@@ -15,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getTagColor, getTagTextColor } from "../../../shared/lib/utils";
 import { isMacPlatform } from "../../../shared/lib/platform";
+import type { ClipboardSortMode } from "../types";
 
 interface AppHeaderProps {
   t: (key: string) => string;
@@ -48,6 +52,8 @@ interface AppHeaderProps {
   settingsTitle: string;
   typeFilter: string | null;
   setTypeFilter: (val: string | null) => void;
+  clipboardSortMode: ClipboardSortMode;
+  onClipboardSortModeChange: (val: ClipboardSortMode) => void;
   onBack: () => void;
   onToggleChat: () => void;
 }
@@ -84,9 +90,14 @@ const AppHeader = ({
   settingsTitle,
   typeFilter,
   setTypeFilter,
+  clipboardSortMode,
+  onClipboardSortModeChange,
   onBack,
   onToggleChat
 }: AppHeaderProps) => {
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement | null>(null);
+
   const getTypeName = (type: string) => {
     switch (type) {
       case "code": return t('type_code');
@@ -102,6 +113,42 @@ const AppHeader = ({
 
   const searchVisible = showSearchBox || search.trim().length > 0;
   const isMac = isMacPlatform();
+  const sortOptions: Array<{ value: ClipboardSortMode; label: string }> = [
+    { value: "activity", label: t("clipboard_sort_activity") },
+    { value: "created", label: t("clipboard_sort_created") },
+    { value: "last_used", label: t("clipboard_sort_last_used") },
+    { value: "usage", label: t("clipboard_sort_usage") }
+  ];
+  const activeSortLabel =
+    sortOptions.find((option) => option.value === clipboardSortMode)?.label ||
+    t("clipboard_sort_activity");
+
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) {
+        setSortMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSortMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [sortMenuOpen]);
+
+  useEffect(() => {
+    if (!searchVisible) setSortMenuOpen(false);
+  }, [searchVisible]);
+
   const headerTitle = showEmojiPanel
     ? (t('emoji_panel') || '表情包')
     : showTagManager && tagManagerEnabled
@@ -239,7 +286,7 @@ const AppHeader = ({
                     <input
                     ref={searchInputRef}
                     type="text"
-                    className={`search-input ${showTagFilter && searchIsFocused && search.trim().length === 0 && allTags.length > 0 ? 'dropdown-open' : ''}`}
+                    className={`search-input has-sort-control ${showTagFilter && searchIsFocused && search.trim().length === 0 && allTags.length > 0 ? 'dropdown-open' : ''}`}
                     placeholder={
                       theme === "terminal"
                         ? (t("search_placeholder_terminal") || "search history…")
@@ -258,6 +305,7 @@ const AppHeader = ({
                     onFocus={() => {
                       // Do not re-invoke activate here: a second focus bounce can
                       // blur the caret right after the user clicks the field.
+                      setSortMenuOpen(false);
                       setShowTagFilter(true);
                       setSearchIsFocused(true);
                       setEditingTagsId(null);
@@ -270,6 +318,50 @@ const AppHeader = ({
                     }}
                     style={{ color: colorMode === 'dark' ? '#ffffff' : undefined }}
                   />
+                    <div ref={sortMenuRef} className="clipboard-sort-anchor">
+                      <button
+                        type="button"
+                        className={`clipboard-sort-trigger${sortMenuOpen ? " is-open" : ""}${clipboardSortMode !== "activity" ? " has-custom-sort" : ""}`}
+                        aria-label={`${t("clipboard_sort")}: ${activeSortLabel}`}
+                        aria-haspopup="menu"
+                        aria-expanded={sortMenuOpen}
+                        title={`${t("clipboard_sort")}: ${activeSortLabel}`}
+                        onClick={() => {
+                          setShowTagFilter(false);
+                          setSortMenuOpen((open) => !open);
+                        }}
+                      >
+                        <ArrowUpDown size={14} aria-hidden="true" />
+                      </button>
+                      {sortMenuOpen && (
+                        <div className="clipboard-sort-menu" role="menu" aria-label={t("clipboard_sort")}>
+                          <div className="clipboard-sort-menu-title">{t("clipboard_sort")}</div>
+                          {sortOptions.map((option) => {
+                            const selected = option.value === clipboardSortMode;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={selected}
+                                className={`clipboard-sort-option${selected ? " is-selected" : ""}`}
+                                onClick={() => {
+                                  onClipboardSortModeChange(option.value);
+                                  setSortMenuOpen(false);
+                                }}
+                              >
+                                <span>{option.label}</span>
+                                <Check
+                                  size={13}
+                                  aria-hidden="true"
+                                  className={selected ? undefined : "clipboard-sort-check-placeholder"}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {showTagFilter && searchIsFocused && search.trim().length === 0 && allTags.length > 0 && (
                     <div className="tags-dropdown">

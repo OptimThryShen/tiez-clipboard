@@ -53,7 +53,7 @@ import type { QuickPasteHint, VirtualClipboardListHandle } from "./features/clip
 
 /** Must match privacy blur checks in `useClipboardItemRenderer` / `ClipboardItem`. */
 const BUILTIN_SENSITIVE_TAG_NAMES = ["sensitive", "密码", "password"] as const;
-import type { QuickPasteModifier } from "./features/app/types";
+import type { ClipboardSortMode, QuickPasteModifier } from "./features/app/types";
 import {
   forceHideCompactPreviewWindow,
   isCompactPreviewWindowSupported,
@@ -145,6 +145,8 @@ const App = () => {
     setCollapsedGroups,
     history,
     setHistory,
+    clipboardSortMode,
+    setClipboardSortMode,
     search,
     setSearch,
     isComposing,
@@ -395,6 +397,7 @@ const App = () => {
   const { fetchHistory, loadMoreHistory } = useHistoryFetch({
     debouncedSearch,
     typeFilter,
+    sortMode: clipboardSortMode,
     persistentLimitEnabled,
     persistentLimit,
     pageSize: PAGE_SIZE,
@@ -609,6 +612,7 @@ const App = () => {
     setPersistent,
     setPersistentLimitEnabled,
     setPersistentLimit,
+    setClipboardSortMode,
     setDeduplicate,
     setCaptureFiles,
     setCaptureRichText,
@@ -900,6 +904,14 @@ const App = () => {
       .catch(console.error);
   }, []);
 
+  const updateClipboardSortMode = useCallback(
+    (mode: ClipboardSortMode) => {
+      setClipboardSortMode(mode);
+      saveSetting("app.clipboard_sort_mode", mode);
+    },
+    [saveSetting, setClipboardSortMode]
+  );
+
   useSettingsSync({
     settingsLoaded,
     deduplicate,
@@ -992,7 +1004,8 @@ const App = () => {
   const filteredHistory = useFilteredHistory({
     history,
     search,
-    typeFilter
+    typeFilter,
+    sortMode: clipboardSortMode
   });
 
   const effectiveHasMore = hasMore && filteredHistory.length >= PAGE_SIZE;
@@ -1149,6 +1162,8 @@ const App = () => {
         settingsTitle={showSettings && settingsSubpage === "advanced" ? t("advanced_settings") : t("settings")}
         typeFilter={typeFilter}
         setTypeFilter={setTypeFilter}
+        clipboardSortMode={clipboardSortMode}
+        onClipboardSortModeChange={updateClipboardSortMode}
         onBack={handleHeaderBack}
         onToggleChat={handleToggleHeaderChat}
       />

@@ -46,7 +46,7 @@ pub(super) trait ClipboardImporter {
         -> Result<(), String>;
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReport {
     pub source: String,
@@ -56,6 +56,30 @@ pub struct ImportReport {
     pub unsupported: u64,
     pub failed: u64,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportProgress {
+    pub source: String,
+    pub scanned: u64,
+    pub imported: u64,
+    pub duplicates: u64,
+    pub unsupported: u64,
+    pub failed: u64,
+}
+
+impl From<&ImportReport> for ImportProgress {
+    fn from(report: &ImportReport) -> Self {
+        Self {
+            source: report.source.clone(),
+            scanned: report.scanned,
+            imported: report.imported,
+            duplicates: report.duplicates,
+            unsupported: report.unsupported,
+            failed: report.failed,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -213,6 +237,18 @@ pub fn import_clipboard_data(
     data_dir: &Path,
     source_path: &Path,
 ) -> Result<ImportReport, String> {
+    import_clipboard_data_with_progress(destination, data_dir, source_path, |_| {})
+}
+
+pub fn import_clipboard_data_with_progress<F>(
+    destination: Arc<Mutex<rusqlite::Connection>>,
+    data_dir: &Path,
+    source_path: &Path,
+    mut on_progress: F,
+) -> Result<ImportReport, String>
+where
+    F: FnMut(&ImportProgress),
+{
     if !source_path.is_file() {
         return Err("所选文件不存在或不是普通文件".to_string());
     }
@@ -256,6 +292,7 @@ pub fn import_clipboard_data(
         }
         if clip.candidates.is_empty() {
             report.unsupported += 1;
+            on_progress(&ImportProgress::from(&report));
             return;
         }
 
@@ -331,6 +368,7 @@ pub fn import_clipboard_data(
                 }
             }
         }
+        on_progress(&ImportProgress::from(&report));
     })?;
 
     Ok(report)

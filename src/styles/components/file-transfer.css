@@ -634,15 +634,14 @@
   flex: 0 0 auto;
   align-items: stretch;
   border-radius: var(--im-control-radius);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--im-accent) 28%, transparent),
-    0 3px 10px rgba(var(--im-accent-rgb), 0.1);
+  box-shadow: none;
 }
 
 .wt-file-send-main {
-  color: var(--im-accent) !important;
-  border-color: color-mix(in srgb, var(--im-accent) 45%, var(--im-border)) !important;
+  color: var(--im-muted) !important;
+  border-color: var(--im-border) !important;
   border-radius: var(--im-control-radius) 0 0 var(--im-control-radius) !important;
-  background: color-mix(in srgb, var(--im-accent) 12%, var(--im-input)) !important;
+  background: var(--im-input) !important;
 }
 
 .wt-file-send-toggle {
@@ -651,11 +650,11 @@
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--im-accent) 45%, var(--im-border));
+  border: 1px solid var(--im-border);
   border-left: 0;
   border-radius: 0 var(--im-control-radius) var(--im-control-radius) 0;
-  color: var(--im-accent);
-  background: color-mix(in srgb, var(--im-accent) 12%, var(--im-input));
+  color: var(--im-muted);
+  background: var(--im-input);
   cursor: pointer;
 }
 
@@ -665,13 +664,18 @@
   width: 1px;
   height: 18px;
   content: "";
-  background: color-mix(in srgb, var(--im-accent) 32%, transparent);
+  background: var(--im-border);
 }
 
 .wt-file-send-toggle:hover,
 .wt-file-send-toggle[aria-expanded="true"] {
   color: var(--im-accent);
-  background: color-mix(in srgb, var(--im-accent) 22%, var(--im-input));
+  background: color-mix(in srgb, var(--im-accent) 6%, var(--im-input));
+}
+
+.wt-file-send-main:hover:not(:disabled) {
+  color: var(--im-accent) !important;
+  background: color-mix(in srgb, var(--im-accent) 6%, var(--im-input)) !important;
 }
 
 .wt-file-send-toggle:disabled {

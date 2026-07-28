@@ -2,7 +2,11 @@ import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { MutableRefObject } from "react";
 import type { AiProfile, AppCleanupPolicy } from "../../features/settings/types";
-import type { QuickPasteModifier, CloudSyncContentPrefs } from "../../features/app/types";
+import type {
+  ClipboardSortMode,
+  QuickPasteModifier,
+  CloudSyncContentPrefs
+} from "../../features/app/types";
 import { DEFAULT_CLOUD_SYNC_CONTENT_PREFS } from "../../features/app/types";
 
 const QUICK_PASTE_MODIFIERS = new Set<QuickPasteModifier>([
@@ -11,6 +15,12 @@ const QUICK_PASTE_MODIFIERS = new Set<QuickPasteModifier>([
   "alt",
   "shift",
   "win"
+]);
+const CLIPBOARD_SORT_MODES = new Set<ClipboardSortMode>([
+  "activity",
+  "created",
+  "last_used",
+  "usage"
 ]);
 
 const normalizeQuickPasteModifier = (value?: string): QuickPasteModifier => {
@@ -32,6 +42,11 @@ const normalizeQuickPasteModifier = (value?: string): QuickPasteModifier => {
   }
 };
 
+const normalizeClipboardSortMode = (value?: string): ClipboardSortMode =>
+  value && CLIPBOARD_SORT_MODES.has(value as ClipboardSortMode)
+    ? (value as ClipboardSortMode)
+    : "activity";
+
 interface UseSettingsPostInitOptions {
   settings: Record<string, string> | null;
   tagManagerSizeRef: MutableRefObject<{ width: number; height: number } | null>;
@@ -41,6 +56,7 @@ interface UseSettingsPostInitOptions {
   setPersistent: (val: boolean) => void;
   setPersistentLimitEnabled: (val: boolean) => void;
   setPersistentLimit: (val: number) => void;
+  setClipboardSortMode: (val: ClipboardSortMode) => void;
   setDeduplicate: (val: boolean) => void;
   setCaptureFiles: (val: boolean) => void;
   setCaptureRichText: (val: boolean) => void;
@@ -128,6 +144,7 @@ export const useSettingsPostInit = ({
   setPersistent,
   setPersistentLimitEnabled,
   setPersistentLimit,
+  setClipboardSortMode,
   setDeduplicate,
   setCaptureFiles,
   setCaptureRichText,
@@ -264,6 +281,7 @@ export const useSettingsPostInit = ({
     if (settings["app.persistent_limit"]) {
       setPersistentLimit(parseInt(settings["app.persistent_limit"]) || 1000);
     }
+    setClipboardSortMode(normalizeClipboardSortMode(settings["app.clipboard_sort_mode"]));
     setDeduplicate(settings["app.deduplicate"] !== "false");
     setCaptureFiles(settings["app.capture_files"] !== "false");
     setCaptureRichText(settings["app.capture_rich_text"] === "true");
@@ -514,6 +532,7 @@ export const useSettingsPostInit = ({
     setPersistent,
     setPersistentLimitEnabled,
     setPersistentLimit,
+    setClipboardSortMode,
     setDeduplicate,
     setCaptureFiles,
     setCaptureRichText,

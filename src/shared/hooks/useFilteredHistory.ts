@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ClipboardEntry } from "../types";
+import type { ClipboardSortMode } from "../../features/app/types";
 import { parseSearchQuery } from "../lib/searchQuery";
 import { entryMatchesSearch } from "../lib/searchMatch";
 
@@ -7,12 +8,53 @@ interface UseFilteredHistoryOptions {
   history: ClipboardEntry[];
   search: string;
   typeFilter: string | null;
+  sortMode: ClipboardSortMode;
 }
+
+const activityAt = (item: ClipboardEntry) => item.sort_at || item.timestamp;
+
+export const compareClipboardEntries = (
+  a: ClipboardEntry,
+  b: ClipboardEntry,
+  sortMode: ClipboardSortMode
+) => {
+  if (a.is_pinned !== b.is_pinned) {
+    return a.is_pinned ? -1 : 1;
+  }
+  if (a.is_pinned) {
+    return (
+      (b.pinned_order || 0) - (a.pinned_order || 0) ||
+      activityAt(b) - activityAt(a) ||
+      b.id - a.id
+    );
+  }
+
+  let selectedDifference = 0;
+  switch (sortMode) {
+    case "created":
+      selectedDifference =
+        (b.created_at || b.timestamp) - (a.created_at || a.timestamp);
+      break;
+    case "last_used":
+      selectedDifference = (b.last_used_at || 0) - (a.last_used_at || 0);
+      break;
+    case "usage":
+      selectedDifference = (b.use_count || 0) - (a.use_count || 0);
+      break;
+    case "activity":
+    default:
+      selectedDifference = activityAt(b) - activityAt(a);
+      break;
+  }
+
+  return selectedDifference || activityAt(b) - activityAt(a) || b.id - a.id;
+};
 
 export const useFilteredHistory = ({
   history,
   search,
-  typeFilter
+  typeFilter,
+  sortMode
 }: UseFilteredHistoryOptions) => {
   return useMemo(() => {
     const parsed = parseSearchQuery(search);
@@ -27,17 +69,6 @@ export const useFilteredHistory = ({
       return entryMatchesSearch(item, parsed);
     });
 
-    return filtered.sort((a, b) => {
-      if (a.is_pinned !== b.is_pinned) {
-        return a.is_pinned ? -1 : 1;
-      }
-      if (a.is_pinned) {
-        if ((a.pinned_order || 0) !== (b.pinned_order || 0)) {
-          return (b.pinned_order || 0) - (a.pinned_order || 0);
-        }
-        return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
-      }
-      return (b.sort_at || b.timestamp) - (a.sort_at || a.timestamp);
-    });
-  }, [history, search, typeFilter]);
+    return filtered.sort((a, b) => compareClipboardEntries(a, b, sortMode));
+  }, [history, search, typeFilter, sortMode]);
 };

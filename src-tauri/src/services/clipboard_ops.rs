@@ -1819,6 +1819,7 @@ pub fn paste_latest_rich(app_handle: tauri::AppHandle) {
             1,
             0, // offset
             None,
+            None,
         );
 
         if let Ok(items) = history {

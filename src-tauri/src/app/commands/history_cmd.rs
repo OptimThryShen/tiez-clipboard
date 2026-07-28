@@ -2,12 +2,24 @@ use crate::app_state::{AppDataDir, SessionHistory};
 use crate::database::DbState;
 use crate::domain::models::ClipboardEntry;
 use crate::error::{AppError, AppResult};
-use crate::infrastructure::repository::clipboard_repo::ClipboardRepository;
+use crate::infrastructure::repository::clipboard_repo::{ClipboardRepository, ClipboardSortMode};
 use crate::infrastructure::repository::tag_repo::TagRepository;
 use crate::services::clipboard::{
     build_entry_preview, derive_rich_text_content, entry_matches_search, truncate_html_for_preview,
 };
 use tauri::{AppHandle, Emitter, State};
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardImportProgressEvent {
+    operation_id: String,
+    source: String,
+    scanned: u64,
+    imported: u64,
+    duplicates: u64,
+    unsupported: u64,
+    failed: u64,
+}
 
 #[tauri::command]
 pub fn discover_clipboard_import_sources() -> Vec<crate::services::importers::DiscoveredImportSource>
@@ -21,6 +33,7 @@ pub async fn import_clipboard_data(
     state: State<'_, DbState>,
     app_data: State<'_, AppDataDir>,
     path: String,
+    operation_id: String,
 ) -> AppResult<crate::services::importers::ImportReport> {
     let source_path = std::path::PathBuf::from(path);
     let destination = state.conn.clone();
@@ -30,9 +43,28 @@ pub async fn import_clipboard_data(
         .map_err(|error| AppError::Internal(error.to_string()))?
         .clone();
 
+    let progress_app_handle = app_handle.clone();
     let report = tauri::async_runtime::spawn_blocking(move || {
-        crate::services::importers::import_clipboard_data(destination, &data_dir, &source_path)
-            .map_err(AppError::Validation)
+        crate::services::importers::import_clipboard_data_with_progress(
+            destination,
+            &data_dir,
+            &source_path,
+            |progress| {
+                let _ = progress_app_handle.emit(
+                    "clipboard-import-progress",
+                    ClipboardImportProgressEvent {
+                        operation_id: operation_id.clone(),
+                        source: progress.source.clone(),
+                        scanned: progress.scanned,
+                        imported: progress.imported,
+                        duplicates: progress.duplicates,
+                        unsupported: progress.unsupported,
+                        failed: progress.failed,
+                    },
+                );
+            },
+        )
+        .map_err(AppError::Validation)
     })
     .await
     .map_err(|error| AppError::Internal(error.to_string()))??;
@@ -51,11 +83,15 @@ pub fn get_clipboard_history(
     limit: i32,
     offset: i32,
     content_type: Option<String>,
+    sort_mode: Option<String>,
 ) -> AppResult<Vec<ClipboardEntry>> {
+    let sort_mode = ClipboardSortMode::from_setting(sort_mode.as_deref());
+
     // 1. Get history from repository
-    let mut history = state
-        .repo
-        .get_history(limit, offset, content_type.as_deref())?;
+    let mut history =
+        state
+            .repo
+            .get_history_sorted(limit, offset, content_type.as_deref(), sort_mode)?;
 
     // 2. Add session history items (non-persisted) ONLY on the first page
     if offset == 0 {
@@ -73,15 +109,9 @@ pub fn get_clipboard_history(
         }
     }
 
-    // 3. Apply stable sorting: Pinned -> Pinned Order -> Timestamp -> ID
+    // 3. Apply the same stable sorting as the repository.
     // This MUST match the repository's logic to maintain pagination stability
-    history.sort_by(|a, b| {
-        b.is_pinned
-            .cmp(&a.is_pinned)
-            .then_with(|| b.pinned_order.cmp(&a.pinned_order))
-            .then_with(|| b.sort_at.cmp(&a.sort_at))
-            .then_with(|| b.id.cmp(&a.id))
-    });
+    history.sort_by(|a, b| sort_mode.compare(a, b));
 
     // 4. Truncate to limit
     if history.len() > limit as usize {

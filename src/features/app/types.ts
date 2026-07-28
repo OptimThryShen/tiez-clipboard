@@ -8,6 +8,7 @@ export type InstalledAppOption = { label: string; value: string };
 export type DefaultAppsMap = Record<string, string>;
 export type QuickPasteModifier = "disabled" | "ctrl" | "alt" | "shift" | "win";
 export type SettingsSubpage = "home" | "advanced";
+export type ClipboardSortMode = "activity" | "created" | "last_used" | "usage";
 
 export type CloudSyncContentPrefs = {
   text: boolean;
@@ -36,6 +37,8 @@ export interface AppState {
   setCollapsedGroups: StateSetter<Record<string, boolean>>;
   history: ClipboardEntry[];
   setHistory: StateSetter<ClipboardEntry[]>;
+  clipboardSortMode: ClipboardSortMode;
+  setClipboardSortMode: StateSetter<ClipboardSortMode>;
   search: string;
   setSearch: StateSetter<string>;
   isComposing: boolean;

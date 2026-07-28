@@ -312,6 +312,127 @@ header {
     box-shadow 0.18s ease;
 }
 
+.search-input.has-sort-control {
+  padding-right: 42px;
+}
+
+.clipboard-sort-anchor {
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+}
+
+.clipboard-sort-trigger {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    background 0.14s ease,
+    transform 0.14s ease;
+}
+
+.clipboard-sort-trigger:hover,
+.clipboard-sort-trigger:focus-visible,
+.clipboard-sort-trigger.is-open {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.clipboard-sort-trigger:active {
+  transform: scale(0.92);
+}
+
+.clipboard-sort-trigger.has-custom-sort {
+  color: var(--accent-color);
+}
+
+.clipboard-sort-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: -6px;
+  width: 188px;
+  padding: 6px;
+  color: var(--popover-color);
+  background: var(--popover-background);
+  border: var(--popover-border);
+  border-radius: var(--popover-radius);
+  box-shadow: var(--popover-shadow);
+  backdrop-filter: var(--popover-backdrop-filter);
+  -webkit-backdrop-filter: var(--popover-backdrop-filter);
+  box-sizing: border-box;
+  transform-origin: top right;
+  animation: clipboard-sort-menu-in 0.12s ease-out;
+}
+
+.clipboard-sort-menu-title {
+  padding: 4px 8px 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.clipboard-sort-option {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--popover-radius) * 0.65);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.clipboard-sort-option:hover,
+.clipboard-sort-option:focus-visible {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.clipboard-sort-option.is-selected {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.clipboard-sort-check-placeholder {
+  visibility: hidden;
+}
+
+@keyframes clipboard-sort-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clipboard-sort-menu {
+    animation: none;
+  }
+}
+
 select.search-input,
 select.search-input option {
   background: var(--bg-input);

@@ -570,7 +570,7 @@ pub fn seed_defaults(conn: &Connection) -> Result<()> {
 mod tests {
     use super::*;
     use crate::infrastructure::repository::clipboard_repo::{
-        ClipboardRepository, SqliteClipboardRepository,
+        ClipboardRepository, ClipboardSortMode, SqliteClipboardRepository,
     };
     use crate::infrastructure::repository::settings_repo::{
         SettingsRepository, SqliteSettingsRepository,
@@ -688,6 +688,89 @@ mod tests {
         let used = repo.get_history(10, 0, None).expect("重新获取历史失败");
         assert!(used[0].last_used_at > 0);
         assert_eq!(used[0].created_at, 123456789);
+    }
+
+    #[test]
+    fn test_history_sort_modes_keep_pinned_items_first() {
+        let conn = setup_test_db();
+        for (content, is_pinned, created_at, last_used_at, sort_at, use_count, pinned_order) in [
+            ("pinned-activity", 1, 100, 20, 50, 1, 1),
+            ("pinned-manual", 1, 200, 10, 40, 5, 2),
+            ("normal-used", 0, 300, 30, 60, 10, 99),
+            ("normal-created", 0, 400, 0, 70, 0, 0),
+        ] {
+            conn.execute(
+                "INSERT INTO clipboard_history (
+                    content_type, content, source_app, timestamp, preview, is_pinned,
+                    created_at, last_used_at, sort_at, use_count, pinned_order
+                 ) VALUES ('text', ?1, 'TestApp', ?2, ?1, ?3, ?4, ?5, ?2, ?6, ?7)",
+                rusqlite::params![
+                    content,
+                    sort_at,
+                    is_pinned,
+                    created_at,
+                    last_used_at,
+                    use_count,
+                    pinned_order
+                ],
+            )
+            .unwrap();
+        }
+
+        let repo = SqliteClipboardRepository::new(Arc::new(Mutex::new(conn)));
+        let contents_for = |mode| {
+            repo.get_history_sorted(10, 0, None, mode)
+                .unwrap()
+                .into_iter()
+                .map(|entry| entry.content)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            contents_for(ClipboardSortMode::Activity),
+            [
+                "pinned-manual",
+                "pinned-activity",
+                "normal-created",
+                "normal-used"
+            ]
+        );
+        assert_eq!(
+            contents_for(ClipboardSortMode::Created),
+            [
+                "pinned-manual",
+                "pinned-activity",
+                "normal-created",
+                "normal-used"
+            ]
+        );
+        assert_eq!(
+            contents_for(ClipboardSortMode::LastUsed),
+            [
+                "pinned-manual",
+                "pinned-activity",
+                "normal-used",
+                "normal-created"
+            ]
+        );
+        assert_eq!(
+            contents_for(ClipboardSortMode::Usage),
+            [
+                "pinned-manual",
+                "pinned-activity",
+                "normal-used",
+                "normal-created"
+            ]
+        );
+        assert_eq!(
+            contents_for(ClipboardSortMode::Manual),
+            [
+                "pinned-manual",
+                "pinned-activity",
+                "normal-created",
+                "normal-used"
+            ]
+        );
     }
 
     #[test]
