@@ -29,6 +29,8 @@ interface SettingsPanelProps {
     theme: string;
     language: Locale;
     colorMode: string;
+    showAppBorder: boolean;
+    setShowAppBorder: (val: boolean) => void;
     showSourceAppIcon: boolean;
     setShowSourceAppIcon: (val: boolean) => void;
     hideUnselectedItemActions: boolean;
@@ -252,7 +254,7 @@ interface SettingsPanelProps {
 
 const SettingsPanel = (props: SettingsPanelProps) => {
     const {
-        t, theme, language, colorMode, showSourceAppIcon, setShowSourceAppIcon, hideUnselectedItemActions, setHideUnselectedItemActions,
+        t, theme, language, colorMode, showAppBorder, setShowAppBorder, showSourceAppIcon, setShowSourceAppIcon, hideUnselectedItemActions, setHideUnselectedItemActions,
         collapsedGroups, settingsSubpage, autoStart, silentStart, persistent, persistentLimitEnabled, persistentLimit, deduplicate, captureFiles, captureRichText, richTextSnapshotPreview, deleteAfterPaste, moveToTopAfterPaste, pasteMethod, setPasteMethod, registryWinVEnabled, setRegistryWinVEnabled,
         sequentialMode, sequentialHotkey, isRecordingSequential,
         richPasteHotkey, isRecordingRich, searchHotkey, isRecordingSearch, quickPasteModifier, setQuickPasteModifier,
@@ -626,6 +628,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setColorMode={setColorMode}
                 language={language}
                 setLanguage={setLanguage}
+                showAppBorder={showAppBorder}
+                setShowAppBorder={setShowAppBorder}
                 showSourceAppIcon={showSourceAppIcon}
                 setShowSourceAppIcon={setShowSourceAppIcon}
                 hideUnselectedItemActions={hideUnselectedItemActions}

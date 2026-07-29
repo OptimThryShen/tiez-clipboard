@@ -36,9 +36,14 @@ header {
 .header-leading {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 4px;
+  padding-left: 4px;
   flex: 0 0 auto;
   min-width: 0;
+}
+
+.header-back-btn {
+  margin-left: 4px;
 }
 
 .mac-traffic-lights {
@@ -186,7 +191,15 @@ header {
   align-items: center;
   gap: var(--layout-header-actions-gap);
   flex: 0 0 auto;
+  min-width: 0;
   max-width: calc(100% - 28px);
+}
+
+.mac-header-title-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin-left: 4px;
 }
 
 .header-actions .btn-icon,
@@ -202,6 +215,52 @@ header {
 .header-actions .btn-icon:active,
 .header-leading > .btn-icon:active {
   box-shadow: var(--layout-header-btn-shadow-active);
+}
+
+/* The window can be resized down to 250px. Keep every header action available
+   at that width instead of letting theme-specific spacing push controls out of
+   the viewport. Titles yield first; controls retain a 24px compact hit area. */
+@media (max-width: 360px) {
+  .header-top {
+    gap: 2px;
+    padding-inline: 6px;
+  }
+
+  .header-leading {
+    gap: 2px;
+    padding-left: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+  }
+
+  .header-back-btn {
+    margin-left: 0;
+  }
+
+  .windows-header-title,
+  .mac-header-title-wrap {
+    display: none;
+  }
+
+  .header-drag-region {
+    flex: 1 1 2px;
+    min-width: 2px;
+  }
+
+  .header-actions {
+    gap: 2px;
+    flex: 0 0 auto;
+    max-width: none;
+  }
+
+  .header-actions .btn-icon,
+  .header-leading > .btn-icon {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    padding: 3px;
+    flex: 0 0 24px;
+  }
 }
 
 .search-reveal {

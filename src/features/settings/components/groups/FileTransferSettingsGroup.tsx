@@ -80,7 +80,13 @@ const FileTransferSettingsGroup = ({
                                 const val = e.target.checked;
                                 setFileServerEnabled(val);
                                 const port = Number(fileServerPort);
-                                invoke("toggle_file_server", { enabled: val, port: Number.isInteger(port) ? port : undefined });
+                                invoke("toggle_file_server", {
+                                    enabled: val,
+                                    port: Number.isInteger(port) ? port : undefined
+                                }).catch((error) => {
+                                    setFileServerEnabled(!val);
+                                    console.error("Failed to toggle file server:", error);
+                                });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -107,7 +113,7 @@ const FileTransferSettingsGroup = ({
                             />
                         </div>
                         <div className="setting-item no-border">
-                            <div className="item-label-group"><span className="item-label">Local IP</span></div>
+                            <div className="item-label-group"><span className="item-label">{t('local_ip')}</span></div>
                             <div className="data-panel" style={{ minWidth: '160px', justifyContent: 'flex-start', padding: '6px 10px', height: 'auto' }}>
                                 {availableIps && availableIps.length > 1 && setLocalIp ? (
                                     <select
@@ -215,20 +221,20 @@ const FileTransferSettingsGroup = ({
                                             value={`http://${localIp}:${actualPort}/?auth=${encodeURIComponent(accessToken)}`}
                                             size={90}
                                         />
-                                        <div className="qr-label">SCAN ME</div>
+                                        <div className="qr-label">{t('scan_me')}</div>
                                     </div>
                                     <div className="transfer-info">
                                         <div className="scan-title">{t('scan_to_send')}</div>
                                         <div className="info-row">
-                                            <span className="info-label">STATUS</span>
-                                            <span className="status-online">ONLINE</span>
+                                            <span className="info-label">{t('status')}</span>
+                                            <span className="status-online">{t('online')}</span>
                                         </div>
                                         <div className="info-row">
-                                            <span className="info-label">HOST</span>
+                                            <span className="info-label">{t('host')}</span>
                                             <span className="info-value">{localIp}</span>
                                         </div>
                                         <div className="info-row">
-                                            <span className="info-label">PORT</span>
+                                            <span className="info-label">{t('port')}</span>
                                             <span className="info-value">{actualPort}</span>
                                         </div>
                                         <div className="open-browser-btn" onClick={() => {

@@ -9,6 +9,7 @@ import {
     supportsCustomBackground,
     supportsSurfaceOpacity
 } from "../../../../shared/config/themes";
+import { isWindowsPlatform } from "../../../../shared/lib/platform";
 import type { Locale } from "../../../../shared/types";
 interface LabelWithHintProps {
     label: string;
@@ -27,6 +28,8 @@ interface AppearanceSettingsGroupProps {
     setColorMode: (val: string) => void;
     language: Locale;
     setLanguage: (val: Locale) => void;
+    showAppBorder: boolean;
+    setShowAppBorder: (val: boolean) => void;
     showSourceAppIcon: boolean;
     setShowSourceAppIcon: (val: boolean) => void;
     hideUnselectedItemActions: boolean;
@@ -72,6 +75,8 @@ const AppearanceSettingsGroup = ({
     setColorMode,
     language,
     setLanguage,
+    showAppBorder,
+    setShowAppBorder,
     showSourceAppIcon,
     setShowSourceAppIcon,
     hideUnselectedItemActions,
@@ -175,6 +180,29 @@ const AppearanceSettingsGroup = ({
                 </div>
 
 
+
+                {isWindowsPlatform() && (
+                    <div className="setting-item">
+                        <LabelWithHint
+                            label={t('show_app_border')}
+                            hint={t('show_app_border_hint')}
+                            hintKey="show_app_border"
+                        />
+                        <label className="switch">
+                            <input
+                                className="cb"
+                                type="checkbox"
+                                checked={showAppBorder}
+                                onChange={(e) => {
+                                    const val = e.target.checked;
+                                    setShowAppBorder(val);
+                                    saveAppSetting('show_app_border', String(val));
+                                }}
+                            />
+                            <div className="toggle"><div className="left" /><div className="right" /></div>
+                        </label>
+                    </div>
+                )}
 
                 <div className="setting-item">
                     <LabelWithHint

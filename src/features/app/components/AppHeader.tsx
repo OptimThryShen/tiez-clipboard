@@ -185,7 +185,7 @@ const AppHeader = ({
       }}
     >
       <div className="header-top">
-        <div className="header-leading" style={{ gap: '4px', paddingLeft: '4px' }}>
+        <div className="header-leading">
           {isMac && (
             <div className="mac-traffic-lights">
               <button
@@ -197,14 +197,14 @@ const AppHeader = ({
             </div>
           )}
           {(showSettings || showTagManager || showEmojiPanel) && (
-            <button className="btn-icon" onClick={onBack} style={{ marginLeft: '4px' }}>
+            <button className="btn-icon header-back-btn" onClick={onBack}>
               <ChevronLeft size={16} />
             </button>
           )}
           {!isMac && <span className="header-title windows-header-title">{headerTitle}</span>}
         </div>
 
-        <div className="header-drag-region" style={{ flex: 1 }}>
+        <div className="header-drag-region">
           {/* Middle area for dragging */}
         </div>
 
@@ -253,7 +253,7 @@ const AppHeader = ({
           )}
 
           {isMac && (
-            <div style={{ marginLeft: '4px', display: 'flex', alignItems: 'center' }}>
+            <div className="mac-header-title-wrap">
               <span className="header-title">{headerTitle}</span>
             </div>
           )}

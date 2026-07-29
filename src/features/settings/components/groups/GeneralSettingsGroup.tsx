@@ -46,6 +46,22 @@ interface GeneralSettingsGroupProps {
     saveAppSetting: (key: string, val: string) => void;
 }
 
+const applyToggle = (
+    next: boolean,
+    setValue: (val: boolean) => void,
+    command: string,
+    args: Record<string, unknown>,
+    onSuccess?: () => void
+) => {
+    setValue(next);
+    invoke(command, args)
+        .then(() => onSuccess?.())
+        .catch((error) => {
+            setValue(!next);
+            console.error(`Failed to apply ${command}:`, error);
+        });
+};
+
 const GeneralSettingsGroup = ({
     t,
     collapsed,
@@ -99,8 +115,7 @@ const GeneralSettingsGroup = ({
                             checked={autoStart}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
-                                setAutoStart(enabled);
-                                invoke("toggle_autostart", { enabled }).catch(console.error);
+                                applyToggle(enabled, setAutoStart, "toggle_autostart", { enabled });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -118,8 +133,7 @@ const GeneralSettingsGroup = ({
                             checked={hideTrayIcon}
                             onChange={(e) => {
                                 const val = e.target.checked;
-                                setHideTrayIcon(val);
-                                invoke("set_tray_visible", { visible: !val }).catch(console.error);
+                                applyToggle(val, setHideTrayIcon, "set_tray_visible", { visible: !val });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -140,8 +154,7 @@ const GeneralSettingsGroup = ({
                                 checked={hideDockIcon}
                                 onChange={(e) => {
                                     const val = e.target.checked;
-                                    setHideDockIcon(val);
-                                    invoke("set_dock_visible", { visible: !val }).catch(console.error);
+                                    applyToggle(val, setHideDockIcon, "set_dock_visible", { visible: !val });
                                 }}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -162,8 +175,7 @@ const GeneralSettingsGroup = ({
                             checked={edgeDocking}
                             onChange={(e) => {
                                 const val = e.target.checked;
-                                setEdgeDocking(val);
-                                invoke("set_edge_docking", { enabled: val }).catch(console.error);
+                                applyToggle(val, setEdgeDocking, "set_edge_docking", { enabled: val });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -183,8 +195,7 @@ const GeneralSettingsGroup = ({
                             checked={followMouse}
                             onChange={(e) => {
                                 const val = e.target.checked;
-                                setFollowMouse(val);
-                                invoke("set_follow_mouse", { enabled: val }).catch(console.error);
+                                applyToggle(val, setFollowMouse, "set_follow_mouse", { enabled: val });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -206,15 +217,11 @@ const GeneralSettingsGroup = ({
                             checked={soundEnabled}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
-                                setSoundEnabled(enabled);
-                                invoke("set_sound_enabled", { enabled })
-                                    .then(() => {
-                                        if (enabled) {
-                                            return invoke("play_preview_sound", { kind: "copy" });
-                                        }
-                                        return undefined;
-                                    })
-                                    .catch(console.error);
+                                applyToggle(enabled, setSoundEnabled, "set_sound_enabled", { enabled }, () => {
+                                    if (enabled) {
+                                        invoke("play_preview_sound", { kind: "copy" }).catch(console.error);
+                                    }
+                                });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -232,15 +239,11 @@ const GeneralSettingsGroup = ({
                                 checked={pasteSoundEnabled}
                                 onChange={(e) => {
                                     const enabled = e.target.checked;
-                                    setPasteSoundEnabled(enabled);
-                                    invoke("set_paste_sound_enabled", { enabled })
-                                        .then(() => {
-                                            if (enabled && soundEnabled) {
-                                                return invoke("play_preview_sound", { kind: "paste" });
-                                            }
-                                            return undefined;
-                                        })
-                                        .catch(console.error);
+                                    applyToggle(enabled, setPasteSoundEnabled, "set_paste_sound_enabled", { enabled }, () => {
+                                        if (enabled && soundEnabled) {
+                                            invoke("play_preview_sound", { kind: "paste" }).catch(console.error);
+                                        }
+                                    });
                                 }}
                             />
                             <div className="toggle"><div className="left" /><div className="right" /></div>
@@ -291,8 +294,7 @@ const GeneralSettingsGroup = ({
                             checked={silentStart}
                             onChange={(e) => {
                                 const enabled = e.target.checked;
-                                setSilentStart(enabled);
-                                invoke("set_silent_start", { enabled }).catch(console.error);
+                                applyToggle(enabled, setSilentStart, "set_silent_start", { enabled });
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
