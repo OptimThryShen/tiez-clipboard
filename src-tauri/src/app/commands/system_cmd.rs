@@ -705,6 +705,7 @@ pub fn set_data_path(app_handle: AppHandle, new_path: String) -> AppResult<()> {
             "Selected path is not a directory".to_string(),
         ));
     }
+    #[cfg(target_os = "macos")]
     if clean_path.to_ascii_lowercase().ends_with(".app") {
         return Err(AppError::Validation(
             "Cannot use a .app bundle as data directory. Please choose a normal folder."
