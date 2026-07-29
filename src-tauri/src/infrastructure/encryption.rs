@@ -370,13 +370,13 @@ fn decrypt_value_inner(cipher: &str, unwrap_legacy_after_modern: bool) -> Option
 #[cfg(not(feature = "portable"))]
 fn decrypt_modern_value_once(cipher: &str) -> Option<String> {
     let payload = cipher.strip_prefix(ENCRYPT_PREFIX)?;
-    let key = get_master_key()?;
     let packed = base64::engine::general_purpose::STANDARD
         .decode(payload.as_bytes())
         .ok()?;
     if packed.len() <= NONCE_LEN {
         return None;
     }
+    let key = get_master_key()?;
     let (nonce_bytes, ciphertext) = packed.split_at(NONCE_LEN);
     let aes = Aes256Gcm::new_from_slice(key).ok()?;
     let nonce = Nonce::from_slice(nonce_bytes);
@@ -591,6 +591,12 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn modern_ciphertext_can_unwrap_a_legacy_dpapi_value() {
+        let test_data_dir = std::env::temp_dir().join(format!(
+            "tiez-encryption-test-{}",
+            std::process::id()
+        ));
+        init(&test_data_dir);
+
         let protected = dpapi_protect(b"old-secret").expect("protect legacy value");
         let encoded = base64::engine::general_purpose::STANDARD.encode(protected);
         let legacy = format!("{LEGACY_DPAPI_PREFIX}{encoded}");
