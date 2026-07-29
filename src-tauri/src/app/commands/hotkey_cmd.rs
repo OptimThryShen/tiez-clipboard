@@ -33,6 +33,17 @@ fn is_win_v_hotkey(hotkey: &str) -> bool {
     has_win && has_v
 }
 
+fn should_register_main_hotkey(hotkey: &str) -> bool {
+    if hotkey.is_empty() {
+        return false;
+    }
+
+    // Windows disables Explorer's Win+V handler before assigning it to TieZ.
+    // On other platforms, avoid turning a migrated Win+V setting into
+    // Command+V and intercepting the system paste shortcut.
+    cfg!(target_os = "windows") || !is_win_v_hotkey(hotkey)
+}
+
 fn parse_shortcut(hotkey: &str) -> Option<Shortcut> {
     if hotkey.is_empty()
         || hotkey.eq_ignore_ascii_case("MouseMiddle")
@@ -109,7 +120,7 @@ pub fn sync_registered_hotkeys(app_handle: &AppHandle) -> AppResult<()> {
     let sequential_mode = settings.sequential_mode.load(Ordering::Relaxed);
     let mut registered = HashSet::new();
 
-    if !main_hotkey.is_empty() && !is_win_v_hotkey(&main_hotkey) {
+    if should_register_main_hotkey(&main_hotkey) {
         register_unique_shortcut(app_handle, &main_hotkey, &mut registered)?;
     }
 
@@ -179,5 +190,28 @@ pub fn test_hotkey_available(app_handle: AppHandle, hotkey: String) -> AppResult
             };
             Err(AppError::Internal(user_msg))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_win_v_hotkey, should_register_main_hotkey};
+
+    #[test]
+    fn recognizes_win_v_aliases_without_extra_modifiers() {
+        assert!(is_win_v_hotkey("Win+V"));
+        assert!(is_win_v_hotkey("Super + v"));
+        assert!(!is_win_v_hotkey("Ctrl+Win+V"));
+        assert!(!is_win_v_hotkey("Win+C"));
+    }
+
+    #[test]
+    fn registers_win_v_only_on_windows() {
+        assert!(should_register_main_hotkey("Alt+C"));
+        assert!(!should_register_main_hotkey(""));
+        assert_eq!(
+            should_register_main_hotkey("Win+V"),
+            cfg!(target_os = "windows")
+        );
     }
 }
