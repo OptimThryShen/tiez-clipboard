@@ -1752,34 +1752,42 @@ async fn move_webdav_resource(
     from_relative: &str,
     to_relative: &str,
 ) -> AppResult<bool> {
+    // Single attempt, no retry: MOVE is only an optimization on top of a
+    // direct PUT. Many WebDAV services either lack MOVE or answer with
+    // non-retryable failures (403/500/...), so any failure here must fall
+    // back to the caller's direct-PUT path instead of stalling the sync
+    // loop (see upstream issues #164, #128).
     let from_url = webdav_url_for(cfg, from_relative);
     let destination = webdav_url_for(cfg, to_relative);
-    let resp = webdav_send_with_retry(|| {
-        let method = Method::from_bytes(b"MOVE").expect("MOVE is a valid HTTP method");
-        webdav_with_auth(
-            client
-                .request(method, &from_url)
-                .header("Destination", destination.clone())
-                .header("Overwrite", "T"),
-            cfg,
-        )
-    })
-    .await?;
-
-    if resp.status().is_success() {
-        return Ok(true);
+    let method = Method::from_bytes(b"MOVE").expect("MOVE is a valid HTTP method");
+    match webdav_with_auth(
+        client
+            .request(method, &from_url)
+            .header("Destination", destination.clone())
+            .header("Overwrite", "T"),
+        cfg,
+    )
+    .send()
+    .await
+    {
+        Ok(resp) if resp.status().is_success() => Ok(true),
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            eprintln!(
+                "[cloud-sync] webdav MOVE publish failed for {} -> {}: {} {}; falling back to direct PUT",
+                from_url, destination, status, text
+            );
+            Ok(false)
+        }
+        Err(err) => {
+            eprintln!(
+                "[cloud-sync] webdav MOVE publish errored for {} -> {}: {}; falling back to direct PUT",
+                from_url, destination, err
+            );
+            Ok(false)
+        }
     }
-
-    if matches!(resp.status().as_u16(), 405 | 409 | 412 | 501) {
-        return Ok(false);
-    }
-
-    let status = resp.status();
-    let text = resp.text().await.unwrap_or_default();
-    Err(AppError::Network(format!(
-        "webdav MOVE publish failed for {} -> {}: {} {}",
-        from_url, destination, status, text
-    )))
 }
 
 async fn upload_webdav_bytes_resource(
@@ -1838,6 +1846,9 @@ async fn upload_webdav_bytes_resource(
 
     match move_webdav_resource(client, cfg, &temp_relative, relative_path).await {
         Ok(true) => Ok(()),
+        // MOVE unsupported/failed (403/405/409/412/500/501/transport error):
+        // publish the final payload with a direct PUT so the sync loop keeps
+        // working on WebDAV services without usable MOVE support.
         Ok(false) => {
             let fallback = upload_target(client, cfg, &final_url, &body, content_type, label).await;
             let _ = delete_webdav_resource_if_exists(client, cfg, &temp_relative).await;

@@ -334,7 +334,11 @@ pub unsafe extern "system" fn keyboard_proc(
                 true
             };
 
-            if !allow_navigation {
+            // Escape (0x1B) always closes the visible window, even when
+            // arrow-key selection is disabled: while the app is in the
+            // foreground, ESC should dismiss the page unconditionally.
+            let is_escape_key = vk == 0x1B;
+            if !allow_navigation && !is_escape_key {
                 return CallNextHookEx(None, n_code, w_param, l_param);
             }
 
