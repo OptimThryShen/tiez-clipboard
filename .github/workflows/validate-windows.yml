@@ -20,7 +20,7 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
       - name: Supply missing test type dependency
-        run: npm install --no-save --package-lock=false vitest
+        run: npm install --no-save --package-lock=false vitest @tauri-apps/api@2.10.1 @tauri-apps/plugin-dialog@2.6.0 @tauri-apps/plugin-updater@2.10.1
       - name: Build Windows bundles
         run: npm run tauri:build
       - uses: actions/upload-artifact@v4
