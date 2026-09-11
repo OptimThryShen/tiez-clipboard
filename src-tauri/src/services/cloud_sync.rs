@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use urlencoding::decode;
 
 const DEFAULT_INTERVAL_SECS: u64 = 120;
@@ -49,6 +49,12 @@ const WEBDAV_RETRY_BASE_DELAY_MS: u64 = 600;
 const WEBDAV_HEAD_REBUILD_INTERVAL_SECS: i64 = 5 * 60;
 const WEBDAV_HEAD_FILENAME: &str = "head.json";
 const WEBDAV_BLOB_CACHE_MAX_ENTRIES: usize = 5000;
+/// Hard wall-clock budget for one full sync cycle (manual or automatic).
+/// Without this, a single hung WebDAV request chain (45s timeout x retries
+/// with exponential backoff) can pin the status in "syncing" for several
+/// minutes while every manual re-click is short-circuited, leaving the UI
+/// stuck on the checking label forever (upstream issue #164 symptom).
+const SYNC_CYCLE_TIMEOUT_SECS: u64 = 90;
 
 static CLOUD_SYNC_TASK_ACTIVE: AtomicBool = AtomicBool::new(false);
 static CLOUD_SYNC_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -3264,7 +3270,21 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                     );
                 }
             } else if cfg.auto_sync || requested {
-                if let Err(e) = sync_once(&app, &cfg, false).await {
+                // Clear any cancellation that a previous timed-out cycle left
+                // behind so the client does not permanently no-op.
+                CLOUD_SYNC_CANCEL_REQUESTED.store(false, Ordering::Relaxed);
+                let budget = Duration::from_secs(SYNC_CYCLE_TIMEOUT_SECS);
+                let cycle = match timeout(budget, sync_once(&app, &cfg, false)).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        CLOUD_SYNC_CANCEL_REQUESTED.store(true, Ordering::Relaxed);
+                        Err(AppError::Network(format!(
+                            "sync timed out after {}s",
+                            SYNC_CYCLE_TIMEOUT_SECS
+                        )))
+                    }
+                };
+                if let Err(e) = cycle {
                     emit_status(
                         Some(&app),
                         CloudSyncStatus {
@@ -3343,12 +3363,52 @@ pub fn stop_cloud_sync_client(app: AppHandle) {
 pub async fn cloud_sync_now(app: AppHandle) -> AppResult<CloudSyncStatus> {
     let current = get_cloud_sync_status();
     if current.state == "syncing" {
-        return Ok(current);
+        // A previous cycle is still holding the run lock. Do not silently
+        // no-op: request cancellation so the stuck cycle bails out at its
+        // next checkpoint and releases the status instead of pinning the UI
+        // on the checking label indefinitely.
+        CLOUD_SYNC_CANCEL_REQUESTED.store(true, Ordering::Relaxed);
+        emit_status(
+            Some(&app),
+            CloudSyncStatus {
+                state: "error".to_string(),
+                running: true,
+                last_sync_at: current.last_sync_at,
+                last_error: Some(
+                    "previous sync is still running; request cancelled, please retry".to_string(),
+                ),
+                uploaded_items: 0,
+                received_items: 0,
+            },
+        );
+        return Ok(get_cloud_sync_status());
     }
     CLOUD_SYNC_CANCEL_REQUESTED.store(false, Ordering::Relaxed);
     let cfg =
         get_config(&app).ok_or_else(|| AppError::Internal("DB state unavailable".to_string()))?;
-    sync_once(&app, &cfg, true).await
+
+    // Wrap the whole cycle in a hard timeout so a hung WebDAV request chain
+    // can never leave the status stuck in "syncing".
+    let budget = Duration::from_secs(SYNC_CYCLE_TIMEOUT_SECS);
+    match timeout(budget, sync_once(&app, &cfg, true)).await {
+        Ok(result) => result,
+        Err(_) => {
+            CLOUD_SYNC_CANCEL_REQUESTED.store(true, Ordering::Relaxed);
+            let status = CloudSyncStatus {
+                state: "error".to_string(),
+                running: true,
+                last_sync_at: None,
+                last_error: Some(format!(
+                    "sync timed out after {}s; the WebDAV server did not respond in time",
+                    SYNC_CYCLE_TIMEOUT_SECS
+                )),
+                uploaded_items: 0,
+                received_items: 0,
+            };
+            emit_status(Some(&app), status.clone());
+            Ok(status)
+        }
+    }
 }
 
 fn check_and_create_emoji_sync_op(app: &AppHandle) -> AppResult<Option<CloudSyncItem>> {
