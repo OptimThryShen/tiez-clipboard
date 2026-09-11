@@ -37,6 +37,7 @@ const CLOUD_SYNC_WEBDAV_BLOB_CACHE_KEY: &str = "cloud_sync_webdav_blob_cache";
 const CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PUSH_AT_KEY: &str = "cloud_sync_webdav_last_snapshot_push_at";
 const CLOUD_SYNC_WEBDAV_LAST_SNAPSHOT_PULL_AT_KEY: &str = "cloud_sync_webdav_last_snapshot_pull_at";
 const CLOUD_SYNC_WEBDAV_LAST_HEAD_REBUILD_AT_KEY: &str = "cloud_sync_webdav_last_head_rebuild_at";
+const CLOUD_SYNC_WEBDAV_BACKOFF_UNTIL_KEY: &str = "cloud_sync_webdav_backoff_until";
 const BLOB_KIND_IMAGE: &str = "image";
 const BLOB_KIND_CONTENT: &str = "content";
 const BLOB_KIND_HTML: &str = "html";
@@ -46,6 +47,7 @@ const WEBDAV_REQUEST_TIMEOUT_SECS: u64 = 45;
 const WEBDAV_MAX_RETRIES: usize = 3;
 const WEBDAV_JSON_READ_RETRIES: usize = 3;
 const WEBDAV_RETRY_BASE_DELAY_MS: u64 = 600;
+const WEBDAV_RATE_LIMIT_COOLDOWN_SECS: i64 = 30 * 60;
 const WEBDAV_HEAD_REBUILD_INTERVAL_SECS: i64 = 5 * 60;
 const WEBDAV_HEAD_FILENAME: &str = "head.json";
 const WEBDAV_BLOB_CACHE_MAX_ENTRIES: usize = 5000;
@@ -62,7 +64,6 @@ static CLOUD_SYNC_CANCEL_REQUESTED: AtomicBool = AtomicBool::new(false);
 static CLOUD_SYNC_LAST_SYNC_AT: AtomicI64 = AtomicI64::new(0);
 static LAST_PUSHED_EMOJI_HASH: AtomicI64 = AtomicI64::new(0);
 static CLOUD_SYNC_BACKOFF_UNTIL: AtomicI64 = AtomicI64::new(0);
-
 
 // 用于记录在本次运行中，哪些 WebDAV 目录已经确认存在，避免重复发网络请求
 static WEBDAV_KNOWN_DIRS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -538,6 +539,7 @@ fn is_setting_sync_eligible(key: &str) -> bool {
             | "cloud_sync_webdav_last_snapshot_push_at"
             | "cloud_sync_webdav_last_snapshot_pull_at"
             | "cloud_sync_webdav_last_head_rebuild_at"
+            | "cloud_sync_webdav_backoff_until"
             | "cloud_sync_settings_applied_at"
     )
 }
@@ -1573,9 +1575,40 @@ fn check_webdav_status_for_backoff(status: StatusCode) {
         status,
         StatusCode::TOO_MANY_REQUESTS | StatusCode::SERVICE_UNAVAILABLE
     ) {
-        // 进入 5 分钟冷却期，避免激怒坚果云导致封禁时间被无限延长
-        let cooldown = now_ms() + 300 * 1000;
+        // Jianguoyun accounts WebDAV requests in a rolling 30-minute window.
+        // Retrying after only five minutes can extend BlockedTemporarily forever.
+        let cooldown = now_ms() + WEBDAV_RATE_LIMIT_COOLDOWN_SECS * 1000;
         CLOUD_SYNC_BACKOFF_UNTIL.store(cooldown, Ordering::Relaxed);
+    }
+}
+
+fn webdav_backoff_remaining_secs() -> i64 {
+    let remaining_ms = CLOUD_SYNC_BACKOFF_UNTIL
+        .load(Ordering::Relaxed)
+        .saturating_sub(now_ms());
+    if remaining_ms <= 0 {
+        0
+    } else {
+        (remaining_ms + 999) / 1000
+    }
+}
+
+fn webdav_backoff_remaining_secs_for(app: &AppHandle) -> i64 {
+    let in_memory = CLOUD_SYNC_BACKOFF_UNTIL.load(Ordering::Relaxed);
+    let persisted = get_setting_i64(app, CLOUD_SYNC_WEBDAV_BACKOFF_UNTIL_KEY, 0);
+    let until = in_memory.max(persisted);
+    let remaining_ms = until.saturating_sub(now_ms());
+    if remaining_ms <= 0 {
+        0
+    } else {
+        (remaining_ms + 999) / 1000
+    }
+}
+
+fn persist_webdav_backoff(app: &AppHandle) {
+    let until = CLOUD_SYNC_BACKOFF_UNTIL.load(Ordering::Relaxed);
+    if until > now_ms() {
+        set_setting_i64(app, CLOUD_SYNC_WEBDAV_BACKOFF_UNTIL_KEY, until);
     }
 }
 
@@ -1716,10 +1749,25 @@ async fn mkcol_if_needed(
         return Ok(());
     }
 
-    if matches!(code, 301 | 302 | 307 | 308 | 405 | 409)
+    if matches!(code, 429 | 503) {
+        return Err(AppError::Network(format!(
+            "WebDAV rate limited; sync paused for {} minutes to avoid extending the block",
+            (webdav_backoff_remaining_secs() + 59) / 60
+        )));
+    }
+
+    // RFC 4918 defines 405 for MKCOL when the collection already exists.
+    // Accept it directly: the old verification PROPFIND doubled the request
+    // count on every application start and easily triggered Jianguoyun limits.
+    if code == 405 {
+        let cache = WEBDAV_KNOWN_DIRS.get_or_init(|| Mutex::new(HashSet::new()));
+        cache.lock().unwrap().insert(cache_key);
+        return Ok(());
+    }
+
+    if matches!(code, 301 | 302 | 307 | 308 | 409)
         && webdav_collection_exists(client, cfg, relative_path).await?
     {
-        // 如果服务器反馈目录已存在 (405) 或者发生冲突 (409)，同样记录到缓存中
         let cache = WEBDAV_KNOWN_DIRS.get_or_init(|| Mutex::new(HashSet::new()));
         cache.lock().unwrap().insert(cache_key);
         return Ok(());
@@ -1894,7 +1942,7 @@ where
         if status_code == missing_status {
             return Ok(None);
         }
-        
+
         // 兼容坚果云：如果父目录不存在，GET 可能返回 409 Conflict (AncestorsNotFound)
         if status_code == 409 {
             return Ok(None);
@@ -1982,7 +2030,6 @@ async fn ensure_webdav_directories(
     mkcol_if_needed(client, cfg, &paths.settings_path).await?;
     mkcol_if_needed(client, cfg, &paths.ops_path).await?;
     mkcol_if_needed(client, cfg, &paths.blobs_path).await?;
-
 
     Ok(paths)
 }
@@ -3123,6 +3170,26 @@ async fn sync_once(
         return Err(AppError::Validation(msg));
     }
 
+    if cfg.provider == CloudSyncProvider::WebDav {
+        let remaining_secs = webdav_backoff_remaining_secs_for(app);
+        if remaining_secs > 0 {
+            let msg = format!(
+                "WebDAV rate limit cooldown: retry in about {} minutes",
+                (remaining_secs + 59) / 60
+            );
+            let status = CloudSyncStatus {
+                state: "error".to_string(),
+                running: true,
+                last_sync_at: None,
+                last_error: Some(msg.clone()),
+                uploaded_items: 0,
+                received_items: 0,
+            };
+            emit_status(Some(app), status);
+            return Err(AppError::Network(msg));
+        }
+    }
+
     emit_status(
         Some(app),
         CloudSyncStatus {
@@ -3146,6 +3213,9 @@ async fn sync_once(
             Ok(status)
         }
         Err(err) => {
+            if cfg.provider == CloudSyncProvider::WebDav {
+                persist_webdav_backoff(app);
+            }
             if cloud_sync_cancel_requested() {
                 let status = disabled_status();
                 emit_status(Some(app), status.clone());
@@ -3219,28 +3289,24 @@ pub fn start_cloud_sync_client(app: AppHandle) {
                 }
             };
 
-            let now = now_ms();
-            let backoff_until = CLOUD_SYNC_BACKOFF_UNTIL.load(Ordering::Relaxed);
-            if backoff_until > now {
-                let remaining_secs = (backoff_until - now) / 1000;
-                if remaining_secs > 0 {
-                    emit_status(
-                        Some(&app),
-                        CloudSyncStatus {
-                            state: "idle".to_string(),
-                            running: true,
-                            last_sync_at: None,
-                            last_error: Some(format!(
-                                "WebDAV Cooldown (JianGuoYun Rate Limit): {}s remaining",
-                                remaining_secs
-                            )),
-                            uploaded_items: 0,
-                            received_items: 0,
-                        },
-                    );
-                    sleep(Duration::from_secs(5)).await;
-                    continue;
-                }
+            let remaining_secs = webdav_backoff_remaining_secs_for(&app);
+            if remaining_secs > 0 {
+                emit_status(
+                    Some(&app),
+                    CloudSyncStatus {
+                        state: "idle".to_string(),
+                        running: true,
+                        last_sync_at: None,
+                        last_error: Some(format!(
+                            "WebDAV Cooldown (JianGuoYun Rate Limit): {}s remaining",
+                            remaining_secs
+                        )),
+                        uploaded_items: 0,
+                        received_items: 0,
+                    },
+                );
+                sleep(Duration::from_secs(5)).await;
+                continue;
             }
 
             if !cfg.enabled || !cloud_sync_target_ready(&cfg) {
