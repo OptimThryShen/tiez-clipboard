@@ -599,5 +599,16 @@ impl PipelineStage for DistributionStage {
         if settings.persistent.load(Ordering::Relaxed) && entry.id > 0 {
             crate::services::cloud_sync::request_cloud_sync(ctx.app_handle.clone());
         }
+
+        // Real-time sync: push the new clipboard item to the shared MQTT topic.
+        // Only text-like entries are pushed; images carry huge data-urls and
+        // file entries are local paths, both useless to another device over
+        // MQTT (cloud sync covers those). The receiver side writes the text
+        // directly to the system clipboard, which is what makes a copy on one
+        // PC instantly pasteable on another.
+        let kind = entry.content_type.as_str();
+        if matches!(kind, "text" | "code" | "rich_text") {
+            crate::services::mqtt_sub::publish_if_connected(&ctx.app_handle, kind, &entry.content);
+        }
     }
 }

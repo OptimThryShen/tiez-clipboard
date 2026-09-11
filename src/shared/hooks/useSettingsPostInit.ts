@@ -75,6 +75,7 @@ interface UseSettingsPostInitOptions {
   setMqttUser: (val: string) => void;
   setMqttPass: (val: string) => void;
   setMqttTopic: (val: string) => void;
+  setMqttFingerprint: (val: string) => void;
   setMqttProtocol: (val: string) => void;
   setMqttWsPath: (val: string) => void;
   setMqttNotificationEnabled: (val: boolean) => void;
@@ -161,6 +162,7 @@ export const useSettingsPostInit = ({
   setMqttUser,
   setMqttPass,
   setMqttTopic,
+  setMqttFingerprint,
   setMqttProtocol,
   setMqttWsPath,
   setMqttNotificationEnabled,
@@ -341,6 +343,7 @@ export const useSettingsPostInit = ({
     setMqttPort(settings["mqtt_port"] || "1883");
     setMqttUser(settings["mqtt_username"] || "");
     setMqttPass(settings["mqtt_password"] || "");
+    setMqttFingerprint(settings["mqtt_fingerprint"] || "");
     const anonId = settings["app.anon_id"] || "";
     const shortId = anonId.split("-")[0] || "unknown";
     setMqttTopic(settings["mqtt_topic"] || `tiez/tiez_${shortId}`);
@@ -504,6 +507,7 @@ export const useSettingsPostInit = ({
     setMqttUser,
     setMqttPass,
     setMqttTopic,
+    setMqttFingerprint,
     setMqttProtocol,
     setMqttWsPath,
     setMqttNotificationEnabled,

@@ -3,12 +3,108 @@ use crate::global_state::{LAST_APP_SET_HASH, LAST_APP_SET_TIMESTAMP};
 use crate::infrastructure::repository::settings_repo::SettingsRepository;
 use crate::{error, info};
 use rumqttc::{AsyncClient, Event, Incoming, MqttOptions, QoS, Transport};
+use sha2::{Digest, Sha256};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::sleep;
+
+// Holds the currently connected pub-sub client so the clipboard pipeline can
+// publish new copies to the shared sync topic without owning the connection.
+static MQTT_PUB_CLIENT: Mutex<Option<AsyncClient>> = Mutex::new(None);
+
+// Normalizes a user-entered fingerprint: keeps hex digits only, lower-case.
+// Accepts "AA:BB:...", "aabb...", spaces and separators; anything that does
+// not collapse to exactly 64 hex digits is rejected (empty string).
+fn normalize_fingerprint(raw: &str) -> String {
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    if cleaned.len() == 64 {
+        cleaned
+    } else {
+        String::new()
+    }
+}
+
+fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
+    let s = normalize_fingerprint(s);
+    if s.len() != 64 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
+// Pins the server to a single self-signed certificate by SHA-256 fingerprint.
+// The fingerprint IS the trust anchor: no CA roots, no domain name, no renewal.
+#[derive(Debug)]
+struct FingerprintVerifier {
+    expected: Vec<u8>,
+}
+
+impl rustls::client::danger::ServerCertVerifier for FingerprintVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        let actual = Sha256::digest(end_entity.as_ref());
+        if actual.as_slice() == self.expected.as_slice() {
+            Ok(rustls::client::danger::ServerCertVerified::assertion())
+        } else {
+            Err(rustls::Error::General(
+                "MQTT server certificate fingerprint mismatch".into(),
+            ))
+        }
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA1,
+            rustls::SignatureScheme::ECDSA_SHA1_Legacy,
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::RSA_PKCS1_SHA384,
+            rustls::SignatureScheme::ECDSA_NISTP384_SHA384,
+            rustls::SignatureScheme::RSA_PKCS1_SHA512,
+            rustls::SignatureScheme::ECDSA_NISTP521_SHA512,
+            rustls::SignatureScheme::RSA_PSS_SHA256,
+            rustls::SignatureScheme::RSA_PSS_SHA384,
+            rustls::SignatureScheme::RSA_PSS_SHA512,
+            rustls::SignatureScheme::ED25519,
+            rustls::SignatureScheme::ED448,
+        ]
+    }
+}
 
 #[derive(Clone, Debug)]
 struct MqttConfig {
@@ -23,6 +119,14 @@ struct MqttConfig {
     ws_path: String,
     #[allow(dead_code)]
     tls_insecure: bool,
+    // SHA-256 fingerprint of the self-signed server certificate (hex, no colons).
+    // When set, the client pins the server to exactly this certificate and
+    // ignores public-CA roots, so a private deployment needs no domain and no
+    // certificate renewal.
+    fingerprint: Option<String>,
+    // Shared sync topic. All devices of one user subscribe to this and filter
+    // each other out by device_id, so a copy on one PC reaches the others.
+    device_id: String,
 }
 
 // Global MQTT client state
@@ -45,6 +149,42 @@ pub fn get_mqtt_status() -> bool {
 
 pub fn get_mqtt_running() -> bool {
     MQTT_RUNNING.load(Ordering::Relaxed)
+}
+
+// Publishes a locally-captured clipboard item to the shared sync topic so
+// other devices can paste it. Called from the clipboard pipeline; no-ops when
+// MQTT is disabled or not connected. The receiver-side device_id filter
+// prevents the sender from pasting its own message back.
+pub fn publish_if_connected(app: &AppHandle, kind: &str, content: &str) {
+    if !MQTT_CONNECTED.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(cfg) = get_mqtt_config(app) else {
+        return;
+    };
+    let client = MQTT_PUB_CLIENT.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(client) = client.as_ref().cloned() else {
+        return;
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+    let msg = serde_json::json!({
+        "device_id": cfg.device_id,
+        "ts": ts,
+        "kind": kind,
+        "content": content,
+    });
+    let pub_topic = format!("{}/clip", cfg.topic.trim_end_matches('/'));
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = client
+            .publish(pub_topic, QoS::AtLeastOnce, false, msg.to_string())
+            .await
+        {
+            error!(">>> [MQTT] Publish failed: {}", e);
+        }
+    });
 }
 
 // Force restart MQTT client by setting running flag to false
@@ -203,6 +343,16 @@ fn get_mqtt_config(app: &AppHandle) -> Option<MqttConfig> {
         .map(|s| s == "true")
         .unwrap_or(false);
 
+    let fingerprint = db_state
+        .settings_repo
+        .get("mqtt_fingerprint")
+        .ok()
+        .flatten()
+        .map(|s| normalize_fingerprint(&s))
+        .filter(|s| !s.is_empty());
+
+    let device_id = short_id.clone();
+
     Some(MqttConfig {
         host,
         port,
@@ -214,6 +364,8 @@ fn get_mqtt_config(app: &AppHandle) -> Option<MqttConfig> {
         ssl,
         ws_path,
         tls_insecure,
+        fingerprint,
+        device_id,
     })
 }
 
@@ -298,17 +450,26 @@ pub fn start_mqtt_client(app: AppHandle) {
 
                 // Apply transport settings explicitly for security
                 if use_wss || use_tls {
-                    // Manually build TlsConfiguration to avoid panic on invalid system certs
-                    // We only use webpki-roots which are safe and don't contain enterprise/AV certs that cause panic
-                    let mut root_store = rustls::RootCertStore::empty();
-                    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-                    let mut config = rustls::ClientConfig::builder()
-                        .with_root_certificates(root_store)
-                        .with_no_client_auth();
-
-                    // If insecure flag is set, disable verification (dangerous but requested)
-                    if cfg.tls_insecure {
+                    let mut config;
+                    // Fingerprint pinning wins: when the user pasted the
+                    // server certificate fingerprint, trust ONLY that exact
+                    // certificate (self-signed private deployment, no domain,
+                    // no CA, no renewal).
+                    if let Some(fp) = cfg
+                        .fingerprint
+                        .as_deref()
+                        .and_then(hex_to_bytes)
+                    {
+                        let verifier = FingerprintVerifier { expected: fp };
+                        let mut store = rustls::RootCertStore::empty();
+                        config = rustls::ClientConfig::builder()
+                            .with_root_certificates(store)
+                            .with_no_client_auth();
+                        config
+                            .dangerous()
+                            .set_certificate_verifier(std::sync::Arc::new(verifier));
+                    } else if cfg.tls_insecure {
+                        // Insecure flag set: disable verification (dangerous but requested)
                         #[derive(Debug)]
                         struct NoVerifier;
                         impl rustls::client::danger::ServerCertVerifier for NoVerifier {
@@ -366,9 +527,20 @@ pub fn start_mqtt_client(app: AppHandle) {
                                 ]
                             }
                         }
+                        let mut store = rustls::RootCertStore::empty();
+                        config = rustls::ClientConfig::builder()
+                            .with_root_certificates(store)
+                            .with_no_client_auth();
                         config
                             .dangerous()
                             .set_certificate_verifier(std::sync::Arc::new(NoVerifier));
+                    } else {
+                        // Public CAs: build a root store; avoids panic on invalid system certs
+                        let mut root_store = rustls::RootCertStore::empty();
+                        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                        config = rustls::ClientConfig::builder()
+                            .with_root_certificates(root_store)
+                            .with_no_client_auth();
                     }
 
                     if use_wss {
@@ -442,11 +614,38 @@ pub fn start_mqtt_client(app: AppHandle) {
                 }
                 info!(">>> [MQTT] Subscribed to {}", sub_topic);
 
+                // Hand this connected client to the publish path so the clipboard
+                // pipeline can push new copies without owning a second connection.
+                {
+                    let mut guard =
+                        MQTT_PUB_CLIENT.lock().unwrap_or_else(|p| p.into_inner());
+                    *guard = Some(client.clone());
+                }
+
                 loop {
                     match tokio::time::timeout(Duration::from_secs(5), eventloop.poll()).await {
                         Ok(event_result) => match event_result {
                             Ok(Event::Incoming(notification)) => match notification {
                                 Incoming::Publish(publish) => {
+                                    // Skip messages we published ourselves: every
+                                    // device publishes to the shared topic, so the
+                                    // sender must not also paste its own copy back.
+                                    if let Ok(payload_str) = std::str::from_utf8(&publish.payload) {
+                                        let payload_trimmed = payload_str.trim();
+                                        if let Ok(json_val) =
+                                            serde_json::from_str::<serde_json::Value>(
+                                                payload_trimmed,
+                                            )
+                                        {
+                                            if let Some(device_id) =
+                                                json_val.get("device_id").and_then(|v| v.as_str())
+                                            {
+                                                if device_id == cfg.device_id {
+                                                    continue;
+                                                }
+                                            }
+                                        }
+                                    }
                                     if let Ok(payload_str) = std::str::from_utf8(&publish.payload) {
                                         let payload_trimmed = payload_str.trim();
                                         let final_content = if let Ok(json_val) =
@@ -531,6 +730,7 @@ pub fn start_mqtt_client(app: AppHandle) {
                                 error!(">>> [MQTT] Event loop error: {:?}", e);
                                 MQTT_RUNNING.store(false, Ordering::Relaxed);
                                 MQTT_CONNECTED.store(false, Ordering::Relaxed);
+                                *MQTT_PUB_CLIENT.lock().unwrap_or_else(|p| p.into_inner()) = None;
                                 let _ = app.emit("mqtt-status", "disconnected");
                                 break;
                             }
@@ -541,6 +741,7 @@ pub fn start_mqtt_client(app: AppHandle) {
                                 info!(">>> [MQTT] Disabled. Stopping task.");
                                 MQTT_RUNNING.store(false, Ordering::Relaxed);
                                 MQTT_CONNECTED.store(false, Ordering::Relaxed);
+                                *MQTT_PUB_CLIENT.lock().unwrap_or_else(|p| p.into_inner()) = None;
                                 let _ = app.emit("mqtt-status", "disconnected");
                                 return;
                             }

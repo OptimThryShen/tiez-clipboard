@@ -31,6 +31,8 @@ interface SyncSettingsGroupProps {
     setMqttPass: (val: string) => void;
     mqttTopic: string;
     setMqttTopic: (val: string) => void;
+    mqttFingerprint: string;
+    setMqttFingerprint: (val: string) => void;
     mqttNotificationEnabled: boolean;
     setMqttNotificationEnabled: (val: boolean) => void;
 }
@@ -58,6 +60,8 @@ const SyncSettingsGroup = ({
     setMqttPass,
     mqttTopic,
     setMqttTopic,
+    mqttFingerprint,
+    setMqttFingerprint,
     mqttNotificationEnabled,
     setMqttNotificationEnabled
 }: SyncSettingsGroupProps) => (
@@ -232,6 +236,21 @@ const SyncSettingsGroup = ({
                                     placeholder="tiez/my_device"
                                 />
                             </>
+                        </div>
+                        <div className="setting-item">
+                            <LabelWithHint
+                                label={t('mqtt_fingerprint') || 'Cert Fingerprint'}
+                                hint={t('mqtt_fingerprint_hint') || 'Optional SHA-256 fingerprint of the self-signed server certificate (recommended for private TLS). When set, the client pins the server to exactly this certificate - no domain or public CA needed. Get it on the server: openssl x509 -in /etc/mosquitto/certs/server.crt -noout -fingerprint -sha256'}
+                                hintKey="mqtt_fingerprint"
+                            />
+                            <input
+                                className="search-input"
+                                style={{ borderRadius: '4px', padding: '8px', width: '140px' }}
+                                value={mqttFingerprint}
+                                onFocus={() => invoke("focus_clipboard_window").catch(console.error)}
+                                onChange={e => { setMqttFingerprint(e.target.value); saveMqtt('mqtt_fingerprint', e.target.value); }}
+                                placeholder="AA:BB:CC... (SHA-256)"
+                            />
                         </div>
                         <div className="setting-item">
                             <LabelWithHint

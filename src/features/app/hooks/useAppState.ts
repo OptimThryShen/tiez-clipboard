@@ -122,6 +122,7 @@ export const useAppState = (): AppState => {
   const [mqttUser, setMqttUser] = useState("");
   const [mqttPass, setMqttPass] = useState("");
   const [mqttTopic, setMqttTopic] = useState("");
+  const [mqttFingerprint, setMqttFingerprint] = useState("");
   const [mqttProtocol, setMqttProtocol] = useState("mqtt://");
   const [mqttWsPath, setMqttWsPath] = useState("/mqtt");
   const [mqttNotificationEnabled, setMqttNotificationEnabled] = useState(true);
@@ -363,6 +364,8 @@ export const useAppState = (): AppState => {
     setMqttPass,
     mqttTopic,
     setMqttTopic,
+    mqttFingerprint,
+    setMqttFingerprint,
     mqttProtocol,
     setMqttProtocol,
     mqttWsPath,

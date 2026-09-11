@@ -33,6 +33,7 @@ export const useAppActions = ({
           "mqtt_password",
           "mqtt_topic",
           "mqtt_protocol",
+          "mqtt_fingerprint",
           "mqtt_client_id"
         ];
         if (key === "mqtt_enabled" && value === "true") {

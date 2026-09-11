@@ -115,6 +115,7 @@ interface SettingsPanelProps {
     mqttUser: string;
     mqttPass: string;
     mqttTopic: string;
+    mqttFingerprint: string;
     mqttProtocol: string;
     mqttWsPath: string;
     mqttNotificationEnabled: boolean;
@@ -196,6 +197,7 @@ interface SettingsPanelProps {
     setMqttUser: (val: string) => void;
     setMqttPass: (val: string) => void;
     setMqttTopic: (val: string) => void;
+    setMqttFingerprint: (val: string) => void;
     setMqttProtocol: (val: string) => void;
     setMqttWsPath: (val: string) => void;
     setMqttNotificationEnabled: (val: boolean) => void;
@@ -257,7 +259,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
-        mqttEnabled, mqttServer, mqttPort, mqttUser, mqttPass, mqttTopic, mqttProtocol, mqttWsPath, mqttNotificationEnabled,
+        mqttEnabled, mqttServer, mqttPort, mqttUser, mqttPass, mqttTopic, mqttFingerprint, setMqttFingerprint, mqttProtocol, mqttWsPath, mqttNotificationEnabled,
         cloudSyncEnabled, cloudSyncAuto, cloudSyncIntervalSec, cloudSyncSnapshotIntervalMin, cloudSyncWebdavUrl, cloudSyncWebdavUsername, cloudSyncWebdavPassword, cloudSyncWebdavBasePath, cloudSyncContentPrefs,
         fileServerEnabled, fileServerPort, localIp, availableIps, setLocalIp, actualPort, fileTransferAutoOpen, showAutoCloseHint, fileServerAutoClose, fileTransferAutoCopy, fileTransferPath,
         installedApps, appSettings, defaultApps, showAppSelector, dataPath,
@@ -666,6 +668,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setMqttPass={setMqttPass}
                 mqttTopic={mqttTopic}
                 setMqttTopic={setMqttTopic}
+                mqttFingerprint={mqttFingerprint}
+                setMqttFingerprint={setMqttFingerprint}
                 mqttNotificationEnabled={mqttNotificationEnabled}
                 setMqttNotificationEnabled={setMqttNotificationEnabled}
             />

@@ -203,6 +203,8 @@ export interface AppState {
   setMqttPass: StateSetter<string>;
   mqttTopic: string;
   setMqttTopic: StateSetter<string>;
+  mqttFingerprint: string;
+  setMqttFingerprint: StateSetter<string>;
   mqttProtocol: string;
   setMqttProtocol: StateSetter<string>;
   mqttWsPath: string;
