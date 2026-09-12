@@ -192,6 +192,7 @@ pub struct StartupSettings {
     pub sound_enabled: bool,
     pub hide_tray_icon: bool,
     pub edge_docking: bool,
+    pub hide_on_blur: bool,
     pub follow_mouse: bool,
     pub window_pinned: bool,
     pub window_width: Option<u32>,
@@ -299,6 +300,11 @@ fn load_settings(repo: &impl SettingsRepository) -> StartupSettings {
             .unwrap_or(Some("false".to_string()))
             .map(|v| v == "true")
             .unwrap_or(false),
+        hide_on_blur: repo
+            .get("app.hide_on_blur")
+            .unwrap_or(Some("false".to_string()))
+            .map(|v| v == "true")
+            .unwrap_or(false),
         follow_mouse: repo
             .get("app.follow_mouse")
             .unwrap_or(Some("true".to_string()))
@@ -385,6 +391,7 @@ fn setup_state(
         sound_enabled: AtomicBool::new(s.sound_enabled),
         hide_tray_icon: AtomicBool::new(s.hide_tray_icon),
         edge_docking: AtomicBool::new(s.edge_docking),
+        hide_on_blur: AtomicBool::new(s.hide_on_blur),
         follow_mouse: AtomicBool::new(s.follow_mouse),
         arrow_key_selection: AtomicBool::new(s.arrow_key_selection),
         main_hotkey: std::sync::Mutex::new(s.main_hotkey.clone()),
@@ -1284,6 +1291,12 @@ fn handle_blur(window: &tauri::Window) {
 
     let settings = window.app_handle().state::<SettingsState>();
     if settings.edge_docking.load(Ordering::Relaxed) {
+        return;
+    }
+
+    // User preference: do NOT hide the window when it loses focus. Only an
+    // explicit X / Esc (CloseRequested) closes it. Defaults to false.
+    if !settings.hide_on_blur.load(Ordering::Relaxed) {
         return;
     }
 

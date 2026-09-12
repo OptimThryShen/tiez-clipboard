@@ -101,6 +101,8 @@ interface SettingsPanelProps {
     setHideDockIcon: (val: boolean) => void;
     edgeDocking: boolean;
     setEdgeDocking: (val: boolean) => void;
+    hideOnBlur: boolean;
+    setHideOnBlur: (val: boolean) => void;
     customBackground: string;
     setCustomBackground: (val: string) => void;
     customBackgroundOpacity: number;
@@ -256,6 +258,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         hideTrayIcon, setHideTrayIcon,
         hideDockIcon, setHideDockIcon,
         edgeDocking, setEdgeDocking,
+        hideOnBlur, setHideOnBlur,
         customBackground, setCustomBackground,
         customBackgroundOpacity, setCustomBackgroundOpacity,
         surfaceOpacity, setSurfaceOpacity,
@@ -526,6 +529,8 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 setHideDockIcon={setHideDockIcon}
                 edgeDocking={edgeDocking}
                 setEdgeDocking={setEdgeDocking}
+                hideOnBlur={hideOnBlur}
+                setHideOnBlur={setHideOnBlur}
                 soundEnabled={soundEnabled}
                 setSoundEnabled={setSoundEnabled}
                 pasteSoundEnabled={pasteSoundEnabled}

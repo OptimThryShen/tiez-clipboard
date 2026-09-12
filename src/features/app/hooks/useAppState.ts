@@ -108,6 +108,7 @@ export const useAppState = (): AppState => {
   const [hideTrayIcon, setHideTrayIcon] = useState(false);
   const [hideDockIcon, setHideDockIcon] = useState(false);
   const [edgeDocking, setEdgeDocking] = useState(false);
+  const [hideOnBlur, setHideOnBlur] = useState(false);
   const [customBackground, setCustomBackground] = useState<string>("");
   const [customBackgroundOpacity, setCustomBackgroundOpacity] = useState(45);
   const [surfaceOpacity, setSurfaceOpacity] = useState(50);
@@ -335,6 +336,8 @@ export const useAppState = (): AppState => {
     setHideDockIcon,
     edgeDocking,
     setEdgeDocking,
+    hideOnBlur,
+    setHideOnBlur,
 
     customBackground,
     setCustomBackground,

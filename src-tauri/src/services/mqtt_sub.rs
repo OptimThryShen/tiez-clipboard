@@ -623,7 +623,7 @@ pub fn start_mqtt_client(app: AppHandle) {
                 }
 
                 loop {
-                    match tokio::time::timeout(Duration::from_secs(5), eventloop.poll()).await {
+                    match tokio::time::timeout(Duration::from_secs(1), eventloop.poll()).await {
                         Ok(event_result) => match event_result {
                             Ok(Event::Incoming(notification)) => match notification {
                                 Incoming::Publish(publish) => {
@@ -736,7 +736,17 @@ pub fn start_mqtt_client(app: AppHandle) {
                             }
                         },
                         Err(_) => {
-                            // Timeout, check if still enabled
+                            // Timeout. Either a restart was requested (settings
+                            // changed: server/port/fingerprint/...), or the sync
+                            // was disabled. Break out of the inner loop to let
+                            // the outer loop re-read the config and reconnect.
+                            if !MQTT_RUNNING.load(Ordering::Relaxed) {
+                                info!(">>> [MQTT] Restart or disable requested, cycling client.");
+                                MQTT_CONNECTED.store(false, Ordering::Relaxed);
+                                *MQTT_PUB_CLIENT.lock().unwrap_or_else(|p| p.into_inner()) = None;
+                                let _ = app.emit("mqtt-status", "disconnected");
+                                break;
+                            }
                             if get_mqtt_config(&app).is_none() {
                                 info!(">>> [MQTT] Disabled. Stopping task.");
                                 MQTT_RUNNING.store(false, Ordering::Relaxed);
@@ -756,7 +766,7 @@ pub fn start_mqtt_client(app: AppHandle) {
                 }
             }
 
-            sleep(Duration::from_secs(5)).await;
+            sleep(Duration::from_secs(1)).await;
         }
     });
 }

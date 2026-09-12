@@ -160,6 +160,11 @@ pub fn save_setting(
                 .edge_docking
                 .store(value == "true", Ordering::Relaxed);
         }
+        "app.hide_on_blur" => {
+            settings_state
+                .hide_on_blur
+                .store(value == "true", Ordering::Relaxed);
+        }
         "app.follow_mouse" => {
             settings_state
                 .follow_mouse

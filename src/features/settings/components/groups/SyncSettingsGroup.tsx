@@ -70,16 +70,21 @@ const SyncSettingsGroup = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <h3 style={{ margin: 0 }}>{t('sync_settings')}</h3>
                 {mqttEnabled && (
-                    <span
-                        style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: mqttStatus === 'connected' ? '#4CAF50' : mqttStatus === 'connecting' ? '#FF9800' : '#F44336',
-                            display: 'inline-block'
-                        }}
-                        title={mqttStatus === 'connected' ? "Connected" : mqttStatus === 'connecting' ? "Connecting..." : "Disconnected"}
-                    />
+                    <>
+                        <span
+                            style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                backgroundColor: mqttStatus === 'connected' ? '#4CAF50' : mqttStatus === 'connecting' ? '#FF9800' : '#F44336',
+                                display: 'inline-block'
+                            }}
+                            title={mqttStatus === 'connected' ? "Connected" : mqttStatus === 'connecting' ? "Connecting..." : "Disconnected"}
+                        />
+                        <span style={{ fontSize: '11px', color: mqttStatus === 'connected' ? '#4CAF50' : mqttStatus === 'connecting' ? '#FF9800' : '#F44336' }}>
+                            {mqttStatus === 'connected' ? t('mqtt_status_connected') : mqttStatus === 'connecting' ? t('mqtt_status_connecting') : t('mqtt_status_disconnected')}
+                        </span>
+                    </>
                 )}
             </div>
             {collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}

@@ -26,6 +26,8 @@ interface GeneralSettingsGroupProps {
     setHideDockIcon: (val: boolean) => void;
     edgeDocking: boolean;
     setEdgeDocking: (val: boolean) => void;
+    hideOnBlur: boolean;
+    setHideOnBlur: (val: boolean) => void;
     soundEnabled: boolean;
     setSoundEnabled: (val: boolean) => void;
     pasteSoundEnabled: boolean;
@@ -60,6 +62,8 @@ const GeneralSettingsGroup = ({
     setHideDockIcon,
     edgeDocking,
     setEdgeDocking,
+    hideOnBlur,
+    setHideOnBlur,
     soundEnabled,
     setSoundEnabled,
     pasteSoundEnabled,
@@ -161,6 +165,28 @@ const GeneralSettingsGroup = ({
                                 const val = e.target.checked;
                                 setEdgeDocking(val);
                                 invoke("set_edge_docking", { enabled: val }).catch(console.error);
+                            }}
+                        />
+                        <div className="toggle"><div className="left" /><div className="right" /></div>
+                    </label>
+                </div>
+
+
+                <div className="setting-item">
+                    <LabelWithHint
+                        label={t('hide_on_blur')}
+                        hint={t('hide_on_blur_hint')}
+                        hintKey="hide_on_blur"
+                    />
+                    <label className="switch">
+                        <input
+                            className="cb"
+                            type="checkbox"
+                            checked={hideOnBlur}
+                            onChange={(e) => {
+                                const val = e.target.checked;
+                                setHideOnBlur(val);
+                                invoke("save_setting", { key: 'app.hide_on_blur', value: String(val) }).catch(console.error);
                             }}
                         />
                         <div className="toggle"><div className="left" /><div className="right" /></div>
