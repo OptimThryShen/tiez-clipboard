@@ -20,11 +20,23 @@ static MQTT_PUB_CLIENT: Mutex<Option<AsyncClient>> = Mutex::new(None);
 // Accepts "AA:BB:...", "aabb...", spaces and separators; anything that does
 // not collapse to exactly 64 hex digits is rejected (empty string).
 fn normalize_fingerprint(raw: &str) -> String {
-    let cleaned: String = raw
-        .chars()
-        .filter(|c| c.is_ascii_hexdigit())
-        .map(|c| c.to_ascii_lowercase())
-        .collect();
+    fn strip(s: &str) -> String {
+        s.chars()
+            .filter(|c| c.is_ascii_hexdigit())
+            .map(|c| c.to_ascii_lowercase())
+            .collect()
+    }
+    // openssl prints e.g. "SHA256 Fingerprint=AA:BB:...". The label itself
+    // contains hex-valid letters ("A", "2", "F", "e", ...), so prefer the
+    // text after the last '=' before filtering; otherwise the label pollutes
+    // the digest and the fingerprint is silently rejected.
+    if let Some((_, rest)) = raw.rsplit_once('=') {
+        let c = strip(rest);
+        if c.len() == 64 {
+            return c;
+        }
+    }
+    let cleaned = strip(raw);
     if cleaned.len() == 64 {
         cleaned
     } else {
@@ -573,6 +585,7 @@ pub fn start_mqtt_client(app: AppHandle) {
                                 MQTT_CONNECTED.store(true, Ordering::Relaxed);
                                 MQTT_RECONNECT_ATTEMPTS.store(0, Ordering::Relaxed);
                                 let _ = app.emit("mqtt-status", "connected");
+                                let _ = app.emit("mqtt-error", "");
                                 return Ok::<(), rumqttc::ConnectionError>(());
                             }
                             Ok(_) => continue,
@@ -586,9 +599,11 @@ pub fn start_mqtt_client(app: AppHandle) {
                     Ok(Ok(())) => connected = true,
                     Ok(Err(e)) => {
                         error!(">>> [MQTT] Connection error: {}", e);
+                        let _ = app.emit("mqtt-error", format!("{}", e));
                     }
                     Err(_) => {
                         error!(">>> [MQTT] Connection timeout.");
+                        let _ = app.emit("mqtt-error", "Connection timeout".to_string());
                     }
                 }
 

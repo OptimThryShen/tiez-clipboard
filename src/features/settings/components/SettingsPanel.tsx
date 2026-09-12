@@ -288,6 +288,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
     const [emailCopied, setEmailCopied] = useState(false);
     const [appVersion, setAppVersion] = useState("");
     const [mqttStatus, setMqttStatus] = useState<"connected" | "disconnected" | "connecting">("disconnected");
+    const [mqttError, setMqttError] = useState<string>("");
     const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatusPayload>({
         state: "disabled",
         running: false,
@@ -427,6 +428,11 @@ const SettingsPanel = (props: SettingsPanelProps) => {
         const unlistenMqtt = listen<string>("mqtt-status", (event) => {
             console.log('[MQTT STATUS] Received status:', event.payload);
             setMqttStatus(event.payload as "connected" | "disconnected" | "connecting");
+            if (event.payload === "connected") setMqttError("");
+        });
+        const unlistenMqttErr = listen<string>("mqtt-error", (event) => {
+            console.log('[MQTT ERROR] Received:', event.payload);
+            setMqttError(event.payload || "");
         });
 
         let unlistenCloud: Promise<() => void> | null = null;
@@ -455,6 +461,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
 
         return () => {
             unlistenMqtt.then(f => f());
+            unlistenMqttErr.then(f => f());
             if (unlistenCloud) {
                 unlistenCloud.then(f => f());
             }
@@ -657,6 +664,7 @@ const SettingsPanel = (props: SettingsPanelProps) => {
                 LabelWithHint={LabelWithHint}
                 mqttEnabled={mqttEnabled}
                 mqttStatus={mqttStatus}
+                mqttError={mqttError}
                 setMqttEnabled={setMqttEnabled}
                 saveMqtt={saveMqtt}
                 mqttProtocol={mqttProtocol}

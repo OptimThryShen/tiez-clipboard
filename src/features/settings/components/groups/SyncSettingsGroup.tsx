@@ -15,6 +15,7 @@ interface SyncSettingsGroupProps {
     LabelWithHint: ComponentType<LabelWithHintProps>;
     mqttEnabled: boolean;
     mqttStatus: "connected" | "disconnected" | "connecting";
+    mqttError?: string;
     setMqttEnabled: (val: boolean) => void;
     saveMqtt: (key: string, val: string) => void;
     mqttProtocol: string;
@@ -44,6 +45,7 @@ const SyncSettingsGroup = ({
     LabelWithHint,
     mqttEnabled,
     mqttStatus,
+    mqttError,
     setMqttEnabled,
     saveMqtt,
     mqttProtocol,
@@ -280,6 +282,11 @@ const SyncSettingsGroup = ({
                         <div style={{ padding: '0 8px 8px', fontSize: '11px', color: 'var(--text-secondary)', opacity: 0.8 }}>
                             {t('mqtt_restart_hint')}
                         </div>
+                        {mqttEnabled && mqttStatus !== 'connected' && !!mqttError && (
+                            <div style={{ padding: '0 8px 8px', fontSize: '11px', color: '#F44336', wordBreak: 'break-all', opacity: 0.9 }}>
+                                {t('mqtt_error_label')}: {mqttError}
+                            </div>
+                        )}
                     </>
                 )}
             </div>
